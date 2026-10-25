@@ -1,0 +1,33 @@
+name: "Documentation"
+description: "Documentation, specifications, or rules updates"
+title: "docs: "
+labels: ["type:docs"]
+body:
+  - type: markdown
+    attributes:
+      value: "After filing, set the appropriate `area:` label and milestone (`v0`, `v1`, etc.). See [AGENTS.md](../../AGENTS.md)."
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+      description: "What documentation needs to be written or updated."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: "Dependencies"
+      description: "Issues that must close first, or blocking relationships."
+      value: |
+        None.
+  - type: textarea
+    id: dod
+    attributes:
+      label: "Definition of Done"
+      description: "Observable, checkable outcomes."
+      value: |
+        - [ ] Documentation written and reviewed
+        - [ ] `just check` passes with zero warnings
+        - [ ] `just issues-check` passes
+    validations:
+      required: true

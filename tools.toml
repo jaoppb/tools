@@ -1,0 +1,13 @@
+[target]
+owner = "jaoppb"
+repository = "tools"
+
+[issues-check.rules]
+cycle = true
+labels = true
+membership = false
+milestone = true
+parent = false
+references = false
+release = true
+text = false

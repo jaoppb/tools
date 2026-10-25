@@ -1,0 +1,33 @@
+name: "Spike"
+description: "Time-boxed research or experiment that answers a question"
+title: "spike: "
+labels: ["type:spike"]
+body:
+  - type: markdown
+    attributes:
+      value: "After filing, set the appropriate `area:` label and milestone (`v0`, `v1`, etc.). See [AGENTS.md](../../AGENTS.md)."
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+      description: "Question to answer, hypothesis, and time-box limits."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: "Dependencies"
+      description: "Issues that must close first, or blocking relationships."
+      value: |
+        None.
+  - type: textarea
+    id: dod
+    attributes:
+      label: "Definition of Done"
+      description: "Observable, checkable outcomes."
+      value: |
+        - [ ] Research completed and findings documented
+        - [ ] `just check` passes with zero warnings
+        - [ ] `just issues-check` passes
+    validations:
+      required: true
