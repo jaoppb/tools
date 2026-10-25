@@ -1,0 +1,485 @@
+{
+  "data": {
+    "user": {
+      "projectV2": {
+        "items": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "cursor-last"
+          },
+          "nodes": [
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {},
+                  {},
+                  {},
+                  {},
+                  {
+                    "name": "Done",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 3,
+                "state": "CLOSED",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:chore"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v0"
+                },
+                "parent": {
+                  "number": 2,
+                  "labels": {
+                    "nodes": [
+                      {
+                        "name": "type:chore"
+                      },
+                      {
+                        "name": "area:tooling"
+                      },
+                      {
+                        "name": "epic"
+                      }
+                    ]
+                  }
+                },
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {},
+                  {},
+                  {},
+                  {
+                    "name": "Backlog",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 5.0,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 20,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:catalog"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": {
+                  "number": 85,
+                  "labels": {
+                    "nodes": [
+                      {
+                        "name": "type:feat"
+                      },
+                      {
+                        "name": "area:catalog"
+                      },
+                      {
+                        "name": "area:stock"
+                      },
+                      {
+                        "name": "area:sales"
+                      },
+                      {
+                        "name": "area:cash"
+                      },
+                      {
+                        "name": "area:printing"
+                      },
+                      {
+                        "name": "epic"
+                      }
+                    ]
+                  }
+                },
+                "blockedBy": {
+                  "nodes": [
+                    {
+                      "number": 76,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 35,
+                      "state": "CLOSED",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 18,
+                      "state": "CLOSED",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {},
+                  {},
+                  {},
+                  {
+                    "name": "Backlog",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "name": "P1",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 5.0,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 31,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:chore"
+                    },
+                    {
+                      "name": "area:fiscal"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": null,
+                "blockedBy": {
+                  "nodes": [
+                    {
+                      "number": 94,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 91,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 77,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 73,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 38,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 30,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 29,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 28,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 26,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 25,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 24,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 23,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 22,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 21,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 20,
+                      "state": "OPEN",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 19,
+                      "state": "CLOSED",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 18,
+                      "state": "CLOSED",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    },
+                    {
+                      "number": 17,
+                      "state": "CLOSED",
+                      "repository": {
+                        "nameWithOwner": "jaoppb/cosmo"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {},
+                  {},
+                  {},
+                  {
+                    "name": "Backlog",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 85,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:catalog"
+                    },
+                    {
+                      "name": "area:stock"
+                    },
+                    {
+                      "name": "area:sales"
+                    },
+                    {
+                      "name": "area:cash"
+                    },
+                    {
+                      "name": "area:printing"
+                    },
+                    {
+                      "name": "epic"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": null,
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {},
+                  {},
+                  {},
+                  {
+                    "name": "In progress",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "name": "P2",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 3.0,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 92,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:chore"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": {
+                  "number": 91,
+                  "labels": {
+                    "nodes": [
+                      {
+                        "name": "type:chore"
+                      },
+                      {
+                        "name": "area:tooling"
+                      }
+                    ]
+                  }
+                },
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {}
+                ]
+              },
+              "content": {}
+            },
+            {
+              "fieldValues": {
+                "nodes": []
+              },
+              "content": null
+            }
+          ]
+        }
+      }
+    }
+  }
+}

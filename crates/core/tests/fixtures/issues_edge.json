@@ -1,0 +1,89 @@
+{
+  "data": {
+    "repository": {
+      "issues": {
+        "totalCount": 3,
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": "Y3Vyc29yOnYyOpHOAAAAAA=="
+        },
+        "nodes": [
+          {
+            "number": 40,
+            "state": "OPEN",
+            "labels": {
+              "nodes": []
+            },
+            "milestone": null,
+            "parent": null,
+            "blockedBy": {
+              "totalCount": 0,
+              "nodes": []
+            }
+          },
+          {
+            "number": 41,
+            "state": "OPEN",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "type:chore"
+                },
+                {
+                  "name": "area:tooling"
+                }
+              ]
+            },
+            "milestone": {
+              "title": "v1"
+            },
+            "parent": {
+              "number": 98
+            },
+            "blockedBy": {
+              "totalCount": 2,
+              "nodes": [
+                {
+                  "number": 7,
+                  "repository": {
+                    "nameWithOwner": "jaoppb/other"
+                  }
+                },
+                {
+                  "number": 91,
+                  "repository": {
+                    "nameWithOwner": "jaoppb/cosmo"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "number": 92,
+            "state": "CLOSED",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "type:chore"
+                },
+                {
+                  "name": "area:tooling"
+                }
+              ]
+            },
+            "milestone": {
+              "title": "v1"
+            },
+            "parent": {
+              "number": 91
+            },
+            "blockedBy": {
+              "totalCount": 0,
+              "nodes": []
+            }
+          }
+        ]
+      }
+    }
+  }
+}

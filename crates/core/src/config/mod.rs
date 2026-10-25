@@ -1,0 +1,175 @@
+//! Configuration for repository target and audit rules, read from `tools.toml`.
+
+use crate::adapters::github::target::Target;
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
+
+/// Repository configuration from `tools.toml`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Config {
+    /// The target GitHub repository and optional project.
+    pub target: TargetConfig,
+    /// Settings for `issues-check`.
+    #[serde(default, rename = "issues-check")]
+    pub issues_check: IssuesCheckConfig,
+}
+
+impl Config {
+    /// Creates a Target from this configuration.
+    #[must_use]
+    pub fn target(&self) -> Target {
+        Target::new(
+            &self.target.owner,
+            &self.target.repository,
+            self.target.project,
+        )
+    }
+
+    /// The issues-check rules configuration.
+    #[must_use]
+    pub const fn rules(&self) -> &RulesConfig {
+        &self.issues_check.rules
+    }
+}
+
+/// Target repository parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct TargetConfig {
+    /// Repository owner (user or organization).
+    pub owner: String,
+    /// Repository name.
+    pub repository: String,
+    /// Project number, if used.
+    #[serde(default)]
+    pub project: Option<u32>,
+}
+
+/// Settings for `issues-check`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+pub struct IssuesCheckConfig {
+    /// Granular rule toggles.
+    #[serde(default)]
+    pub rules: RulesConfig,
+}
+
+/// Granular boolean toggles for each issues-check rule.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct RulesConfig {
+    /// Cycle detection rule.
+    #[serde(default = "default_true")]
+    pub cycle: bool,
+    /// Type and area label checks.
+    #[serde(default = "default_true")]
+    pub labels: bool,
+    /// Project membership rule.
+    #[serde(default = "default_true")]
+    pub membership: bool,
+    /// Milestone requirement rule.
+    #[serde(default = "default_true")]
+    pub milestone: bool,
+    /// Parent requirement rule (every non-epic must have a parent).
+    #[serde(default = "default_true", alias = "require_parent")]
+    pub parent: bool,
+    /// References / text rules (ADR number and SPDD path checks).
+    #[serde(default = "default_true")]
+    pub references: bool,
+    /// Release issue rules.
+    #[serde(default = "default_true")]
+    pub release: bool,
+    /// Text rules (alias / companion for references).
+    #[serde(default = "default_true")]
+    pub text: bool,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+impl Default for RulesConfig {
+    fn default() -> Self {
+        Self {
+            cycle: true,
+            labels: true,
+            membership: true,
+            milestone: true,
+            parent: true,
+            references: true,
+            release: true,
+            text: true,
+        }
+    }
+}
+
+/// How loading the configuration can fail.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    /// Reading the configuration file failed.
+    #[error("failed to read config file at {path}: {source}")]
+    Io {
+        /// File path.
+        path: PathBuf,
+        /// Underlying IO error.
+        #[source]
+        source: std::io::Error,
+    },
+    /// Parsing the configuration failed.
+    #[error("failed to parse config file at {path}: {source}")]
+    Parse {
+        /// File path.
+        path: PathBuf,
+        /// Underlying TOML parse error.
+        #[source]
+        source: toml::de::Error,
+    },
+    /// `tools.toml` was not found.
+    #[error("tools.toml not found in current directory or any parent")]
+    NotFound,
+}
+
+/// Searches for `tools.toml` in `start_dir` and its parent directories.
+#[must_use]
+pub fn find_config(start_dir: &Path) -> Option<PathBuf> {
+    let mut current = Some(start_dir);
+    while let Some(dir) = current {
+        let candidate = dir.join("tools.toml");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        current = dir.parent();
+    }
+    None
+}
+
+/// Loads and parses configuration from the given file path.
+///
+/// # Errors
+///
+/// Returns [`ConfigError`] if the file cannot be read or parsed.
+pub fn load_from_path(path: &Path) -> Result<Config, ConfigError> {
+    let contents = std::fs::read_to_string(path).map_err(|source| ConfigError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    toml::from_str(&contents).map_err(|source| ConfigError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+/// Loads configuration from an explicit path or searches upwards from the current directory.
+///
+/// # Errors
+///
+/// Returns [`ConfigError`] if not found or if reading/parsing fails.
+pub fn load_or_find(explicit_path: Option<&Path>) -> Result<Config, ConfigError> {
+    if let Some(path) = explicit_path {
+        load_from_path(path)
+    } else {
+        let cwd = std::env::current_dir().map_err(|source| ConfigError::Io {
+            path: PathBuf::from("."),
+            source,
+        })?;
+        let found = find_config(&cwd).ok_or(ConfigError::NotFound)?;
+        load_from_path(&found)
+    }
+}

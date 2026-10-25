@@ -1,0 +1,26 @@
+{
+  "data": {
+    "repository": {
+      "issues": {
+        "totalCount": 3,
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        },
+        "nodes": [
+          {
+            "number": 3,
+            "title": "The third issue",
+            "body": "A body.",
+            "comments": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
+            }
+          }
+        ]
+      }
+    }
+  }
+}

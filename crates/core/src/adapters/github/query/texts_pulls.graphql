@@ -1,0 +1,36 @@
+# One page of the repository's pull requests, open, closed and merged, with the
+# text a person reads: the title, the body, the comments, the review bodies and
+# the comments of the review threads.
+query($cursor: String) {
+  repository(owner: "@OWNER@", name: "@REPOSITORY@") {
+    pullRequests(states: [OPEN, CLOSED, MERGED], first: 10, after: $cursor) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        number
+        title
+        body
+        comments(first: 50) {
+          pageInfo { hasNextPage }
+          nodes { body }
+        }
+        reviews(first: 50) {
+          pageInfo { hasNextPage }
+          nodes { body }
+        }
+        reviewThreads(first: 50) {
+          pageInfo { hasNextPage }
+          nodes {
+            comments(first: 50) {
+              pageInfo { hasNextPage }
+              nodes { body }
+            }
+          }
+        }
+      }
+    }
+  }
+}

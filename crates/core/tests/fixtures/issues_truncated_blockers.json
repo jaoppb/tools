@@ -1,0 +1,44 @@
+{
+  "data": {
+    "repository": {
+      "issues": {
+        "totalCount": 1,
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": "Y3Vyc29yOnYyOpHOAAAAAA=="
+        },
+        "nodes": [
+          {
+            "number": 12,
+            "state": "OPEN",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "type:chore"
+                },
+                {
+                  "name": "area:tooling"
+                }
+              ]
+            },
+            "milestone": {
+              "title": "v1"
+            },
+            "parent": null,
+            "blockedBy": {
+              "totalCount": 61,
+              "nodes": [
+                {
+                  "number": 1,
+                  "repository": {
+                    "nameWithOwner": "jaoppb/cosmo"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "data": {
+    "user": {
+      "projectV2": {
+        "id": "PVT_kwHOA6x_Is4BmIoK",
+        "field": {
+          "id": "PVTSSF_lAHOA6x_Is4BmIoKzhky1N0",
+          "options": [
+            {
+              "id": "8fd2e55c",
+              "name": "Backlog"
+            },
+            {
+              "id": "dcb76d48",
+              "name": "Ready"
+            },
+            {
+              "id": "aa26df38",
+              "name": "In progress"
+            },
+            {
+              "id": "571c0c90",
+              "name": "In review"
+            },
+            {
+              "id": "2337ca07",
+              "name": "Done"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

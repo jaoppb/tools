@@ -1,0 +1,88 @@
+{
+  "data": {
+    "repository": {
+      "pullRequests": {
+        "totalCount": 43,
+        "pageInfo": {
+          "hasNextPage": true,
+          "endCursor": "Y3Vyc29yOnYyOpHPAAAAARrV8lU="
+        },
+        "nodes": [
+          {
+            "number": 7,
+            "title": "chore: toolchain, just, lefthook, rumdl, CI and ADR scaffold",
+            "body": "Closes #3. Part of #2.\n\n## What\n\n- Toolchain pins: `rust-toolchain.toml` (Rust 1.98.1) and `mise.tom",
+            "comments": {
+              "pageInfo": {
+                "hasNextPage": true
+              },
+              "nodes": []
+            },
+            "reviews": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "body": "Copilot was unable to review this pull request because the user who requested the review has reached"
+                }
+              ]
+            },
+            "reviewThreads": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
+            }
+          },
+          {
+            "number": 8,
+            "title": "docs: rulebook, ADRs, design docs and realigned SPDD skills",
+            "body": "Closes #5. Part of #2.\n\n## What\n\n- `AGENTS.md` (nine stable sections, Object Calisthenics table with",
+            "comments": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
+            },
+            "reviews": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "body": "Copilot was unable to review this pull request because the user who requested the review has reached"
+                },
+                {
+                  "body": "A review with a body."
+                }
+              ]
+            },
+            "reviewThreads": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "comments": {
+                    "pageInfo": {
+                      "hasNextPage": false
+                    },
+                    "nodes": [
+                      {
+                        "body": "Inline note on the second pull request."
+                      },
+                      {
+                        "body": "A reply in the same thread."
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

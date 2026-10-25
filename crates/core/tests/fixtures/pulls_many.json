@@ -1,0 +1,40 @@
+{
+  "data": {
+    "repository": {
+      "pullRequests": {
+        "pageInfo": {
+          "hasNextPage": true,
+          "endCursor": "pulls-next"
+        },
+        "nodes": [
+          {
+            "closingIssuesReferences": {
+              "nodes": [
+                {
+                  "number": 10
+                },
+                {
+                  "number": 11
+                }
+              ]
+            }
+          },
+          {
+            "closingIssuesReferences": {
+              "nodes": []
+            }
+          },
+          {
+            "closingIssuesReferences": {
+              "nodes": [
+                {
+                  "number": 12
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

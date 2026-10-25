@@ -1,0 +1,95 @@
+{
+  "data": {
+    "repository": {
+      "issues": {
+        "totalCount": 3,
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": "Y3Vyc29yOnYyOpHOAAAAAA=="
+        },
+        "nodes": [
+          {
+            "number": 98,
+            "state": "OPEN",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "epic"
+                },
+                {
+                  "name": "type:chore"
+                },
+                {
+                  "name": "area:tooling"
+                }
+              ]
+            },
+            "milestone": {
+              "title": "v1"
+            },
+            "parent": null,
+            "blockedBy": {
+              "totalCount": 0,
+              "nodes": []
+            }
+          },
+          {
+            "number": 91,
+            "state": "OPEN",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "type:chore"
+                },
+                {
+                  "name": "area:tooling"
+                }
+              ]
+            },
+            "milestone": {
+              "title": "v1"
+            },
+            "parent": {
+              "number": 98
+            },
+            "blockedBy": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "number": 92,
+                  "repository": {
+                    "nameWithOwner": "jaoppb/cosmo"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "number": 92,
+            "state": "CLOSED",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "type:chore"
+                },
+                {
+                  "name": "area:tooling"
+                }
+              ]
+            },
+            "milestone": {
+              "title": "v1"
+            },
+            "parent": {
+              "number": 91
+            },
+            "blockedBy": {
+              "totalCount": 0,
+              "nodes": []
+            }
+          }
+        ]
+      }
+    }
+  }
+}

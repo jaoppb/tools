@@ -1,0 +1,13 @@
+# The Project items of one issue, to find the item of the Cosmo Project.
+query {
+  repository(owner: "@OWNER@", name: "@REPOSITORY@") {
+    issue(number: @NUMBER@) {
+      projectItems(first: 20) {
+        nodes {
+          id
+          project { number }
+        }
+      }
+    }
+  }
+}

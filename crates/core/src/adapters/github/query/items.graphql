@@ -1,0 +1,48 @@
+# One page of the Project's items, with the issue behind each one.
+query($cursor: String) {
+  user(login: "@OWNER@") {
+    projectV2(number: @PROJECT@) {
+      items(first: 100, after: $cursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          fieldValues(first: 20) {
+            nodes {
+              ... on ProjectV2ItemFieldSingleSelectValue {
+                name
+                field { ... on ProjectV2FieldCommon { name } }
+              }
+              ... on ProjectV2ItemFieldNumberValue {
+                number
+                field { ... on ProjectV2FieldCommon { name } }
+              }
+            }
+          }
+          content {
+            ... on Issue {
+              number
+              state
+              repository { nameWithOwner }
+              labels(first: 30) { nodes { name } }
+              milestone { title }
+              parent {
+                number
+                labels(first: 30) { nodes { name } }
+              }
+              blockedBy(first: 50) {
+                nodes {
+                  number
+                  state
+                  repository { nameWithOwner }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

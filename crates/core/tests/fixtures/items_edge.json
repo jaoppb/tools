@@ -1,0 +1,428 @@
+{
+  "data": {
+    "user": {
+      "projectV2": {
+        "items": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "cursor-end"
+          },
+          "nodes": [
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {
+                    "name": "P1",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 3,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 101,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": null,
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {
+                    "name": "Ready",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "name": "P1",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 3,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 102,
+                "state": "CLOSED",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": null,
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {
+                    "name": "Backlog",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "name": "P1",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 3,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 103,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": null,
+                "blockedBy": {
+                  "nodes": [
+                    {
+                      "number": 9,
+                      "state": "CLOSED",
+                      "repository": {
+                        "nameWithOwner": "someone/else"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {
+                    "name": "Backlog",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "number": 3,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 104,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": null,
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {
+                    "name": "Backlog",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "name": "P1",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 3,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 105,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "someone/else"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": null,
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {
+                    "name": "Backlog",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "name": "P1",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 3,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 106,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": {
+                  "number": 107,
+                  "labels": {
+                    "nodes": [
+                      {
+                        "name": "epic"
+                      },
+                      {
+                        "name": "type:feat"
+                      }
+                    ]
+                  }
+                },
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {
+                    "name": "Backlog",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "name": "P1",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 3,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 108,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": {
+                  "number": 109,
+                  "labels": {
+                    "nodes": [
+                      {
+                        "name": "type:feat"
+                      },
+                      {
+                        "name": "area:tooling"
+                      }
+                    ]
+                  }
+                },
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {
+                    "name": "Ready",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "name": "P1",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 3,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 109,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": null,
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

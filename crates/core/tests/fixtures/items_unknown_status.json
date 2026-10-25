@@ -1,0 +1,65 @@
+{
+  "data": {
+    "user": {
+      "projectV2": {
+        "items": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "cursor-end"
+          },
+          "nodes": [
+            {
+              "fieldValues": {
+                "nodes": [
+                  {},
+                  {
+                    "name": "Doing",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "name": "P1",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "number": 3,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 110,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "jaoppb/cosmo"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type:feat"
+                    },
+                    {
+                      "name": "area:tooling"
+                    }
+                  ]
+                },
+                "milestone": {
+                  "title": "v1"
+                },
+                "parent": null,
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

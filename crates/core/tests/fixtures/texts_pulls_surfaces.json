@@ -1,0 +1,62 @@
+{
+  "data": {
+    "repository": {
+      "pullRequests": {
+        "totalCount": 1,
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        },
+        "nodes": [
+          {
+            "number": 9,
+            "title": "ADR-0013 in the title",
+            "body": "ADR-0013 in the body",
+            "comments": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "body": "ADR-0013 in a comment"
+                }
+              ]
+            },
+            "reviews": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "body": "ADR-0013 in a review"
+                },
+                {
+                  "body": ""
+                }
+              ]
+            },
+            "reviewThreads": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "comments": {
+                    "pageInfo": {
+                      "hasNextPage": false
+                    },
+                    "nodes": [
+                      {
+                        "body": "ADR-0013 in a review comment"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

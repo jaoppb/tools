@@ -1,0 +1,86 @@
+{
+  "data": {
+    "repository": {
+      "issues": {
+        "totalCount": 74,
+        "pageInfo": {
+          "hasNextPage": true,
+          "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMC0wMVQwMjo1MzowMFrPAAAAAVEhsIw="
+        },
+        "nodes": [
+          {
+            "number": 1,
+            "state": "CLOSED",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "type:chore"
+                },
+                {
+                  "name": "area:tooling"
+                }
+              ]
+            },
+            "milestone": {
+              "title": "v0"
+            },
+            "parent": null,
+            "blockedBy": {
+              "totalCount": 0,
+              "nodes": []
+            }
+          },
+          {
+            "number": 2,
+            "state": "CLOSED",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "type:chore"
+                },
+                {
+                  "name": "area:tooling"
+                },
+                {
+                  "name": "epic"
+                }
+              ]
+            },
+            "milestone": {
+              "title": "v0"
+            },
+            "parent": null,
+            "blockedBy": {
+              "totalCount": 0,
+              "nodes": []
+            }
+          },
+          {
+            "number": 3,
+            "state": "CLOSED",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "type:chore"
+                },
+                {
+                  "name": "area:tooling"
+                }
+              ]
+            },
+            "milestone": {
+              "title": "v0"
+            },
+            "parent": {
+              "number": 2
+            },
+            "blockedBy": {
+              "totalCount": 0,
+              "nodes": []
+            }
+          }
+        ]
+      }
+    }
+  }
+}

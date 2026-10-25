@@ -1,0 +1,16 @@
+# One page of the open pull requests, with the issues each one closes.
+query($cursor: String) {
+  repository(owner: "@OWNER@", name: "@REPOSITORY@") {
+    pullRequests(states: OPEN, first: 100, after: $cursor) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        closingIssuesReferences(first: 50) {
+          nodes { number }
+        }
+      }
+    }
+  }
+}

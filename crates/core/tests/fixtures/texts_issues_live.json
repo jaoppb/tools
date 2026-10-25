@@ -1,0 +1,41 @@
+{
+  "data": {
+    "repository": {
+      "issues": {
+        "totalCount": 106,
+        "pageInfo": {
+          "hasNextPage": true,
+          "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMC0wNlQyMzozNjo0MFrPAAAAAVXxNiQ="
+        },
+        "nodes": [
+          {
+            "number": 1,
+            "title": "Workspace bootstrap: tooling, boundaries, rules and docs",
+            "body": "## Goal\n\nBootstrap the Cosmo repository: a Rust desktop app that is a **PDV, Stock Manager, NFC-e em",
+            "comments": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
+            }
+          },
+          {
+            "number": 2,
+            "title": "Epic: Bootstrap Cosmo workspace",
+            "body": "## Goal\n\nBootstrap Cosmo from scratch: a Linux desktop app (Rust + iced) that is a **PDV, Stock Mana",
+            "comments": {
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "body": "All sub-issues are done: #3 (toolchain, PR #7), #4 (strict lints and architecture checks, PR #9), #5"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

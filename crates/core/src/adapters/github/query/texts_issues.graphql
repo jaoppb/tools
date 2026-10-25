@@ -1,0 +1,22 @@
+# One page of the repository's issues, open and closed, with the text a person
+# reads: the title, the body and the comments.
+query($cursor: String) {
+  repository(owner: "@OWNER@", name: "@REPOSITORY@") {
+    issues(first: 50, after: $cursor) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        number
+        title
+        body
+        comments(first: 50) {
+          pageInfo { hasNextPage }
+          nodes { body }
+        }
+      }
+    }
+  }
+}

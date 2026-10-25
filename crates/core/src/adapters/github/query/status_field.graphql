@@ -1,0 +1,14 @@
+# The Project id and the Status field with its options.
+query {
+  user(login: "@OWNER@") {
+    projectV2(number: @PROJECT@) {
+      id
+      field(name: "Status") {
+        ... on ProjectV2SingleSelectField {
+          id
+          options { id name }
+        }
+      }
+    }
+  }
+}
