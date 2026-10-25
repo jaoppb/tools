@@ -1,0 +1,33 @@
+name: "Feature"
+description: "New behaviour, capability, or user-facing feature"
+title: "feat: "
+labels: ["type:feat"]
+body:
+  - type: markdown
+    attributes:
+      value: "After filing, set the appropriate `area:` label and milestone (`v0`, `v1`, etc.). See [AGENTS.md](../../AGENTS.md)."
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+      description: "What capability needs to be added and why."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: "Dependencies"
+      description: "Issues that must close first, or blocking relationships."
+      value: |
+        None.
+  - type: textarea
+    id: dod
+    attributes:
+      label: "Definition of Done"
+      description: "Observable, checkable outcomes."
+      value: |
+        - [ ] Feature implemented and verified
+        - [ ] `just check` passes with zero warnings
+        - [ ] `just issues-check` passes
+    validations:
+      required: true
