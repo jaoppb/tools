@@ -28,5 +28,5 @@ This repository is a monorepo for developer tools, repository management utiliti
 |---------------------|----------|--------|
 | Labels (`type:*`, `area:*`) and milestones on open issues | `just issues-check` | Enforced |
 | Form structure | `.github/ISSUE_TEMPLATE/*.yml` with `blank_issues_enabled: false` | Enforced |
-| Merge method (merge commit only) | GitHub repository settings (`just repo-check`) & PR review | Enforced |
+| Repository configuration (settings, labels, milestones) | `just repo-check` & PR review | Enforced |
 | Workspace compilation, lints, tests | `just check` | Enforced |

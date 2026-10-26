@@ -10,6 +10,40 @@ delete_branch_on_merge = true
 merge_commit_title = "PR_TITLE"
 merge_commit_message = "PR_BODY"
 
+[github.labels]
+deprecated = [
+    "bug",
+    "documentation",
+    "duplicate",
+    "enhancement",
+    "good first issue",
+    "help wanted",
+    "invalid",
+    "question",
+    "wontfix",
+    "epic",
+    "accessibility",
+]
+items = [
+    { name = "type:feat", color = "1d76db", description = "New behaviour or capability" },
+    { name = "type:fix", color = "d73a4a", description = "Something is broken" },
+    { name = "type:chore", color = "8b949e", description = "Tooling, CI, housekeeping, dependencies" },
+    { name = "type:docs", color = "0075ca", description = "Documentation, guides, specifications" },
+    { name = "type:refactor", color = "5319e7", description = "Restructure without changing behaviour" },
+    { name = "type:spike", color = "fbca04", description = "Time-boxed research that answers a question" },
+    { name = "area:core", color = "2ea44f", description = "crates/core: domain models, github client, config" },
+    { name = "area:project-sync", color = "0e8a16", description = "crates/project-sync: status synchronization tool" },
+    { name = "area:issues-check", color = "5319e7", description = "crates/issues-check: issue rules and integrity auditor" },
+    { name = "area:tooling", color = "2ea44f", description = "Flake, Nix, Just, CI, Cargo workspace" },
+    { name = "area:docs", color = "0075ca", description = "Documentation, workflow guides, rules" },
+]
+
+[github.milestones]
+items = [
+    { title = "v0", description = "Bootstrap: issue workflow, repository setup, and tooling extraction", state = "open" },
+    { title = "v1", description = "Initial release: stable CLI distribution and packaging", state = "open" },
+]
+
 [github.issues.rules]
 cycle = true
 labels = true

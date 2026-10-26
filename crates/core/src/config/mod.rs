@@ -33,6 +33,18 @@ impl Config {
     pub const fn repo_settings(&self) -> Option<&RepositorySettingsConfig> {
         self.github.repository.settings.as_ref()
     }
+
+    /// The repository labels configuration, if specified.
+    #[must_use]
+    pub const fn labels(&self) -> Option<&LabelsConfig> {
+        self.github.labels.as_ref()
+    }
+
+    /// The repository milestones configuration, if specified.
+    #[must_use]
+    pub const fn milestones(&self) -> Option<&MilestonesConfig> {
+        self.github.milestones.as_ref()
+    }
 }
 
 /// GitHub configuration namespace.
@@ -46,6 +58,12 @@ pub struct GithubConfig {
     /// Issue rules configuration.
     #[serde(default)]
     pub issues: IssuesConfig,
+    /// Repository labels configuration.
+    #[serde(default)]
+    pub labels: Option<LabelsConfig>,
+    /// Repository milestones configuration.
+    #[serde(default)]
+    pub milestones: Option<MilestonesConfig>,
 }
 
 /// Repository coordinates and optional settings.
@@ -96,6 +114,69 @@ pub struct IssuesConfig {
     /// Granular rule toggles.
     #[serde(default)]
     pub rules: RulesConfig,
+}
+
+/// Repository labels configuration.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+pub struct LabelsConfig {
+    /// List of label names to prune.
+    #[serde(default)]
+    pub deprecated: Vec<String>,
+    /// Whether to prune unmanaged labels.
+    #[serde(default)]
+    pub prune_unmanaged: bool,
+    /// Desired labels to enforce.
+    #[serde(default)]
+    pub items: Vec<LabelItemConfig>,
+}
+
+/// A desired repository label definition.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct LabelItemConfig {
+    /// Label name (e.g. `type:feat`).
+    pub name: String,
+    /// Hex color without `#` (e.g. `1d76db`).
+    #[serde(deserialize_with = "deserialize_color")]
+    pub color: String,
+    /// Label description.
+    #[serde(default)]
+    pub description: String,
+}
+
+fn deserialize_color<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    Ok(s.trim_start_matches('#').to_ascii_lowercase())
+}
+
+/// Repository milestones configuration.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+pub struct MilestonesConfig {
+    /// Deprecated milestone titles to close/prune.
+    #[serde(default)]
+    pub deprecated: Vec<String>,
+    /// Desired milestones to enforce.
+    #[serde(default)]
+    pub items: Vec<MilestoneItemConfig>,
+}
+
+/// A desired repository milestone definition.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct MilestoneItemConfig {
+    /// Milestone title (e.g. `v0`).
+    pub title: String,
+    /// Milestone description.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Milestone state (`open` or `closed`).
+    #[serde(default = "default_open")]
+    pub state: String,
+}
+
+pub fn default_open() -> String {
+    "open".to_string()
 }
 
 /// Granular boolean toggles for each issues-check rule.
@@ -263,5 +344,45 @@ mod tests {
         assert!(!config.rules().cycle);
         assert!(config.rules().labels);
         assert!(config.rules().milestone);
+    }
+
+    #[test]
+    fn parses_labels_and_milestones_config() {
+        let toml_str = r##"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.labels]
+            deprecated = ["bug", "epic"]
+            prune_unmanaged = true
+            items = [
+                { name = "type:feat", color = "#1D76DB", description = "New feature" },
+                { name = "type:fix", color = "d73a4a", description = "Bug fix" }
+            ]
+
+            [github.milestones]
+            deprecated = ["v0.9"]
+            items = [
+                { title = "v0", description = "Bootstrap" },
+                { title = "v1", description = "Stable", state = "closed" }
+            ]
+        "##;
+        let config: Config = toml::from_str(toml_str).expect("should parse");
+        let labels = config.labels().expect("labels should exist");
+        assert_eq!(labels.deprecated, vec!["bug", "epic"]);
+        assert!(labels.prune_unmanaged);
+        assert_eq!(labels.items.len(), 2);
+        assert_eq!(labels.items[0].name, "type:feat");
+        assert_eq!(labels.items[0].color, "1d76db"); // normalized: no # and lowercase
+        assert_eq!(labels.items[0].description, "New feature");
+
+        let milestones = config.milestones().expect("milestones should exist");
+        assert_eq!(milestones.deprecated, vec!["v0.9"]);
+        assert_eq!(milestones.items.len(), 2);
+        assert_eq!(milestones.items[0].title, "v0");
+        assert_eq!(milestones.items[0].state, "open"); // default open
+        assert_eq!(milestones.items[1].title, "v1");
+        assert_eq!(milestones.items[1].state, "closed");
     }
 }

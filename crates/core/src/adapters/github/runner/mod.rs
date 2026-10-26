@@ -65,6 +65,30 @@ impl GhRunner {
         command.args(["api", "-X", "PATCH", endpoint, "--input", "-"]);
         run_with_input(&mut command, body)
     }
+
+    /// Runs a REST API POST request against GitHub with a JSON payload provided on standard input.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GhError::Missing`] when the program is not installed, and
+    /// [`GhError::Failed`] when it fails or exits with an error.
+    pub fn rest_post(&self, endpoint: &str, body: &str) -> Result<String, GhError> {
+        let mut command = Command::new(&self.program);
+        command.args(["api", "-X", "POST", endpoint, "--input", "-"]);
+        run_with_input(&mut command, body)
+    }
+
+    /// Runs a REST API DELETE request against GitHub.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GhError::Missing`] when the program is not installed, and
+    /// [`GhError::Failed`] when it fails or exits with an error.
+    pub fn rest_delete(&self, endpoint: &str) -> Result<String, GhError> {
+        let mut command = Command::new(&self.program);
+        command.args(["api", "-X", "DELETE", endpoint]);
+        run(&mut command)
+    }
 }
 
 fn run(command: &mut Command) -> Result<String, GhError> {
