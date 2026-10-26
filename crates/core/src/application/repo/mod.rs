@@ -171,9 +171,15 @@ impl RepoSync {
     ///
     /// Returns [`RepoSyncError`] if reading or writing fails, or if in [`RepoSyncMode::Check`] and actionable drift is found.
     pub fn run(&self, mode: RepoSyncMode) -> Result<RepoSyncOutcome, RepoSyncError> {
+        let effective_entities = RepoEntities {
+            settings: self.entities.settings && self.desired_settings.is_some(),
+            labels: self.entities.labels && self.desired_labels.is_some(),
+            milestones: self.entities.milestones && self.desired_milestones.is_some(),
+        };
+
         let current_state = self
             .repo
-            .get_state(self.entities)
+            .get_state(effective_entities)
             .map_err(|err| RepoSyncError::Read(err.to_string()))?;
 
         let mut setting_diffs = Vec::new();
@@ -232,9 +238,9 @@ impl RepoSync {
                                 .create_label(label)
                                 .map_err(|err| RepoSyncError::Write(err.to_string()))?;
                         }
-                        LabelDiff::Update { desired, .. } => {
+                        LabelDiff::Update { current, desired } => {
                             self.repo
-                                .update_label(desired)
+                                .update_label(&current.name, desired)
                                 .map_err(|err| RepoSyncError::Write(err.to_string()))?;
                         }
                         LabelDiff::Delete { name, .. } => {
@@ -254,9 +260,13 @@ impl RepoSync {
                                 .create_milestone(milestone)
                                 .map_err(|err| RepoSyncError::Write(err.to_string()))?;
                         }
-                        MilestoneDiff::Update { number, desired, .. } => {
+                        MilestoneDiff::Update { current, desired } => {
+                            let number = desired
+                                .number
+                                .or(current.number)
+                                .unwrap_or(0);
                             self.repo
-                                .update_milestone(*number, desired)
+                                .update_milestone(number, desired)
                                 .map_err(|err| RepoSyncError::Write(err.to_string()))?;
                         }
                         MilestoneDiff::Delete { number, .. } => {

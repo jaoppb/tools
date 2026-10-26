@@ -7,7 +7,6 @@ query($cursor: String) {
         endCursor
       }
       nodes {
-        id
         name
         color
         description

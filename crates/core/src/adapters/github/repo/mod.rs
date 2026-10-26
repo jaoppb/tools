@@ -103,9 +103,9 @@ impl GhRepo {
     pub fn get_labels(&self) -> Result<Vec<RepoLabel>, GhError> {
         let mut labels = Vec::new();
         let mut cursor: Option<String> = None;
+        let request = query::repo_labels(&self.target);
 
         loop {
-            let request = query::repo_labels(&self.target);
             let reply = self
                 .runner
                 .graphql(&request, &cursor_fields(cursor.as_deref()))?;
@@ -152,9 +152,9 @@ impl GhRepo {
     pub fn get_milestones(&self) -> Result<Vec<RepoMilestone>, GhError> {
         let mut milestones = Vec::new();
         let mut cursor: Option<String> = None;
+        let request = query::repo_milestones(&self.target);
 
         loop {
-            let request = query::repo_milestones(&self.target);
             let reply = self
                 .runner
                 .graphql(&request, &cursor_fields(cursor.as_deref()))?;
@@ -260,8 +260,8 @@ impl GhRepo {
     /// # Errors
     ///
     /// Returns [`GhError`] if the call fails.
-    pub fn update_label(&self, label: &RepoLabel) -> Result<(), GhError> {
-        let endpoint = format!("repos/{}/labels/{}", self.target.full_name(), label.name);
+    pub fn update_label(&self, current_name: &str, label: &RepoLabel) -> Result<(), GhError> {
+        let endpoint = format!("repos/{}/labels/{current_name}", self.target.full_name());
         let payload = serde_json::json!({
             "new_name": label.name,
             "color": label.color,
@@ -289,11 +289,10 @@ impl GhRepo {
     /// Returns [`GhError`] if the call fails.
     pub fn create_milestone(&self, milestone: &RepoMilestone) -> Result<(), GhError> {
         let endpoint = format!("repos/{}/milestones", self.target.full_name());
+        let desc = milestone.description.as_deref().unwrap_or("");
         let mut payload = serde_json::Map::new();
         payload.insert("title".into(), serde_json::Value::String(milestone.title.clone()));
-        if let Some(ref desc) = milestone.description {
-            payload.insert("description".into(), serde_json::Value::String(desc.clone()));
-        }
+        payload.insert("description".into(), serde_json::Value::String(desc.to_string()));
         payload.insert(
             "state".into(),
             serde_json::Value::String(milestone.state.to_string()),
@@ -310,11 +309,10 @@ impl GhRepo {
     /// Returns [`GhError`] if the call fails.
     pub fn update_milestone(&self, number: u64, milestone: &RepoMilestone) -> Result<(), GhError> {
         let endpoint = format!("repos/{}/milestones/{number}", self.target.full_name());
+        let desc = milestone.description.as_deref().unwrap_or("");
         let mut payload = serde_json::Map::new();
         payload.insert("title".into(), serde_json::Value::String(milestone.title.clone()));
-        if let Some(ref desc) = milestone.description {
-            payload.insert("description".into(), serde_json::Value::String(desc.clone()));
-        }
+        payload.insert("description".into(), serde_json::Value::String(desc.to_string()));
         payload.insert(
             "state".into(),
             serde_json::Value::String(milestone.state.to_string()),

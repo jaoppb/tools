@@ -109,9 +109,6 @@ impl From<&RepositorySettingsConfig> for RepoSettings {
 /// Repository label representation on GitHub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoLabel {
-    /// Label ID on GitHub (GraphQL ID if available).
-    #[serde(default)]
-    pub id: Option<String>,
     /// Label name (e.g. `type:feat`).
     pub name: String,
     /// Hex color without `#` (e.g. `1d76db`).
@@ -126,7 +123,6 @@ impl RepoLabel {
     #[must_use]
     pub fn new(name: impl Into<String>, color: &str, description: impl Into<String>) -> Self {
         Self {
-            id: None,
             name: name.into(),
             color: color.trim_start_matches('#').to_ascii_lowercase(),
             description: description.into(),
@@ -153,7 +149,7 @@ pub enum LabelDiff {
         /// Reason for deletion.
         reason: &'static str,
     },
-    /// Label exists on GitHub but is unmanaged (reported as drift in check mode).
+    /// Label exists on GitHub but is unmanaged (reported when pruning is disabled).
     Unmanaged {
         /// Label name.
         name: String,
@@ -172,6 +168,9 @@ impl std::fmt::Display for LabelDiff {
             }
             Self::Update { current, desired } => {
                 let mut changes = Vec::new();
+                if current.name != desired.name {
+                    changes.push(format!("name '{}' -> '{}'", current.name, desired.name));
+                }
                 if current.color != desired.color {
                     changes.push(format!("color '{}' -> '{}'", current.color, desired.color));
                 }
@@ -189,7 +188,7 @@ impl std::fmt::Display for LabelDiff {
             Self::Unmanaged { name } => {
                 write!(
                     formatter,
-                    "label '{name}': unmanaged drift (exists on GitHub but not in tools.toml)"
+                    "label '{name}': unmanaged (exists on GitHub but not in tools.toml)"
                 )
             }
         }
@@ -205,8 +204,14 @@ impl RepoLabel {
         // Check for missing or modified desired labels
         for item in &desired.items {
             let desired_label = Self::new(&item.name, &item.color, &item.description);
-            if let Some(existing) = current.iter().find(|l| l.name == item.name) {
-                if existing.color != desired_label.color || existing.description != desired_label.description {
+            if let Some(existing) = current
+                .iter()
+                .find(|l| l.name.eq_ignore_ascii_case(&item.name))
+            {
+                let name_differs = existing.name != desired_label.name;
+                let color_differs = existing.color != desired_label.color;
+                let desc_differs = existing.description != desired_label.description;
+                if name_differs || color_differs || desc_differs {
                     diffs.push(LabelDiff::Update {
                         current: existing.clone(),
                         desired: desired_label,
@@ -219,8 +224,14 @@ impl RepoLabel {
 
         // Check for deprecated or unmanaged labels on GitHub
         for label in current {
-            let is_desired = desired.items.iter().any(|item| item.name == label.name);
-            let is_deprecated = desired.deprecated.iter().any(|dep| dep == &label.name);
+            let is_desired = desired
+                .items
+                .iter()
+                .any(|item| item.name.eq_ignore_ascii_case(&label.name));
+            let is_deprecated = desired
+                .deprecated
+                .iter()
+                .any(|dep| dep.eq_ignore_ascii_case(&label.name));
 
             if is_deprecated {
                 diffs.push(LabelDiff::Delete {
@@ -268,21 +279,21 @@ pub enum MilestoneDiff {
     Create(RepoMilestone),
     /// Milestone exists on GitHub but description or state differs.
     Update {
-        /// Milestone number on GitHub.
-        number: u64,
         /// Current milestone on GitHub.
         current: RepoMilestone,
         /// Desired milestone.
         desired: RepoMilestone,
     },
-    /// Milestone is marked deprecated and should be deleted or closed.
+    /// Milestone is marked deprecated (or unmanaged with pruning enabled) and should be deleted.
     Delete {
         /// Milestone number on GitHub.
         number: u64,
         /// Milestone title.
         title: String,
+        /// Reason for deletion.
+        reason: &'static str,
     },
-    /// Milestone exists on GitHub but is unmanaged (reported as drift in check mode).
+    /// Milestone exists on GitHub but is unmanaged (reported when pruning is disabled).
     Unmanaged {
         /// Milestone number on GitHub.
         number: u64,
@@ -302,7 +313,6 @@ impl std::fmt::Display for MilestoneDiff {
                 )
             }
             Self::Update {
-                number: _,
                 current,
                 desired,
             } => {
@@ -317,13 +327,13 @@ impl std::fmt::Display for MilestoneDiff {
                 }
                 write!(formatter, "milestone '{}': update {}", desired.title, changes.join(", "))
             }
-            Self::Delete { title, .. } => {
-                write!(formatter, "milestone '{title}': delete/close (deprecated)")
+            Self::Delete { title, reason, .. } => {
+                write!(formatter, "milestone '{title}': delete ({reason})")
             }
             Self::Unmanaged { title, .. } => {
                 write!(
                     formatter,
-                    "milestone '{title}': unmanaged drift (exists on GitHub but not in tools.toml)"
+                    "milestone '{title}': unmanaged (exists on GitHub but not in tools.toml)"
                 )
             }
         }
@@ -354,7 +364,6 @@ impl RepoMilestone {
 
                 if desc_differs || state_differs {
                     diffs.push(MilestoneDiff::Update {
-                        number: existing_number,
                         current: existing.clone(),
                         desired: Self {
                             number: Some(existing_number),
@@ -377,12 +386,14 @@ impl RepoMilestone {
                 diffs.push(MilestoneDiff::Delete {
                     number,
                     title: milestone.title.clone(),
+                    reason: "deprecated",
                 });
             } else if !is_desired {
                 if desired.prune_unmanaged {
                     diffs.push(MilestoneDiff::Delete {
                         number,
                         title: milestone.title.clone(),
+                        reason: "unmanaged",
                     });
                 } else {
                     diffs.push(MilestoneDiff::Unmanaged {
@@ -432,19 +443,16 @@ mod tests {
     fn label_diff_detects_creates_updates_deletes_and_drift() {
         let current = vec![
             RepoLabel {
-                id: None,
                 name: "type:feat".into(),
                 color: "1d76db".into(),
                 description: "Old description".into(),
             },
             RepoLabel {
-                id: None,
                 name: "deprecated-label".into(),
                 color: "cccccc".into(),
                 description: "To remove".into(),
             },
             RepoLabel {
-                id: None,
                 name: "unmanaged-label".into(),
                 color: "111111".into(),
                 description: "Random label".into(),
@@ -492,11 +500,40 @@ mod tests {
             LabelDiff::Delete { name, reason: "deprecated" } if name == "deprecated-label"
         ));
 
-        // 4. unmanaged-label reported as drift
+        // 4. unmanaged-label reported as unmanaged
         assert!(matches!(
             &diffs[3],
             LabelDiff::Unmanaged { name } if name == "unmanaged-label"
         ));
+    }
+
+    #[test]
+    fn label_diff_matches_case_insensitively_and_updates_casing() {
+        let current = vec![RepoLabel {
+            name: "Type:Feat".into(),
+            color: "1d76db".into(),
+            description: "Feature".into(),
+        }];
+
+        let desired = LabelsConfig {
+            deprecated: Vec::new(),
+            prune_unmanaged: false,
+            items: vec![crate::config::LabelItemConfig {
+                name: "type:feat".into(),
+                color: "1d76db".into(),
+                description: "Feature".into(),
+            }],
+        };
+
+        let diffs = RepoLabel::diff(&current, &desired);
+        assert_eq!(diffs.len(), 1);
+        match &diffs[0] {
+            LabelDiff::Update { current, desired } => {
+                assert_eq!(current.name, "Type:Feat");
+                assert_eq!(desired.name, "type:feat");
+            }
+            other => panic!("expected LabelDiff::Update, got {:?}", other),
+        }
     }
 
     #[test]
@@ -546,7 +583,6 @@ mod tests {
         assert!(matches!(
             &diffs[0],
             MilestoneDiff::Update {
-                number: 1,
                 current,
                 desired,
             } if desired.title == "v0" && current.description.as_deref() == Some("Old bootstrap") && desired.description.as_deref() == Some("New bootstrap")
@@ -561,13 +597,36 @@ mod tests {
         // 3. v0.9 deleted/deprecated
         assert!(matches!(
             &diffs[2],
-            MilestoneDiff::Delete { number: 2, title } if title == "v0.9"
+            MilestoneDiff::Delete { number: 2, title, reason: "deprecated" } if title == "v0.9"
         ));
 
-        // 4. historical unmanaged drift
+        // 4. historical unmanaged
         assert!(matches!(
             &diffs[3],
             MilestoneDiff::Unmanaged { number: 3, title } if title == "historical"
+        ));
+    }
+
+    #[test]
+    fn milestone_diff_prunes_unmanaged_with_unmanaged_reason() {
+        let current = vec![RepoMilestone {
+            number: Some(4),
+            title: "unmanaged-m".into(),
+            description: None,
+            state: MilestoneState::Open,
+        }];
+
+        let desired = MilestonesConfig {
+            deprecated: Vec::new(),
+            prune_unmanaged: true,
+            items: Vec::new(),
+        };
+
+        let diffs = RepoMilestone::diff(&current, &desired);
+        assert_eq!(diffs.len(), 1);
+        assert!(matches!(
+            &diffs[0],
+            MilestoneDiff::Delete { number: 4, title, reason: "unmanaged" } if title == "unmanaged-m"
         ));
     }
 
@@ -593,8 +652,9 @@ mod tests {
         let diffs = RepoMilestone::diff(&current, &desired);
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
-            MilestoneDiff::Update { number, current, desired } => {
-                assert_eq!(*number, 5);
+            MilestoneDiff::Update { current, desired } => {
+                assert_eq!(current.number, Some(5));
+                assert_eq!(desired.number, Some(5));
                 assert_eq!(current.state, MilestoneState::Closed);
                 assert_eq!(desired.state, MilestoneState::Closed);
                 assert_eq!(desired.description.as_deref(), Some("New updated text"));
