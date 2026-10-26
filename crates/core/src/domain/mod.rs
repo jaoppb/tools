@@ -8,6 +8,7 @@ pub mod facts;
 pub mod issue;
 pub mod links;
 pub mod plan;
+pub mod repo;
 pub mod snapshot;
 pub mod target;
 
@@ -20,5 +21,6 @@ pub use crate::domain::facts::{Effort, Facts, Label, Labels, Milestone, Missing,
 pub use crate::domain::issue::{IssueNumber, Lifecycle, Role, Status};
 pub use crate::domain::links::{Blocker, Blockers, Links, Parent};
 pub use crate::domain::plan::{Gap, Gaps, Move, Moves, Plan, Reason, Transition};
+pub use crate::domain::repo::{RepoSettings, SettingDiff};
 pub use crate::domain::snapshot::{Closing, Snapshot};
 pub use crate::domain::target::target;

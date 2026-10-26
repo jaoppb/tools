@@ -1,17 +1,14 @@
-//! Configuration for repository target and audit rules, read from `tools.toml`.
+//! Configuration for repository target, repository settings, and audit rules, read from `tools.toml`.
 
 use crate::adapters::github::target::Target;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Repository configuration from `tools.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Config {
-    /// The target GitHub repository and optional project.
-    pub target: TargetConfig,
-    /// Settings for `issues-check`.
-    #[serde(default, rename = "issues-check")]
-    pub issues_check: IssuesCheckConfig,
+    /// GitHub configuration namespace.
+    pub github: GithubConfig,
 }
 
 impl Config {
@@ -19,41 +16,90 @@ impl Config {
     #[must_use]
     pub fn target(&self) -> Target {
         Target::new(
-            &self.target.owner,
-            &self.target.repository,
-            self.target.project,
+            &self.github.repository.owner,
+            &self.github.repository.name,
+            self.github.project.as_ref().and_then(|p| p.number),
         )
     }
 
     /// The issues-check rules configuration.
     #[must_use]
     pub const fn rules(&self) -> &RulesConfig {
-        &self.issues_check.rules
+        &self.github.issues.rules
+    }
+
+    /// The repository settings configuration, if specified.
+    #[must_use]
+    pub const fn repo_settings(&self) -> Option<&RepositorySettingsConfig> {
+        self.github.repository.settings.as_ref()
     }
 }
 
-/// Target repository parameters.
+/// GitHub configuration namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct TargetConfig {
+pub struct GithubConfig {
+    /// Repository coordinates and settings.
+    pub repository: RepositoryConfig,
+    /// Project coordinates, if used.
+    #[serde(default)]
+    pub project: Option<ProjectConfig>,
+    /// Issue rules configuration.
+    #[serde(default)]
+    pub issues: IssuesConfig,
+}
+
+/// Repository coordinates and optional settings.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct RepositoryConfig {
     /// Repository owner (user or organization).
     pub owner: String,
     /// Repository name.
-    pub repository: String,
-    /// Project number, if used.
+    #[serde(alias = "repository")]
+    pub name: String,
+    /// Target repository settings.
     #[serde(default)]
-    pub project: Option<u32>,
+    pub settings: Option<RepositorySettingsConfig>,
 }
 
-/// Settings for `issues-check`.
+/// Repository merge and branch settings enforced on GitHub.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct RepositorySettingsConfig {
+    /// Whether merge commits are enabled.
+    #[serde(default = "default_true")]
+    pub allow_merge_commit: bool,
+    /// Whether squash merges are enabled.
+    #[serde(default)]
+    pub allow_squash_merge: bool,
+    /// Whether rebase merges are enabled.
+    #[serde(default)]
+    pub allow_rebase_merge: bool,
+    /// Whether head branches are automatically deleted upon merge.
+    #[serde(default = "default_true")]
+    pub delete_branch_on_merge: bool,
+    /// Default merge commit title format (e.g. `PR_TITLE` or `MERGE_MESSAGE`).
+    pub merge_commit_title: String,
+    /// Default merge commit message format (e.g. `PR_BODY`, `PR_TITLE`, or `BLANK`).
+    pub merge_commit_message: String,
+}
+
+/// Project parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
-pub struct IssuesCheckConfig {
+pub struct ProjectConfig {
+    /// Project number, if used.
+    #[serde(default)]
+    pub number: Option<u32>,
+}
+
+/// Settings for issues rules.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+pub struct IssuesConfig {
     /// Granular rule toggles.
     #[serde(default)]
     pub rules: RulesConfig,
 }
 
 /// Granular boolean toggles for each issues-check rule.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct RulesConfig {
     /// Cycle detection rule.
     #[serde(default = "default_true")]
@@ -171,5 +217,51 @@ pub fn load_or_find(explicit_path: Option<&Path>) -> Result<Config, ConfigError>
         })?;
         let found = find_config(&cwd).ok_or(ConfigError::NotFound)?;
         load_from_path(&found)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_domain_based_config() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.repository.settings]
+            allow_merge_commit = true
+            allow_squash_merge = false
+            allow_rebase_merge = false
+            delete_branch_on_merge = true
+            merge_commit_title = "PR_TITLE"
+            merge_commit_message = "PR_BODY"
+
+            [github.project]
+            number = 4
+
+            [github.issues.rules]
+            cycle = false
+            labels = true
+        "#;
+        let config: Config = toml::from_str(toml_str).expect("should parse");
+        let target = config.target();
+        assert_eq!(target.owner(), "jaoppb");
+        assert_eq!(target.repository(), "tools");
+        assert_eq!(target.project(), Some(4));
+
+        let settings = config.repo_settings().expect("settings should exist");
+        assert!(settings.allow_merge_commit);
+        assert!(!settings.allow_squash_merge);
+        assert!(!settings.allow_rebase_merge);
+        assert!(settings.delete_branch_on_merge);
+        assert_eq!(settings.merge_commit_title, "PR_TITLE");
+        assert_eq!(settings.merge_commit_message, "PR_BODY");
+
+        assert!(!config.rules().cycle);
+        assert!(config.rules().labels);
+        assert!(config.rules().milestone);
     }
 }

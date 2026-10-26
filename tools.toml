@@ -1,8 +1,16 @@
-[target]
+[github.repository]
 owner = "jaoppb"
-repository = "tools"
+name = "tools"
 
-[issues-check.rules]
+[github.repository.settings]
+allow_merge_commit = true
+allow_squash_merge = false
+allow_rebase_merge = false
+delete_branch_on_merge = true
+merge_commit_title = "PR_TITLE"
+merge_commit_message = "PR_BODY"
+
+[github.issues.rules]
 cycle = true
 labels = true
 membership = false

@@ -41,6 +41,30 @@ impl GhRunner {
             .args(fields.iter().flat_map(|field| ["-f", field.as_str()]));
         run(&mut command)
     }
+
+    /// Runs a REST API GET request against GitHub.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GhError::Missing`] when the program is not installed, and
+    /// [`GhError::Failed`] when it fails or exits with an error.
+    pub fn rest_get(&self, endpoint: &str) -> Result<String, GhError> {
+        let mut command = Command::new(&self.program);
+        command.args(["api", endpoint]);
+        run(&mut command)
+    }
+
+    /// Runs a REST API PATCH request against GitHub with a JSON payload provided on standard input.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GhError::Missing`] when the program is not installed, and
+    /// [`GhError::Failed`] when it fails or exits with an error.
+    pub fn rest_patch(&self, endpoint: &str, body: &str) -> Result<String, GhError> {
+        let mut command = Command::new(&self.program);
+        command.args(["api", "-X", "PATCH", endpoint, "--input", "-"]);
+        run_with_input(&mut command, body)
+    }
 }
 
 fn run(command: &mut Command) -> Result<String, GhError> {
@@ -50,6 +74,35 @@ fn run(command: &mut Command) -> Result<String, GhError> {
             reason: error.to_string(),
         },
     })?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+    }
+    Err(failure(&output.stderr, &output.status.to_string()))
+}
+
+fn run_with_input(command: &mut Command, input: &str) -> Result<String, GhError> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    let mut child = command.spawn().map_err(|error| match error.kind() {
+        ErrorKind::NotFound => GhError::Missing,
+        _ => GhError::Failed {
+            reason: error.to_string(),
+        },
+    })?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+    }
+
+    let output = child.wait_with_output().map_err(|error| GhError::Failed {
+        reason: error.to_string(),
+    })?;
+
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
