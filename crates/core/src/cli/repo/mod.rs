@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::adapters::github::repo::RepoEntities;
 use crate::adapters::github::target::Target;
 use crate::application::repo::RepoSyncMode;
-use crate::config::{ConfigError, LabelsConfig, MilestonesConfig, load_or_find};
+use crate::config::{LabelsConfig, MilestonesConfig, load_or_find};
 use crate::domain::repo::RepoSettings;
 
 const PROGRAM: &str = "repo-sync";
@@ -112,39 +112,28 @@ impl RepoArguments {
     ///
     /// # Errors
     ///
-    /// Fails when configuration cannot be found or required owner/repo coordinates are missing.
+    /// Fails when configuration cannot be found or read.
     pub fn resolve(&self) -> Result<ResolvedRepo, String> {
-        let loaded = load_or_find(self.config_path.as_deref());
-        let (cfg_owner, cfg_repo, cfg_settings, cfg_labels, cfg_milestones) = match loaded {
-            Ok(cfg) => {
-                let s = cfg.repo_settings().map(RepoSettings::from);
-                let l = cfg.labels().cloned();
-                let m = cfg.milestones().cloned();
-                (
-                    Some(cfg.github.repository.owner),
-                    Some(cfg.github.repository.name),
-                    s,
-                    l,
-                    m,
-                )
-            }
-            Err(ConfigError::NotFound) => (None, None, None, None, None),
-            Err(err) => return Err(err.to_string()),
-        };
+        let cfg = load_or_find(self.config_path.as_deref()).map_err(|err| err.to_string())?;
+        let settings = cfg.repo_settings().map(RepoSettings::from);
+        let labels = cfg.labels().cloned();
+        let milestones = cfg.milestones().cloned();
 
-        let owner = self.owner.clone().or(cfg_owner).ok_or_else(|| {
-            "owner is required (specify via --owner or in tools.toml)".to_string()
-        })?;
-        let repo = self.repo.clone().or(cfg_repo).ok_or_else(|| {
-            "repository is required (specify via --repo or in tools.toml)".to_string()
-        })?;
+        let owner = self
+            .owner
+            .clone()
+            .unwrap_or(cfg.github.repository.owner);
+        let repo = self
+            .repo
+            .clone()
+            .unwrap_or(cfg.github.repository.name);
 
         let target = Target::new(owner, repo, None);
         Ok(ResolvedRepo {
             target,
-            settings: cfg_settings,
-            labels: cfg_labels,
-            milestones: cfg_milestones,
+            settings,
+            labels,
+            milestones,
             entities: self.entities,
         })
     }
@@ -246,5 +235,17 @@ mod tests {
                 milestones: true,
             }
         );
+    }
+
+    #[test]
+    fn resolve_fails_loud_when_config_is_missing() {
+        let args = RepoArguments::parse([
+            "repo-sync".into(),
+            "--config".into(),
+            "non-existent-tools.toml".into(),
+        ])
+        .unwrap();
+        let err = args.resolve().unwrap_err();
+        assert!(err.contains("failed to read config file") || err.contains("not found"));
     }
 }

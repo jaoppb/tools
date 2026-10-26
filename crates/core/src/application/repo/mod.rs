@@ -72,8 +72,8 @@ impl RepoSyncOutcome {
     #[must_use]
     pub fn has_actionable_drift(&self) -> bool {
         !self.setting_diffs.is_empty()
-            || self.label_diffs.iter().any(|d| !matches!(d, LabelDiff::Unmanaged { .. }))
-            || self.milestone_diffs.iter().any(|d| !matches!(d, MilestoneDiff::Unmanaged { .. }))
+            || self.label_diffs.iter().any(LabelDiff::is_actionable)
+            || self.milestone_diffs.iter().any(MilestoneDiff::is_actionable)
     }
 
     /// Setting differences detected.
@@ -194,14 +194,24 @@ impl RepoSync {
         if self.entities.labels
             && let Some(ref desired) = self.desired_labels
         {
-            label_diffs = RepoLabel::diff(&current_state.labels, desired);
+            label_diffs = RepoLabel::diff(
+                &current_state.labels,
+                &desired.items,
+                &desired.deprecated,
+                desired.prune_unmanaged,
+            );
         }
 
         let mut milestone_diffs = Vec::new();
         if self.entities.milestones
             && let Some(ref desired) = self.desired_milestones
         {
-            milestone_diffs = RepoMilestone::diff(&current_state.milestones, desired);
+            milestone_diffs = RepoMilestone::diff(
+                &current_state.milestones,
+                &desired.items,
+                &desired.deprecated,
+                desired.prune_unmanaged,
+            );
         }
 
         let outcome = RepoSyncOutcome::new(setting_diffs, label_diffs, milestone_diffs, mode);
@@ -225,28 +235,38 @@ impl RepoSync {
                 if !outcome.setting_diffs.is_empty()
                     && let Some(ref desired) = self.desired_settings
                 {
-                    self.repo
-                        .update_settings(desired)
-                        .map_err(|err| RepoSyncError::Write(err.to_string()))?;
+                    self.repo.update_settings(desired).map_err(|err| {
+                        RepoSyncError::Write(format!("failed to update repository settings: {err}"))
+                    })?;
                 }
 
                 // 2. Apply label updates
                 for diff in outcome.label_diffs() {
                     match diff {
                         LabelDiff::Create(label) => {
-                            self.repo
-                                .create_label(label)
-                                .map_err(|err| RepoSyncError::Write(err.to_string()))?;
+                            self.repo.create_label(label).map_err(|err| {
+                                RepoSyncError::Write(format!(
+                                    "failed to create label '{}': {err}",
+                                    label.name
+                                ))
+                            })?;
                         }
                         LabelDiff::Update { current, desired } => {
                             self.repo
                                 .update_label(&current.name, desired)
-                                .map_err(|err| RepoSyncError::Write(err.to_string()))?;
+                                .map_err(|err| {
+                                    RepoSyncError::Write(format!(
+                                        "failed to update label '{}': {err}",
+                                        desired.name
+                                    ))
+                                })?;
                         }
                         LabelDiff::Delete { name, .. } => {
-                            self.repo
-                                .delete_label(name)
-                                .map_err(|err| RepoSyncError::Write(err.to_string()))?;
+                            self.repo.delete_label(name).map_err(|err| {
+                                RepoSyncError::Write(format!(
+                                    "failed to delete label '{name}': {err}"
+                                ))
+                            })?;
                         }
                         LabelDiff::Unmanaged { .. } => {}
                     }
@@ -256,23 +276,31 @@ impl RepoSync {
                 for diff in outcome.milestone_diffs() {
                     match diff {
                         MilestoneDiff::Create(milestone) => {
-                            self.repo
-                                .create_milestone(milestone)
-                                .map_err(|err| RepoSyncError::Write(err.to_string()))?;
+                            self.repo.create_milestone(milestone).map_err(|err| {
+                                RepoSyncError::Write(format!(
+                                    "failed to create milestone '{}': {err}",
+                                    milestone.title
+                                ))
+                            })?;
                         }
-                        MilestoneDiff::Update { current, desired } => {
-                            let number = desired
-                                .number
-                                .or(current.number)
-                                .unwrap_or(0);
+                        MilestoneDiff::Update {
+                            number, desired, ..
+                        } => {
                             self.repo
-                                .update_milestone(number, desired)
-                                .map_err(|err| RepoSyncError::Write(err.to_string()))?;
+                                .update_milestone(*number, desired)
+                                .map_err(|err| {
+                                    RepoSyncError::Write(format!(
+                                        "failed to update milestone '{}': {err}",
+                                        desired.title
+                                    ))
+                                })?;
                         }
-                        MilestoneDiff::Delete { number, .. } => {
-                            self.repo
-                                .delete_milestone(*number)
-                                .map_err(|err| RepoSyncError::Write(err.to_string()))?;
+                        MilestoneDiff::Delete { number, title, .. } => {
+                            self.repo.delete_milestone(*number).map_err(|err| {
+                                RepoSyncError::Write(format!(
+                                    "failed to delete milestone '{title}': {err}"
+                                ))
+                            })?;
                         }
                         MilestoneDiff::Unmanaged { .. } => {}
                     }

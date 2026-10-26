@@ -17,15 +17,19 @@ issues-check:
 repo-check:
     cargo run -q -p repo-sync -- --check
 
-# Synchronize GitHub repository settings to match tools.toml
+# Synchronize all GitHub repository configuration (settings, labels, milestones) to match tools.toml
 repo-sync:
+    cargo run -q -p repo-sync
+
+# Synchronize GitHub repository settings only to match tools.toml
+settings-sync:
     cargo run -q -p repo-sync -- --settings
 
-# Synchronize GitHub repository labels to match tools.toml
+# Synchronize GitHub repository labels only to match tools.toml
 labels-sync:
     cargo run -q -p repo-sync -- --labels
 
-# Synchronize GitHub repository milestones to match tools.toml
+# Synchronize GitHub repository milestones only to match tools.toml
 milestones-sync:
     cargo run -q -p repo-sync -- --milestones
 

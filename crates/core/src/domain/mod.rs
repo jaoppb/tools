@@ -21,6 +21,9 @@ pub use crate::domain::facts::{Effort, Facts, Label, Labels, Milestone, Missing,
 pub use crate::domain::issue::{IssueNumber, Lifecycle, Role, Status};
 pub use crate::domain::links::{Blocker, Blockers, Links, Parent};
 pub use crate::domain::plan::{Gap, Gaps, Move, Moves, Plan, Reason, Transition};
-pub use crate::domain::repo::{RepoSettings, SettingDiff};
+pub use crate::domain::repo::{
+    LabelDiff, MilestoneDiff, MilestoneState, RepoLabel, RepoMilestone, RepoMilestoneSpec,
+    RepoSettings, SettingDiff,
+};
 pub use crate::domain::snapshot::{Closing, Snapshot};
 pub use crate::domain::target::target;

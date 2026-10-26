@@ -7,8 +7,9 @@ use crate::adapters::github::project::cursor_fields;
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
-use crate::config::MilestoneState;
-use crate::domain::repo::{RepoLabel, RepoMilestone, RepoSettings};
+use crate::domain::repo::{
+    MilestoneState, RepoLabel, RepoMilestone, RepoMilestoneSpec, RepoSettings,
+};
 
 /// Selection of entity types to query or reconcile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,15 +102,9 @@ impl GhRepo {
     ///
     /// Returns [`GhError`] if the call fails or the response cannot be parsed.
     pub fn get_labels(&self) -> Result<Vec<RepoLabel>, GhError> {
-        let mut labels = Vec::new();
-        let mut cursor: Option<String> = None;
         let request = query::repo_labels(&self.target);
-
-        loop {
-            let reply = self
-                .runner
-                .graphql(&request, &cursor_fields(cursor.as_deref()))?;
-            let parsed: LabelsResponse = serde_json::from_str(&reply).map_err(|error| {
+        paginate(&self.runner, &request, |reply| {
+            let parsed: LabelsResponse = serde_json::from_str(reply).map_err(|error| {
                 GhError::BadReply {
                     reason: format!("failed to parse repository labels: {error}"),
                 }
@@ -123,25 +118,20 @@ impl GhRepo {
                     reason: "missing labels connection in GraphQL reply".into(),
                 })?;
 
-            for node in conn.nodes {
-                labels.push(RepoLabel::new(
-                    node.name,
-                    &node.color,
-                    node.description.unwrap_or_default(),
-                ));
-            }
+            let labels = conn
+                .nodes
+                .into_iter()
+                .map(|node| {
+                    RepoLabel::new(
+                        node.name,
+                        &node.color,
+                        node.description.unwrap_or_default(),
+                    )
+                })
+                .collect();
 
-            if conn.page_info.has_next_page {
-                cursor = conn.page_info.end_cursor;
-                if cursor.is_none() {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        Ok(labels)
+            Ok((conn.page_info, labels))
+        })
     }
 
     /// Fetches all repository milestones via GraphQL with cursor pagination.
@@ -150,15 +140,9 @@ impl GhRepo {
     ///
     /// Returns [`GhError`] if the call fails or the response cannot be parsed.
     pub fn get_milestones(&self) -> Result<Vec<RepoMilestone>, GhError> {
-        let mut milestones = Vec::new();
-        let mut cursor: Option<String> = None;
         let request = query::repo_milestones(&self.target);
-
-        loop {
-            let reply = self
-                .runner
-                .graphql(&request, &cursor_fields(cursor.as_deref()))?;
-            let parsed: MilestonesResponse = serde_json::from_str(&reply).map_err(|error| {
+        paginate(&self.runner, &request, |reply| {
+            let parsed: MilestonesResponse = serde_json::from_str(reply).map_err(|error| {
                 GhError::BadReply {
                     reason: format!("failed to parse repository milestones: {error}"),
                 }
@@ -172,26 +156,19 @@ impl GhRepo {
                     reason: "missing milestones connection in GraphQL reply".into(),
                 })?;
 
-            for node in conn.nodes {
-                milestones.push(RepoMilestone {
-                    number: Some(node.number),
+            let milestones = conn
+                .nodes
+                .into_iter()
+                .map(|node| RepoMilestone {
+                    number: node.number,
                     title: node.title,
                     description: node.description,
                     state: node.state,
-                });
-            }
+                })
+                .collect();
 
-            if conn.page_info.has_next_page {
-                cursor = conn.page_info.end_cursor;
-                if cursor.is_none() {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        Ok(milestones)
+            Ok((conn.page_info, milestones))
+        })
     }
 
     /// Fetches repository state for selected entities.
@@ -261,7 +238,8 @@ impl GhRepo {
     ///
     /// Returns [`GhError`] if the call fails.
     pub fn update_label(&self, current_name: &str, label: &RepoLabel) -> Result<(), GhError> {
-        let endpoint = format!("repos/{}/labels/{current_name}", self.target.full_name());
+        let encoded_name = percent_encode_path_segment(current_name);
+        let endpoint = format!("repos/{}/labels/{encoded_name}", self.target.full_name());
         let payload = serde_json::json!({
             "new_name": label.name,
             "color": label.color,
@@ -277,7 +255,8 @@ impl GhRepo {
     ///
     /// Returns [`GhError`] if the call fails.
     pub fn delete_label(&self, name: &str) -> Result<(), GhError> {
-        let endpoint = format!("repos/{}/labels/{name}", self.target.full_name());
+        let encoded_name = percent_encode_path_segment(name);
+        let endpoint = format!("repos/{}/labels/{encoded_name}", self.target.full_name());
         self.runner.rest_delete(&endpoint)?;
         Ok(())
     }
@@ -287,18 +266,14 @@ impl GhRepo {
     /// # Errors
     ///
     /// Returns [`GhError`] if the call fails.
-    pub fn create_milestone(&self, milestone: &RepoMilestone) -> Result<(), GhError> {
+    pub fn create_milestone(&self, milestone: &RepoMilestoneSpec) -> Result<(), GhError> {
         let endpoint = format!("repos/{}/milestones", self.target.full_name());
-        let desc = milestone.description.as_deref().unwrap_or("");
-        let mut payload = serde_json::Map::new();
-        payload.insert("title".into(), serde_json::Value::String(milestone.title.clone()));
-        payload.insert("description".into(), serde_json::Value::String(desc.to_string()));
-        payload.insert(
-            "state".into(),
-            serde_json::Value::String(milestone.state.to_string()),
-        );
-
-        self.runner.rest_post(&endpoint, &serde_json::Value::Object(payload).to_string())?;
+        let payload = serde_json::json!({
+            "title": milestone.title,
+            "description": milestone.description.as_deref().unwrap_or(""),
+            "state": milestone.state.to_string(),
+        });
+        self.runner.rest_post(&endpoint, &payload.to_string())?;
         Ok(())
     }
 
@@ -307,18 +282,18 @@ impl GhRepo {
     /// # Errors
     ///
     /// Returns [`GhError`] if the call fails.
-    pub fn update_milestone(&self, number: u64, milestone: &RepoMilestone) -> Result<(), GhError> {
+    pub fn update_milestone(
+        &self,
+        number: u64,
+        milestone: &RepoMilestoneSpec,
+    ) -> Result<(), GhError> {
         let endpoint = format!("repos/{}/milestones/{number}", self.target.full_name());
-        let desc = milestone.description.as_deref().unwrap_or("");
-        let mut payload = serde_json::Map::new();
-        payload.insert("title".into(), serde_json::Value::String(milestone.title.clone()));
-        payload.insert("description".into(), serde_json::Value::String(desc.to_string()));
-        payload.insert(
-            "state".into(),
-            serde_json::Value::String(milestone.state.to_string()),
-        );
-
-        self.runner.rest_patch(&endpoint, &serde_json::Value::Object(payload).to_string())?;
+        let payload = serde_json::json!({
+            "title": milestone.title,
+            "description": milestone.description.as_deref().unwrap_or(""),
+            "state": milestone.state.to_string(),
+        });
+        self.runner.rest_patch(&endpoint, &payload.to_string())?;
         Ok(())
     }
 
@@ -332,6 +307,42 @@ impl GhRepo {
         self.runner.rest_delete(&endpoint)?;
         Ok(())
     }
+}
+
+fn percent_encode_path_segment(input: &str) -> String {
+    let mut encoded = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                use std::fmt::Write;
+                let _ = write!(encoded, "%{byte:02X}");
+            }
+        }
+    }
+    encoded
+}
+
+fn paginate<T>(
+    runner: &GhRunner,
+    query: &str,
+    mut extract_page: impl FnMut(&str) -> Result<(PageInfo, Vec<T>), GhError>,
+) -> Result<Vec<T>, GhError> {
+    let mut items = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let reply = runner.graphql(query, &cursor_fields(cursor.as_deref()))?;
+        let (page_info, page_items) = extract_page(&reply)?;
+        items.extend(page_items);
+        if page_info.has_next_page && page_info.end_cursor.is_some() {
+            cursor = page_info.end_cursor;
+        } else {
+            break;
+        }
+    }
+    Ok(items)
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +418,19 @@ struct PageInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn percent_encodes_spaces_and_special_characters() {
+        assert_eq!(
+            percent_encode_path_segment("good first issue"),
+            "good%20first%20issue"
+        );
+        assert_eq!(percent_encode_path_segment("type:feat"), "type%3Afeat");
+        assert_eq!(
+            percent_encode_path_segment("simple-name_1.0"),
+            "simple-name_1.0"
+        );
+    }
 
     #[test]
     fn parses_labels_graphql_response() {

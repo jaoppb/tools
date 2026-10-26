@@ -1,6 +1,7 @@
 //! Configuration for repository target, repository settings, and audit rules, read from `tools.toml`.
 
 use crate::adapters::github::target::Target;
+pub use crate::domain::repo::{MilestoneState, RepoLabel, RepoMilestoneSpec, RepoSettings};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -100,6 +101,19 @@ pub struct RepositorySettingsConfig {
     pub merge_commit_message: String,
 }
 
+impl From<&RepositorySettingsConfig> for RepoSettings {
+    fn from(config: &RepositorySettingsConfig) -> Self {
+        Self {
+            allow_merge_commit: config.allow_merge_commit,
+            allow_squash_merge: config.allow_squash_merge,
+            allow_rebase_merge: config.allow_rebase_merge,
+            delete_branch_on_merge: config.delete_branch_on_merge,
+            merge_commit_title: config.merge_commit_title.clone(),
+            merge_commit_message: config.merge_commit_message.clone(),
+        }
+    }
+}
+
 /// Project parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 pub struct ProjectConfig {
@@ -127,28 +141,7 @@ pub struct LabelsConfig {
     pub prune_unmanaged: bool,
     /// Desired labels to enforce.
     #[serde(default)]
-    pub items: Vec<LabelItemConfig>,
-}
-
-/// A desired repository label definition.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct LabelItemConfig {
-    /// Label name (e.g. `type:feat`).
-    pub name: String,
-    /// Hex color without `#` (e.g. `1d76db`).
-    #[serde(deserialize_with = "deserialize_color")]
-    pub color: String,
-    /// Label description.
-    #[serde(default)]
-    pub description: String,
-}
-
-fn deserialize_color<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    Ok(s.trim_start_matches('#').to_ascii_lowercase())
+    pub items: Vec<RepoLabel>,
 }
 
 /// Repository milestones configuration.
@@ -162,42 +155,7 @@ pub struct MilestonesConfig {
     pub prune_unmanaged: bool,
     /// Desired milestones to enforce.
     #[serde(default)]
-    pub items: Vec<MilestoneItemConfig>,
-}
-
-/// Repository milestone state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MilestoneState {
-    /// Active, open milestone.
-    #[default]
-    #[serde(alias = "OPEN")]
-    Open,
-    /// Closed milestone.
-    #[serde(alias = "CLOSED")]
-    Closed,
-}
-
-impl std::fmt::Display for MilestoneState {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Open => write!(formatter, "open"),
-            Self::Closed => write!(formatter, "closed"),
-        }
-    }
-}
-
-/// A desired repository milestone definition.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct MilestoneItemConfig {
-    /// Milestone title (e.g. `v0`).
-    pub title: String,
-    /// Milestone description.
-    #[serde(default)]
-    pub description: Option<String>,
-    /// Milestone state (`open` or `closed`).
-    #[serde(default)]
-    pub state: MilestoneState,
+    pub items: Vec<RepoMilestoneSpec>,
 }
 
 /// Granular boolean toggles for each issues-check rule.
