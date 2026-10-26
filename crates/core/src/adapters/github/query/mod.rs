@@ -12,6 +12,8 @@ const TEXTS_ISSUES: &str = include_str!("texts_issues.graphql");
 const TEXTS_PULLS: &str = include_str!("texts_pulls.graphql");
 const ITEM_OF_ISSUE: &str = include_str!("item_of_issue.graphql");
 const STATUS_FIELD: &str = include_str!("status_field.graphql");
+const REPO_LABELS: &str = include_str!("repo_labels.graphql");
+const REPO_MILESTONES: &str = include_str!("repo_milestones.graphql");
 
 /// The mutation that sets one single-select field. It takes four variables:
 /// `project`, `item`, `field` and `option`.
@@ -68,4 +70,16 @@ pub fn item_of_issue(target: &Target, number: u64) -> String {
 #[must_use]
 pub fn status_field(target: &Target) -> String {
     fill(STATUS_FIELD, target)
+}
+
+/// One page of repository labels.
+#[must_use]
+pub fn repo_labels(target: &Target) -> String {
+    fill(REPO_LABELS, target)
+}
+
+/// One page of repository milestones.
+#[must_use]
+pub fn repo_milestones(target: &Target) -> String {
+    fill(REPO_MILESTONES, target)
 }

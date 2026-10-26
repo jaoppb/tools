@@ -157,9 +157,34 @@ pub struct MilestonesConfig {
     /// Deprecated milestone titles to close/prune.
     #[serde(default)]
     pub deprecated: Vec<String>,
+    /// Whether to prune unmanaged milestones.
+    #[serde(default)]
+    pub prune_unmanaged: bool,
     /// Desired milestones to enforce.
     #[serde(default)]
     pub items: Vec<MilestoneItemConfig>,
+}
+
+/// Repository milestone state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MilestoneState {
+    /// Active, open milestone.
+    #[default]
+    #[serde(alias = "OPEN")]
+    Open,
+    /// Closed milestone.
+    #[serde(alias = "CLOSED")]
+    Closed,
+}
+
+impl std::fmt::Display for MilestoneState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Open => write!(formatter, "open"),
+            Self::Closed => write!(formatter, "closed"),
+        }
+    }
 }
 
 /// A desired repository milestone definition.
@@ -171,12 +196,8 @@ pub struct MilestoneItemConfig {
     #[serde(default)]
     pub description: Option<String>,
     /// Milestone state (`open` or `closed`).
-    #[serde(default = "default_open")]
-    pub state: String,
-}
-
-pub fn default_open() -> String {
-    "open".to_string()
+    #[serde(default)]
+    pub state: MilestoneState,
 }
 
 /// Granular boolean toggles for each issues-check rule.
@@ -381,8 +402,8 @@ mod tests {
         assert_eq!(milestones.deprecated, vec!["v0.9"]);
         assert_eq!(milestones.items.len(), 2);
         assert_eq!(milestones.items[0].title, "v0");
-        assert_eq!(milestones.items[0].state, "open"); // default open
+        assert_eq!(milestones.items[0].state, MilestoneState::Open); // default open
         assert_eq!(milestones.items[1].title, "v1");
-        assert_eq!(milestones.items[1].state, "closed");
+        assert_eq!(milestones.items[1].state, MilestoneState::Closed);
     }
 }

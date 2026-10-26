@@ -113,7 +113,7 @@ impl RepoArguments {
     /// # Errors
     ///
     /// Fails when configuration cannot be found or required owner/repo coordinates are missing.
-    pub fn resolve_all(&self) -> Result<ResolvedRepo, String> {
+    pub fn resolve(&self) -> Result<ResolvedRepo, String> {
         let loaded = load_or_find(self.config_path.as_deref());
         let (cfg_owner, cfg_repo, cfg_settings, cfg_labels, cfg_milestones) = match loaded {
             Ok(cfg) => {
@@ -147,20 +147,6 @@ impl RepoArguments {
             milestones: cfg_milestones,
             entities: self.entities,
         })
-    }
-
-    /// Resolves the target and desired settings for backwards compatibility.
-    ///
-    /// # Errors
-    ///
-    /// Fails when settings are missing.
-    pub fn resolve(&self) -> Result<(Target, RepoSettings), String> {
-        let resolved = self.resolve_all()?;
-        let s = resolved.settings.ok_or_else(|| {
-            "repository settings not configured in tools.toml under [github.repository.settings]"
-                .to_string()
-        })?;
-        Ok((resolved.target, s))
     }
 }
 

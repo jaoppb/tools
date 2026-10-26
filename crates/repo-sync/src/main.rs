@@ -31,9 +31,9 @@ fn run() -> Result<String, Exit> {
         code: usage.exit_code(),
     })?;
     let resolved = arguments
-        .resolve_all()
+        .resolve()
         .map_err(|err| Exit { text: err, code: 2 })?;
-    let repo_sync = RepoSync::with_entities(
+    let repo_sync = RepoSync::new(
         GhRepo::new(resolved.target),
         resolved.settings,
         resolved.labels,

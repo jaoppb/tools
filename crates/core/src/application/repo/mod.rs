@@ -68,15 +68,17 @@ impl RepoSyncOutcome {
             || !self.milestone_diffs.is_empty()
     }
 
+    /// Whether actionable drift was detected (settings drift or items to create, update, or delete).
+    #[must_use]
+    pub fn has_actionable_drift(&self) -> bool {
+        !self.setting_diffs.is_empty()
+            || self.label_diffs.iter().any(|d| !matches!(d, LabelDiff::Unmanaged { .. }))
+            || self.milestone_diffs.iter().any(|d| !matches!(d, MilestoneDiff::Unmanaged { .. }))
+    }
+
     /// Setting differences detected.
     #[must_use]
     pub fn setting_diffs(&self) -> &[SettingDiff] {
-        &self.setting_diffs
-    }
-
-    /// Alias for setting differences for backwards compatibility.
-    #[must_use]
-    pub fn diffs(&self) -> &[SettingDiff] {
         &self.setting_diffs
     }
 
@@ -94,7 +96,7 @@ impl RepoSyncOutcome {
 }
 
 impl fmt::Display for RepoSyncOutcome {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> fmt::Result {
         if !self.has_diffs() {
             return writeln!(formatter, "repository configuration is in sync");
         }
@@ -121,7 +123,13 @@ impl fmt::Display for RepoSyncOutcome {
         }
 
         match self.mode {
-            RepoSyncMode::Check => writeln!(formatter, "drift detected (check failed)"),
+            RepoSyncMode::Check => {
+                if self.has_actionable_drift() {
+                    writeln!(formatter, "drift detected (check failed)")
+                } else {
+                    writeln!(formatter, "unmanaged items detected (pruning disabled)")
+                }
+            }
             RepoSyncMode::Preview => writeln!(formatter, "dry-run: no changes applied"),
             RepoSyncMode::Apply => writeln!(formatter, "repository successfully updated"),
         }
@@ -139,25 +147,9 @@ pub struct RepoSync {
 }
 
 impl RepoSync {
-    /// Creates a new `RepoSync` handler for settings only.
-    #[must_use]
-    pub const fn new(repo: GhRepo, desired: RepoSettings) -> Self {
-        Self {
-            repo,
-            desired_settings: Some(desired),
-            desired_labels: None,
-            desired_milestones: None,
-            entities: RepoEntities {
-                settings: true,
-                labels: false,
-                milestones: false,
-            },
-        }
-    }
-
     /// Creates a `RepoSync` handler with all desired configurations and selected entities.
     #[must_use]
-    pub const fn with_entities(
+    pub const fn new(
         repo: GhRepo,
         desired_settings: Option<RepoSettings>,
         desired_labels: Option<LabelsConfig>,
@@ -177,7 +169,7 @@ impl RepoSync {
     ///
     /// # Errors
     ///
-    /// Returns [`RepoSyncError`] if reading or writing fails, or if in [`RepoSyncMode::Check`] and drift is found.
+    /// Returns [`RepoSyncError`] if reading or writing fails, or if in [`RepoSyncMode::Check`] and actionable drift is found.
     pub fn run(&self, mode: RepoSyncMode) -> Result<RepoSyncOutcome, RepoSyncError> {
         let current_state = self
             .repo
@@ -214,8 +206,12 @@ impl RepoSync {
 
         match mode {
             RepoSyncMode::Check => {
-                let report = outcome.to_string();
-                Err(RepoSyncError::Drift(report))
+                if outcome.has_actionable_drift() {
+                    let report = outcome.to_string();
+                    Err(RepoSyncError::Drift(report))
+                } else {
+                    Ok(outcome)
+                }
             }
             RepoSyncMode::Preview => Ok(outcome),
             RepoSyncMode::Apply => {
@@ -236,19 +232,9 @@ impl RepoSync {
                                 .create_label(label)
                                 .map_err(|err| RepoSyncError::Write(err.to_string()))?;
                         }
-                        LabelDiff::Update {
-                            name,
-                            new_color,
-                            new_description,
-                            ..
-                        } => {
+                        LabelDiff::Update { desired, .. } => {
                             self.repo
-                                .update_label(&RepoLabel {
-                                    id: None,
-                                    name: name.clone(),
-                                    color: new_color.clone(),
-                                    description: new_description.clone(),
-                                })
+                                .update_label(desired)
                                 .map_err(|err| RepoSyncError::Write(err.to_string()))?;
                         }
                         LabelDiff::Delete { name, .. } => {
@@ -256,9 +242,7 @@ impl RepoSync {
                                 .delete_label(name)
                                 .map_err(|err| RepoSyncError::Write(err.to_string()))?;
                         }
-                        LabelDiff::Unmanaged { .. } => {
-                            // Unmanaged labels are preserved on apply
-                        }
+                        LabelDiff::Unmanaged { .. } => {}
                     }
                 }
 
@@ -270,30 +254,9 @@ impl RepoSync {
                                 .create_milestone(milestone)
                                 .map_err(|err| RepoSyncError::Write(err.to_string()))?;
                         }
-                        MilestoneDiff::Update {
-                            number,
-                            title,
-                            description_change,
-                            state_change,
-                        } => {
-                            // Find desired description & state
-                            let desc = description_change
-                                .as_ref()
-                                .map(|(_, new_d)| new_d.clone());
-                            let state = state_change
-                                .as_ref()
-                                .map_or_else(|| "open".to_string(), |(_, new_s)| new_s.clone());
-
+                        MilestoneDiff::Update { number, desired, .. } => {
                             self.repo
-                                .update_milestone(
-                                    *number,
-                                    &RepoMilestone {
-                                        number: Some(*number),
-                                        title: title.clone(),
-                                        description: desc,
-                                        state,
-                                    },
-                                )
+                                .update_milestone(*number, desired)
                                 .map_err(|err| RepoSyncError::Write(err.to_string()))?;
                         }
                         MilestoneDiff::Delete { number, .. } => {
@@ -301,14 +264,47 @@ impl RepoSync {
                                 .delete_milestone(*number)
                                 .map_err(|err| RepoSyncError::Write(err.to_string()))?;
                         }
-                        MilestoneDiff::Unmanaged { .. } => {
-                            // Unmanaged milestones are preserved on apply
-                        }
+                        MilestoneDiff::Unmanaged { .. } => {}
                     }
                 }
 
                 Ok(outcome)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::repo::SettingDiff;
+
+    #[test]
+    fn outcome_distinguishes_actionable_drift_from_unmanaged_items() {
+        let unmanaged_label = LabelDiff::Unmanaged {
+            name: "random-tag".into(),
+        };
+        let outcome = RepoSyncOutcome::new(
+            Vec::new(),
+            vec![unmanaged_label],
+            Vec::new(),
+            RepoSyncMode::Check,
+        );
+        assert!(outcome.has_diffs());
+        assert!(!outcome.has_actionable_drift());
+
+        let setting_diff = SettingDiff {
+            name: "allow_merge_commit",
+            current: "false".into(),
+            desired: "true".into(),
+        };
+        let drift_outcome = RepoSyncOutcome::new(
+            vec![setting_diff],
+            Vec::new(),
+            Vec::new(),
+            RepoSyncMode::Check,
+        );
+        assert!(drift_outcome.has_diffs());
+        assert!(drift_outcome.has_actionable_drift());
     }
 }

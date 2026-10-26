@@ -11,6 +11,8 @@ fn every_filled_query_has_no_placeholder_left() {
         query::pulls(&target),
         query::item_of_issue(&target, 20),
         query::status_field(&target),
+        query::repo_labels(&target),
+        query::repo_milestones(&target),
     ];
     assert!(queries.iter().all(|text| !text.contains('@')));
 }

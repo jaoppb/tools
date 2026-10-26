@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{LabelsConfig, MilestonesConfig, RepositorySettingsConfig, default_open};
+use crate::config::{LabelsConfig, MilestoneState, MilestonesConfig, RepositorySettingsConfig};
 
 /// Repository settings enforced on GitHub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,6 +121,19 @@ pub struct RepoLabel {
     pub description: String,
 }
 
+impl RepoLabel {
+    /// Creates a new label with normalized hex color.
+    #[must_use]
+    pub fn new(name: impl Into<String>, color: &str, description: impl Into<String>) -> Self {
+        Self {
+            id: None,
+            name: name.into(),
+            color: color.trim_start_matches('#').to_ascii_lowercase(),
+            description: description.into(),
+        }
+    }
+}
+
 /// A difference or required action for repository labels.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LabelDiff {
@@ -128,16 +141,10 @@ pub enum LabelDiff {
     Create(RepoLabel),
     /// Label exists on GitHub but attributes differ.
     Update {
-        /// Label name.
-        name: String,
-        /// Old color on GitHub.
-        old_color: String,
-        /// New desired color.
-        new_color: String,
-        /// Old description on GitHub.
-        old_description: String,
-        /// New desired description.
-        new_description: String,
+        /// Current label state on GitHub.
+        current: RepoLabel,
+        /// Desired label state.
+        desired: RepoLabel,
     },
     /// Label is marked deprecated (or unmanaged with prune enabled) and should be deleted.
     Delete {
@@ -163,21 +170,18 @@ impl std::fmt::Display for LabelDiff {
                     label.name, label.color, label.description
                 )
             }
-            Self::Update {
-                name,
-                old_color,
-                new_color,
-                old_description,
-                new_description,
-            } => {
+            Self::Update { current, desired } => {
                 let mut changes = Vec::new();
-                if old_color != new_color {
-                    changes.push(format!("color '{old_color}' -> '{new_color}'"));
+                if current.color != desired.color {
+                    changes.push(format!("color '{}' -> '{}'", current.color, desired.color));
                 }
-                if old_description != new_description {
-                    changes.push(format!("description '{old_description}' -> '{new_description}'"));
+                if current.description != desired.description {
+                    changes.push(format!(
+                        "description '{}' -> '{}'",
+                        current.description, desired.description
+                    ));
                 }
-                write!(formatter, "label '{name}': update {}", changes.join(", "))
+                write!(formatter, "label '{}': update {}", desired.name, changes.join(", "))
             }
             Self::Delete { name, reason } => {
                 write!(formatter, "label '{name}': delete ({reason})")
@@ -200,25 +204,16 @@ impl RepoLabel {
 
         // Check for missing or modified desired labels
         for item in &desired.items {
-            let item_color = item.color.trim_start_matches('#').to_ascii_lowercase();
+            let desired_label = Self::new(&item.name, &item.color, &item.description);
             if let Some(existing) = current.iter().find(|l| l.name == item.name) {
-                let existing_color = existing.color.trim_start_matches('#').to_ascii_lowercase();
-                if existing_color != item_color || existing.description != item.description {
+                if existing.color != desired_label.color || existing.description != desired_label.description {
                     diffs.push(LabelDiff::Update {
-                        name: item.name.clone(),
-                        old_color: existing_color,
-                        new_color: item_color,
-                        old_description: existing.description.clone(),
-                        new_description: item.description.clone(),
+                        current: existing.clone(),
+                        desired: desired_label,
                     });
                 }
             } else {
-                diffs.push(LabelDiff::Create(Self {
-                    id: None,
-                    name: item.name.clone(),
-                    color: item_color,
-                    description: item.description.clone(),
-                }));
+                diffs.push(LabelDiff::Create(desired_label));
             }
         }
 
@@ -262,8 +257,8 @@ pub struct RepoMilestone {
     #[serde(default)]
     pub description: Option<String>,
     /// Milestone state (`open` or `closed`).
-    #[serde(default = "default_open")]
-    pub state: String,
+    #[serde(default)]
+    pub state: MilestoneState,
 }
 
 /// A difference or required action for repository milestones.
@@ -275,12 +270,10 @@ pub enum MilestoneDiff {
     Update {
         /// Milestone number on GitHub.
         number: u64,
-        /// Milestone title.
-        title: String,
-        /// Description change (old, new).
-        description_change: Option<(String, String)>,
-        /// State change (old, new).
-        state_change: Option<(String, String)>,
+        /// Current milestone on GitHub.
+        current: RepoMilestone,
+        /// Desired milestone.
+        desired: RepoMilestone,
     },
     /// Milestone is marked deprecated and should be deleted or closed.
     Delete {
@@ -309,19 +302,20 @@ impl std::fmt::Display for MilestoneDiff {
                 )
             }
             Self::Update {
-                title,
-                description_change,
-                state_change,
-                ..
+                number: _,
+                current,
+                desired,
             } => {
                 let mut changes = Vec::new();
-                if let Some((old_d, new_d)) = description_change {
-                    changes.push(format!("description '{old_d}' -> '{new_d}'"));
+                let cur_desc = current.description.as_deref().unwrap_or_default();
+                let des_desc = desired.description.as_deref().unwrap_or_default();
+                if cur_desc != des_desc {
+                    changes.push(format!("description '{cur_desc}' -> '{des_desc}'"));
                 }
-                if let Some((old_s, new_s)) = state_change {
-                    changes.push(format!("state '{old_s}' -> '{new_s}'"));
+                if current.state != desired.state {
+                    changes.push(format!("state '{}' -> '{}'", current.state, desired.state));
                 }
-                write!(formatter, "milestone '{title}': update {}", changes.join(", "))
+                write!(formatter, "milestone '{}': update {}", desired.title, changes.join(", "))
             }
             Self::Delete { title, .. } => {
                 write!(formatter, "milestone '{title}': delete/close (deprecated)")
@@ -344,41 +338,32 @@ impl RepoMilestone {
 
         // Check for missing or modified desired milestones
         for item in &desired.items {
-            let item_state = item.state.to_ascii_lowercase();
-            let item_desc = item.description.clone().unwrap_or_default();
+            let desired_milestone = Self {
+                number: None,
+                title: item.title.clone(),
+                description: item.description.clone(),
+                state: item.state,
+            };
 
             if let Some(existing) = current.iter().find(|m| m.title == item.title) {
                 let existing_number = existing.number.unwrap_or(0);
-                let existing_state = existing.state.to_ascii_lowercase();
-                let existing_desc = existing.description.clone().unwrap_or_default();
+                let cur_desc = existing.description.as_deref().unwrap_or_default();
+                let des_desc = item.description.as_deref().unwrap_or_default();
+                let desc_differs = cur_desc != des_desc;
+                let state_differs = existing.state != item.state;
 
-                let desc_change = if existing_desc != item_desc {
-                    Some((existing_desc, item_desc))
-                } else {
-                    None
-                };
-
-                let state_change = if existing_state != item_state {
-                    Some((existing_state, item_state))
-                } else {
-                    None
-                };
-
-                if desc_change.is_some() || state_change.is_some() {
+                if desc_differs || state_differs {
                     diffs.push(MilestoneDiff::Update {
                         number: existing_number,
-                        title: item.title.clone(),
-                        description_change: desc_change,
-                        state_change,
+                        current: existing.clone(),
+                        desired: Self {
+                            number: Some(existing_number),
+                            ..desired_milestone
+                        },
                     });
                 }
             } else {
-                diffs.push(MilestoneDiff::Create(Self {
-                    number: None,
-                    title: item.title.clone(),
-                    description: item.description.clone(),
-                    state: item_state,
-                }));
+                diffs.push(MilestoneDiff::Create(desired_milestone));
             }
         }
 
@@ -394,10 +379,17 @@ impl RepoMilestone {
                     title: milestone.title.clone(),
                 });
             } else if !is_desired {
-                diffs.push(MilestoneDiff::Unmanaged {
-                    number,
-                    title: milestone.title.clone(),
-                });
+                if desired.prune_unmanaged {
+                    diffs.push(MilestoneDiff::Delete {
+                        number,
+                        title: milestone.title.clone(),
+                    });
+                } else {
+                    diffs.push(MilestoneDiff::Unmanaged {
+                        number,
+                        title: milestone.title.clone(),
+                    });
+                }
             }
         }
 
@@ -483,11 +475,9 @@ mod tests {
         assert!(matches!(
             &diffs[0],
             LabelDiff::Update {
-                name,
-                old_description,
-                new_description,
-                ..
-            } if name == "type:feat" && old_description == "Old description" && new_description == "New description"
+                current,
+                desired,
+            } if desired.name == "type:feat" && current.description == "Old description" && desired.description == "New description"
         ));
 
         // 2. type:fix created
@@ -516,34 +506,35 @@ mod tests {
                 number: Some(1),
                 title: "v0".into(),
                 description: Some("Old bootstrap".into()),
-                state: "open".into(),
+                state: MilestoneState::Open,
             },
             RepoMilestone {
                 number: Some(2),
                 title: "v0.9".into(),
                 description: None,
-                state: "open".into(),
+                state: MilestoneState::Open,
             },
             RepoMilestone {
                 number: Some(3),
                 title: "historical".into(),
                 description: None,
-                state: "closed".into(),
+                state: MilestoneState::Closed,
             },
         ];
 
         let desired = MilestonesConfig {
             deprecated: vec!["v0.9".into()],
+            prune_unmanaged: false,
             items: vec![
                 crate::config::MilestoneItemConfig {
                     title: "v0".into(),
                     description: Some("New bootstrap".into()),
-                    state: "open".into(),
+                    state: MilestoneState::Open,
                 },
                 crate::config::MilestoneItemConfig {
                     title: "v1".into(),
                     description: Some("Stable release".into()),
-                    state: "open".into(),
+                    state: MilestoneState::Open,
                 },
             ],
         };
@@ -556,10 +547,9 @@ mod tests {
             &diffs[0],
             MilestoneDiff::Update {
                 number: 1,
-                title,
-                description_change: Some((old_d, new_d)),
-                ..
-            } if title == "v0" && old_d == "Old bootstrap" && new_d == "New bootstrap"
+                current,
+                desired,
+            } if desired.title == "v0" && current.description.as_deref() == Some("Old bootstrap") && desired.description.as_deref() == Some("New bootstrap")
         ));
 
         // 2. v1 created
@@ -579,5 +569,37 @@ mod tests {
             &diffs[3],
             MilestoneDiff::Unmanaged { number: 3, title } if title == "historical"
         ));
+    }
+
+    #[test]
+    fn milestone_diff_preserves_closed_state_when_updating_description() {
+        let current = vec![RepoMilestone {
+            number: Some(5),
+            title: "v0.8".into(),
+            description: Some("Old text".into()),
+            state: MilestoneState::Closed,
+        }];
+
+        let desired = MilestonesConfig {
+            deprecated: Vec::new(),
+            prune_unmanaged: false,
+            items: vec![crate::config::MilestoneItemConfig {
+                title: "v0.8".into(),
+                description: Some("New updated text".into()),
+                state: MilestoneState::Closed,
+            }],
+        };
+
+        let diffs = RepoMilestone::diff(&current, &desired);
+        assert_eq!(diffs.len(), 1);
+        match &diffs[0] {
+            MilestoneDiff::Update { number, current, desired } => {
+                assert_eq!(*number, 5);
+                assert_eq!(current.state, MilestoneState::Closed);
+                assert_eq!(desired.state, MilestoneState::Closed);
+                assert_eq!(desired.description.as_deref(), Some("New updated text"));
+            }
+            other => panic!("expected MilestoneDiff::Update, got {:?}", other),
+        }
     }
 }

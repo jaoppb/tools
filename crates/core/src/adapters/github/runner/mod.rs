@@ -120,7 +120,9 @@ fn run_with_input(command: &mut Command, input: &str) -> Result<String, GhError>
     })?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(input.as_bytes());
+        stdin.write_all(input.as_bytes()).map_err(|error| GhError::Failed {
+            reason: format!("failed to write payload to standard input: {error}"),
+        })?;
     }
 
     let output = child.wait_with_output().map_err(|error| GhError::Failed {

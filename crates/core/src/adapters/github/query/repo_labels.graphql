@@ -1,0 +1,17 @@
+# One page of the repository's labels.
+query($cursor: String) {
+  repository(owner: "@OWNER@", name: "@REPOSITORY@") {
+    labels(first: 100, after: $cursor) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        id
+        name
+        color
+        description
+      }
+    }
+  }
+}
