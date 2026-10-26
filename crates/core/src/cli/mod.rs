@@ -1,6 +1,9 @@
 //! The command line: `project-sync [--dry-run]`, parsed with clap.
 
 pub mod audit;
+pub mod repo;
+
+pub use crate::cli::repo::{RepoArguments, RepoUsageError};
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::path::PathBuf;
@@ -73,9 +76,9 @@ impl Arguments {
         let loaded = load_or_find(self.config_path.as_deref());
         let (cfg_owner, cfg_repo, cfg_proj) = match loaded {
             Ok(cfg) => (
-                Some(cfg.target.owner),
-                Some(cfg.target.repository),
-                cfg.target.project,
+                Some(cfg.github.repository.owner),
+                Some(cfg.github.repository.name),
+                cfg.github.project.and_then(|p| p.number),
             ),
             Err(ConfigError::NotFound) => (None, None, None),
             Err(err) => return Err(err.to_string()),

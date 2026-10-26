@@ -1,5 +1,4 @@
-# Pull request
-
+<!-- PR Title: <type>: <subject> (#<issue>) -->
 Closes #
 
 ## What
@@ -10,3 +9,4 @@ Closes #
 
 - [ ] `just check`
 - [ ] `just issues-check`
+- [ ] `just repo-check`

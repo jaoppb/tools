@@ -56,10 +56,10 @@ impl AuditArguments {
         let loaded = load_or_find(self.config_path.as_deref());
         let (cfg_owner, cfg_repo, cfg_proj, mut rules) = match loaded {
             Ok(cfg) => (
-                Some(cfg.target.owner),
-                Some(cfg.target.repository),
-                cfg.target.project,
-                cfg.issues_check.rules,
+                Some(cfg.github.repository.owner),
+                Some(cfg.github.repository.name),
+                cfg.github.project.and_then(|p| p.number),
+                cfg.github.issues.rules,
             ),
             Err(ConfigError::NotFound) => (None, None, None, RulesConfig::default()),
             Err(err) => return Err(err.to_string()),

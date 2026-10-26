@@ -4,6 +4,7 @@ members = [
     "crates/core",
     "crates/project-sync",
     "crates/issues-check",
+    "crates/repo-sync",
 ]
 
 [workspace.package]
