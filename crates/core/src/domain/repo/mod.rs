@@ -137,6 +137,10 @@ impl RepoLabel {
         prune_unmanaged: bool,
     ) -> Vec<LabelDiff> {
         let mut diffs = Vec::new();
+        let current_by_name: HashMap<String, &Self> = current
+            .iter()
+            .map(|item| (item.name.to_ascii_lowercase(), item))
+            .collect();
         let desired_by_name: HashMap<String, &Self> = desired
             .iter()
             .map(|item| (item.name.to_ascii_lowercase(), item))
@@ -146,18 +150,16 @@ impl RepoLabel {
             .map(|name| name.to_ascii_lowercase())
             .collect();
 
-        // 1. Check desired labels against current
+        // 1. Reconcile desired labels against current (O(M))
         for item in desired {
-            if let Some(existing) = current
-                .iter()
-                .find(|l| l.name.eq_ignore_ascii_case(&item.name))
-            {
+            let key = item.name.to_ascii_lowercase();
+            if let Some(existing) = current_by_name.get(&key) {
                 let name_differs = existing.name != item.name;
                 let color_differs = existing.color != item.color;
                 let desc_differs = existing.description != item.description;
                 if name_differs || color_differs || desc_differs {
                     diffs.push(LabelDiff::Update {
-                        current: existing.clone(),
+                        current: (*existing).clone(),
                         desired: item.clone(),
                     });
                 }
@@ -166,25 +168,28 @@ impl RepoLabel {
             }
         }
 
-        // 2. Check current labels for deprecated or unmanaged
+        // 2. Reconcile current labels for deprecated or unmanaged (O(N))
         for label in current {
             let key = label.name.to_ascii_lowercase();
+            if desired_by_name.contains_key(&key) {
+                // Already reconciled in Step 1 (in sync or updated). Desired takes precedence.
+                continue;
+            }
+
             if deprecated_names.contains(&key) {
                 diffs.push(LabelDiff::Delete {
                     name: label.name.clone(),
                     reason: "deprecated",
                 });
-            } else if !desired_by_name.contains_key(&key) {
-                if prune_unmanaged {
-                    diffs.push(LabelDiff::Delete {
-                        name: label.name.clone(),
-                        reason: "unmanaged",
-                    });
-                } else {
-                    diffs.push(LabelDiff::Unmanaged {
-                        name: label.name.clone(),
-                    });
-                }
+            } else if prune_unmanaged {
+                diffs.push(LabelDiff::Delete {
+                    name: label.name.clone(),
+                    reason: "unmanaged",
+                });
+            } else {
+                diffs.push(LabelDiff::Unmanaged {
+                    name: label.name.clone(),
+                });
             }
         }
 
@@ -271,10 +276,8 @@ impl std::fmt::Display for LabelDiff {
 pub enum MilestoneState {
     /// Active, open milestone.
     #[default]
-    #[serde(alias = "OPEN")]
     Open,
     /// Closed milestone.
-    #[serde(alias = "CLOSED")]
     Closed,
 }
 
@@ -325,13 +328,15 @@ impl RepoMilestone {
         prune_unmanaged: bool,
     ) -> Vec<MilestoneDiff> {
         let mut diffs = Vec::new();
+        let current_by_title: HashMap<&str, &Self> =
+            current.iter().map(|m| (m.title.as_str(), m)).collect();
         let desired_by_title: HashMap<&str, &RepoMilestoneSpec> =
             desired.iter().map(|m| (m.title.as_str(), m)).collect();
         let deprecated_titles: HashSet<&str> = deprecated.iter().map(String::as_str).collect();
 
-        // 1. Check desired milestones against current
+        // 1. Reconcile desired milestones against current (O(M))
         for item in desired {
-            if let Some(existing) = current.iter().find(|m| m.title == item.title) {
+            if let Some(existing) = current_by_title.get(item.title.as_str()) {
                 let cur_desc = existing.description.as_deref().unwrap_or_default();
                 let des_desc = item.description.as_deref().unwrap_or_default();
                 let desc_differs = cur_desc != des_desc;
@@ -339,8 +344,7 @@ impl RepoMilestone {
 
                 if desc_differs || state_differs {
                     diffs.push(MilestoneDiff::Update {
-                        number: existing.number,
-                        current: existing.clone(),
+                        current: (*existing).clone(),
                         desired: item.clone(),
                     });
                 }
@@ -349,28 +353,31 @@ impl RepoMilestone {
             }
         }
 
-        // 2. Check current milestones for deprecated or unmanaged
+        // 2. Reconcile current milestones for deprecated or unmanaged (O(N))
         for milestone in current {
             let title = milestone.title.as_str();
+            if desired_by_title.contains_key(title) {
+                // Already reconciled in Step 1. Desired takes precedence.
+                continue;
+            }
+
             if deprecated_titles.contains(title) {
                 diffs.push(MilestoneDiff::Delete {
                     number: milestone.number,
                     title: milestone.title.clone(),
                     reason: "deprecated",
                 });
-            } else if !desired_by_title.contains_key(title) {
-                if prune_unmanaged {
-                    diffs.push(MilestoneDiff::Delete {
-                        number: milestone.number,
-                        title: milestone.title.clone(),
-                        reason: "unmanaged",
-                    });
-                } else {
-                    diffs.push(MilestoneDiff::Unmanaged {
-                        number: milestone.number,
-                        title: milestone.title.clone(),
-                    });
-                }
+            } else if prune_unmanaged {
+                diffs.push(MilestoneDiff::Delete {
+                    number: milestone.number,
+                    title: milestone.title.clone(),
+                    reason: "unmanaged",
+                });
+            } else {
+                diffs.push(MilestoneDiff::Unmanaged {
+                    number: milestone.number,
+                    title: milestone.title.clone(),
+                });
             }
         }
 
@@ -385,8 +392,6 @@ pub enum MilestoneDiff {
     Create(RepoMilestoneSpec),
     /// Milestone exists on GitHub but description or state differs.
     Update {
-        /// Milestone number on GitHub.
-        number: u64,
         /// Current milestone on GitHub.
         current: RepoMilestone,
         /// Desired milestone specification.
@@ -622,10 +627,9 @@ mod tests {
         assert!(matches!(
             &diffs[0],
             MilestoneDiff::Update {
-                number: 1,
                 current,
                 desired,
-            } if desired.title == "v0" && current.description.as_deref() == Some("Old bootstrap") && desired.description.as_deref() == Some("New bootstrap")
+            } if current.number == 1 && desired.title == "v0" && current.description.as_deref() == Some("Old bootstrap") && desired.description.as_deref() == Some("New bootstrap")
         ));
 
         // 2. v1 created
@@ -683,11 +687,9 @@ mod tests {
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
             MilestoneDiff::Update {
-                number,
                 current,
                 desired,
             } => {
-                assert_eq!(*number, 5);
                 assert_eq!(current.number, 5);
                 assert_eq!(current.state, MilestoneState::Closed);
                 assert_eq!(desired.state, MilestoneState::Closed);
@@ -695,5 +697,46 @@ mod tests {
             }
             other => panic!("expected MilestoneDiff::Update, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn label_diff_ignores_deprecated_if_item_is_in_desired() {
+        let current = vec![RepoLabel {
+            name: "type:feat".into(),
+            color: "1d76db".into(),
+            description: "Feature".into(),
+        }];
+        let desired = vec![RepoLabel {
+            name: "type:feat".into(),
+            color: "1d76db".into(),
+            description: "Feature".into(),
+        }];
+        // "type:feat" mistakenly also in deprecated
+        let deprecated = vec!["type:feat".into()];
+
+        let diffs = RepoLabel::diff(&current, &desired, &deprecated, false);
+        // Should NOT emit a Delete; desired takes precedence and it is in sync
+        assert!(diffs.is_empty());
+    }
+
+    #[test]
+    fn milestone_diff_ignores_deprecated_if_item_is_in_desired() {
+        let current = vec![RepoMilestone {
+            number: 1,
+            title: "v0".into(),
+            description: None,
+            state: MilestoneState::Open,
+        }];
+        let desired = vec![RepoMilestoneSpec {
+            title: "v0".into(),
+            description: None,
+            state: MilestoneState::Open,
+        }];
+        // "v0" mistakenly also in deprecated
+        let deprecated = vec!["v0".into()];
+
+        let diffs = RepoMilestone::diff(&current, &desired, &deprecated, false);
+        // Should NOT emit a Delete; desired takes precedence and it is in sync
+        assert!(diffs.is_empty());
     }
 }

@@ -4,6 +4,7 @@
 pub mod issues;
 pub mod items;
 pub mod pulls;
+pub mod repo;
 pub mod texts;
 pub mod write;
 
@@ -12,6 +13,9 @@ use crate::adapters::github::error::GhError;
 pub use crate::adapters::github::parse::issues::{IssuesPage, parse_issues};
 pub use crate::adapters::github::parse::items::{ItemsPage, parse_items};
 pub use crate::adapters::github::parse::pulls::{PullsPage, parse_pulls};
+pub use crate::adapters::github::parse::repo::{
+    RepoLabelsPage, RepoMilestonesPage, parse_repo_labels, parse_repo_milestones,
+};
 pub use crate::adapters::github::parse::texts::{TextsPage, parse_issue_texts, parse_pull_texts};
 pub use crate::adapters::github::parse::write::{StatusField, parse_item_id, parse_status_field};
 

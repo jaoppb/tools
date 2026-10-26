@@ -1,15 +1,12 @@
 //! Reading repository state via GraphQL and REST API, and updating via REST API.
 
-use serde::Deserialize;
-
 use crate::adapters::github::error::GhError;
+use crate::adapters::github::parse::{parse_repo_labels, parse_repo_milestones};
 use crate::adapters::github::project::cursor_fields;
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
-use crate::domain::repo::{
-    MilestoneState, RepoLabel, RepoMilestone, RepoMilestoneSpec, RepoSettings,
-};
+use crate::domain::repo::{RepoLabel, RepoMilestone, RepoMilestoneSpec, RepoSettings};
 
 /// Selection of entity types to query or reconcile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,33 +101,8 @@ impl GhRepo {
     pub fn get_labels(&self) -> Result<Vec<RepoLabel>, GhError> {
         let request = query::repo_labels(&self.target);
         paginate(&self.runner, &request, |reply| {
-            let parsed: LabelsResponse = serde_json::from_str(reply).map_err(|error| {
-                GhError::BadReply {
-                    reason: format!("failed to parse repository labels: {error}"),
-                }
-            })?;
-
-            let conn = parsed
-                .data
-                .and_then(|d| d.repository)
-                .and_then(|r| r.labels)
-                .ok_or_else(|| GhError::BadReply {
-                    reason: "missing labels connection in GraphQL reply".into(),
-                })?;
-
-            let labels = conn
-                .nodes
-                .into_iter()
-                .map(|node| {
-                    RepoLabel::new(
-                        node.name,
-                        &node.color,
-                        node.description.unwrap_or_default(),
-                    )
-                })
-                .collect();
-
-            Ok((conn.page_info, labels))
+            let page = parse_repo_labels(reply)?;
+            Ok((page.next().map(str::to_owned), page.into_labels()))
         })
     }
 
@@ -142,32 +114,8 @@ impl GhRepo {
     pub fn get_milestones(&self) -> Result<Vec<RepoMilestone>, GhError> {
         let request = query::repo_milestones(&self.target);
         paginate(&self.runner, &request, |reply| {
-            let parsed: MilestonesResponse = serde_json::from_str(reply).map_err(|error| {
-                GhError::BadReply {
-                    reason: format!("failed to parse repository milestones: {error}"),
-                }
-            })?;
-
-            let conn = parsed
-                .data
-                .and_then(|d| d.repository)
-                .and_then(|r| r.milestones)
-                .ok_or_else(|| GhError::BadReply {
-                    reason: "missing milestones connection in GraphQL reply".into(),
-                })?;
-
-            let milestones = conn
-                .nodes
-                .into_iter()
-                .map(|node| RepoMilestone {
-                    number: node.number,
-                    title: node.title,
-                    description: node.description,
-                    state: node.state,
-                })
-                .collect();
-
-            Ok((conn.page_info, milestones))
+            let page = parse_repo_milestones(reply)?;
+            Ok((page.next().map(str::to_owned), page.into_milestones()))
         })
     }
 
@@ -328,91 +276,21 @@ fn percent_encode_path_segment(input: &str) -> String {
 fn paginate<T>(
     runner: &GhRunner,
     query: &str,
-    mut extract_page: impl FnMut(&str) -> Result<(PageInfo, Vec<T>), GhError>,
+    mut extract_page: impl FnMut(&str) -> Result<(Option<String>, Vec<T>), GhError>,
 ) -> Result<Vec<T>, GhError> {
     let mut items = Vec::new();
     let mut cursor: Option<String> = None;
     loop {
         let reply = runner.graphql(query, &cursor_fields(cursor.as_deref()))?;
-        let (page_info, page_items) = extract_page(&reply)?;
+        let (next_cursor, page_items) = extract_page(&reply)?;
         items.extend(page_items);
-        if page_info.has_next_page && page_info.end_cursor.is_some() {
-            cursor = page_info.end_cursor;
+        if let Some(next) = next_cursor {
+            cursor = Some(next);
         } else {
             break;
         }
     }
     Ok(items)
-}
-
-// ---------------------------------------------------------------------------
-// Serde helper models for GraphQL deserialization
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-struct LabelsResponse {
-    data: Option<LabelsData>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LabelsData {
-    repository: Option<LabelsRepo>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LabelsRepo {
-    labels: Option<LabelsConnection>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LabelsConnection {
-    page_info: PageInfo,
-    nodes: Vec<LabelNode>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LabelNode {
-    name: String,
-    color: String,
-    description: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MilestonesResponse {
-    data: Option<MilestonesData>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MilestonesData {
-    repository: Option<MilestonesRepo>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MilestonesRepo {
-    milestones: Option<MilestonesConnection>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MilestonesConnection {
-    page_info: PageInfo,
-    nodes: Vec<MilestoneNode>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MilestoneNode {
-    number: u64,
-    title: String,
-    description: Option<String>,
-    state: MilestoneState,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PageInfo {
-    has_next_page: bool,
-    end_cursor: Option<String>,
 }
 
 #[cfg(test)]
@@ -430,78 +308,5 @@ mod tests {
             percent_encode_path_segment("simple-name_1.0"),
             "simple-name_1.0"
         );
-    }
-
-    #[test]
-    fn parses_labels_graphql_response() {
-        let json = r##"{
-            "data": {
-                "repository": {
-                    "labels": {
-                        "pageInfo": {
-                            "hasNextPage": false,
-                            "endCursor": null
-                        },
-                        "nodes": [
-                            {
-                                "name": "type:feat",
-                                "color": "1d76db",
-                                "description": "New feature"
-                            },
-                            {
-                                "name": "area:core",
-                                "color": "#2EA44F",
-                                "description": null
-                            }
-                        ]
-                    }
-                }
-            }
-        }"##;
-
-        let parsed: LabelsResponse = serde_json::from_str(json).unwrap();
-        let conn = parsed.data.unwrap().repository.unwrap().labels.unwrap();
-        assert!(!conn.page_info.has_next_page);
-        assert_eq!(conn.nodes.len(), 2);
-        assert_eq!(conn.nodes[0].name, "type:feat");
-        assert_eq!(conn.nodes[1].color, "#2EA44F");
-    }
-
-    #[test]
-    fn parses_milestones_graphql_response_with_case_insensitivity() {
-        let json = r##"{
-            "data": {
-                "repository": {
-                    "milestones": {
-                        "pageInfo": {
-                            "hasNextPage": true,
-                            "endCursor": "cursor123"
-                        },
-                        "nodes": [
-                            {
-                                "number": 1,
-                                "title": "v0",
-                                "description": "Bootstrap",
-                                "state": "OPEN"
-                            },
-                            {
-                                "number": 2,
-                                "title": "v1",
-                                "description": null,
-                                "state": "closed"
-                            }
-                        ]
-                    }
-                }
-            }
-        }"##;
-
-        let parsed: MilestonesResponse = serde_json::from_str(json).unwrap();
-        let conn = parsed.data.unwrap().repository.unwrap().milestones.unwrap();
-        assert!(conn.page_info.has_next_page);
-        assert_eq!(conn.page_info.end_cursor.as_deref(), Some("cursor123"));
-        assert_eq!(conn.nodes.len(), 2);
-        assert_eq!(conn.nodes[0].state, MilestoneState::Open);
-        assert_eq!(conn.nodes[1].state, MilestoneState::Closed);
     }
 }

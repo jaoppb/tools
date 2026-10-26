@@ -283,11 +283,9 @@ impl RepoSync {
                                 ))
                             })?;
                         }
-                        MilestoneDiff::Update {
-                            number, desired, ..
-                        } => {
+                        MilestoneDiff::Update { current, desired } => {
                             self.repo
-                                .update_milestone(*number, desired)
+                                .update_milestone(current.number, desired)
                                 .map_err(|err| {
                                     RepoSyncError::Write(format!(
                                         "failed to update milestone '{}': {err}",

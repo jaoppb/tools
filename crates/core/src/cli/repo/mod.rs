@@ -112,12 +112,28 @@ impl RepoArguments {
     ///
     /// # Errors
     ///
-    /// Fails when configuration cannot be found or read.
+    /// Fails when configuration cannot be found or read, or when a requested entity is not configured.
     pub fn resolve(&self) -> Result<ResolvedRepo, String> {
         let cfg = load_or_find(self.config_path.as_deref()).map_err(|err| err.to_string())?;
         let settings = cfg.repo_settings().map(RepoSettings::from);
         let labels = cfg.labels().cloned();
         let milestones = cfg.milestones().cloned();
+
+        let has_filter = self.entities != RepoEntities::ALL;
+
+        if has_filter {
+            if self.entities.settings && settings.is_none() {
+                return Err("repository settings requested via --settings, but not configured in tools.toml under [github.repository.settings]".into());
+            }
+            if self.entities.labels && labels.is_none() {
+                return Err("repository labels requested via --labels, but not configured in tools.toml under [github.labels]".into());
+            }
+            if self.entities.milestones && milestones.is_none() {
+                return Err("repository milestones requested via --milestones, but not configured in tools.toml under [github.milestones]".into());
+            }
+        } else if settings.is_none() && labels.is_none() && milestones.is_none() {
+            return Err("no repository settings, labels, or milestones configured in tools.toml".into());
+        }
 
         let owner = self
             .owner
@@ -247,5 +263,44 @@ mod tests {
         .unwrap();
         let err = args.resolve().unwrap_err();
         assert!(err.contains("failed to read config file") || err.contains("not found"));
+    }
+
+    #[test]
+    fn resolve_fails_loud_when_requested_entity_is_missing() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("test-tools-no-labels.toml");
+        let content = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+        "#;
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(content.as_bytes())
+            .unwrap();
+
+        let args = RepoArguments::parse([
+            "repo-sync".into(),
+            "--labels".into(),
+            "--config".into(),
+            path.to_str().unwrap().into(),
+        ])
+        .unwrap();
+
+        let err = args.resolve().unwrap_err();
+        assert!(err.contains("repository labels requested via --labels, but not configured"));
+
+        let args_all = RepoArguments::parse([
+            "repo-sync".into(),
+            "--config".into(),
+            path.to_str().unwrap().into(),
+        ])
+        .unwrap();
+
+        let err_all = args_all.resolve().unwrap_err();
+        assert!(err_all.contains("no repository settings, labels, or milestones configured"));
+
+        let _ = std::fs::remove_file(path);
     }
 }
