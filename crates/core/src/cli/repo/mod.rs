@@ -3,11 +3,10 @@
 use clap::{Arg, ArgAction, Command};
 use std::path::PathBuf;
 
-use crate::adapters::github::repo::RepoEntities;
 use crate::adapters::github::target::Target;
 use crate::application::repo::RepoSyncMode;
 use crate::config::{LabelsConfig, MilestonesConfig, load_or_find};
-use crate::domain::repo::RepoSettings;
+use crate::domain::repo::{RepoEntities, RepoSettings};
 
 const PROGRAM: &str = "repo-sync";
 const CHECK: &str = "check";

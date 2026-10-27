@@ -61,25 +61,25 @@ impl RepoMilestonesPage {
 }
 
 #[derive(Debug, Deserialize)]
-struct LabelsReply {
-    data: LabelsAnswer,
+struct GraphqlReply<T> {
+    data: RepositoryReply<T>,
 }
 
 #[derive(Debug, Deserialize)]
-struct LabelsAnswer {
-    repository: LabelsRepository,
-}
-
-#[derive(Debug, Deserialize)]
-struct LabelsRepository {
-    labels: LabelsConnection,
+struct RepositoryReply<T> {
+    repository: T,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct LabelsConnection {
+struct Connection<T> {
     page_info: PageCursor,
-    nodes: Vec<LabelNode>,
+    nodes: Vec<T>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LabelsField {
+    labels: Connection<LabelNode>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,7 +95,8 @@ struct LabelNode {
 ///
 /// Returns [`GhError::BadReply`] when the reply cannot be parsed.
 pub fn parse_repo_labels(json: &str) -> Result<RepoLabelsPage, GhError> {
-    let reply: LabelsReply = serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
+    let reply: GraphqlReply<LabelsField> =
+        serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
     let conn = reply.data.repository.labels;
     let next = conn.page_info.next();
     let labels = conn
@@ -107,25 +108,8 @@ pub fn parse_repo_labels(json: &str) -> Result<RepoLabelsPage, GhError> {
 }
 
 #[derive(Debug, Deserialize)]
-struct MilestonesReply {
-    data: MilestonesAnswer,
-}
-
-#[derive(Debug, Deserialize)]
-struct MilestonesAnswer {
-    repository: MilestonesRepository,
-}
-
-#[derive(Debug, Deserialize)]
-struct MilestonesRepository {
-    milestones: MilestonesConnection,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MilestonesConnection {
-    page_info: PageCursor,
-    nodes: Vec<MilestoneNode>,
+struct MilestonesField {
+    milestones: Connection<MilestoneNode>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,7 +126,8 @@ struct MilestoneNode {
 ///
 /// Returns [`GhError::BadReply`] when the reply cannot be parsed or contains an unknown state.
 pub fn parse_repo_milestones(json: &str) -> Result<RepoMilestonesPage, GhError> {
-    let reply: MilestonesReply = serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
+    let reply: GraphqlReply<MilestonesField> =
+        serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
     let conn = reply.data.repository.milestones;
     let next = conn.page_info.next();
     let mut milestones = Vec::with_capacity(conn.nodes.len());

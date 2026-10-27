@@ -34,5 +34,4 @@ milestones-sync:
     cargo run -q -p repo-sync -- --milestones
 
 # Bootstrap and reconcile all repository configuration (settings, labels, milestones)
-repo-bootstrap:
-    cargo run -q -p repo-sync
+repo-bootstrap: repo-sync
