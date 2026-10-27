@@ -1,7 +1,8 @@
 //! Reconciliation planning and state snapshots for repository configuration.
 
 use crate::domain::repo::{
-    LabelDiff, MilestoneDiff, RepoLabel, RepoMilestone, RepoSettings, SettingDiff,
+    LabelDiff, MilestoneDiff, RepoLabel, RepoLabelsSpec, RepoMilestone, RepoMilestonesSpec,
+    RepoSettings, SettingDiff,
 };
 
 /// Reason why a label or milestone is marked for deletion.
@@ -174,8 +175,8 @@ impl RepoState {
     pub fn plan(
         &self,
         desired_settings: Option<&RepoSettings>,
-        desired_labels: Option<&crate::config::LabelsConfig>,
-        desired_milestones: Option<&crate::config::MilestonesConfig>,
+        desired_labels: Option<&RepoLabelsSpec>,
+        desired_milestones: Option<&RepoMilestonesSpec>,
     ) -> RepoPlan {
         let setting_diffs = desired_settings
             .and_then(|desired| self.settings.as_ref().map(|current| current.diff(desired)))
@@ -194,7 +195,7 @@ impl RepoState {
 
         let milestone_diffs = desired_milestones
             .map(|desired| {
-                crate::domain::repo::RepoMilestone::diff(
+                RepoMilestone::diff(
                     &self.milestones,
                     &desired.items,
                     &desired.deprecated,
@@ -241,7 +242,7 @@ mod tests {
             merge_commit_message: "PR_BODY".into(),
         };
 
-        let desired_labels = crate::config::LabelsConfig {
+        let desired_labels = RepoLabelsSpec {
             deprecated: Vec::new(),
             prune_unmanaged: false,
             items: vec![

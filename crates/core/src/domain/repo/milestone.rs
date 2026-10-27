@@ -38,6 +38,20 @@ pub struct RepoMilestoneSpec {
     pub state: MilestoneState,
 }
 
+/// Repository milestones specification and reconciliation policy.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+pub struct RepoMilestonesSpec {
+    /// Deprecated milestone titles to close/prune.
+    #[serde(default)]
+    pub deprecated: Vec<String>,
+    /// Whether to prune unmanaged milestones.
+    #[serde(default)]
+    pub prune_unmanaged: bool,
+    /// Desired milestones to enforce.
+    #[serde(default)]
+    pub items: Vec<RepoMilestoneSpec>,
+}
+
 /// Repository milestone entity on GitHub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoMilestone {

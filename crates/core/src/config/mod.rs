@@ -1,7 +1,9 @@
 //! Configuration for repository target, repository settings, and audit rules, read from `tools.toml`.
 
 use crate::adapters::github::target::Target;
-pub use crate::domain::repo::{MilestoneState, RepoLabel, RepoMilestoneSpec, RepoSettings};
+pub use crate::domain::repo::{
+    MilestoneState, RepoLabel, RepoLabelsSpec, RepoMilestoneSpec, RepoMilestonesSpec, RepoSettings,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -130,33 +132,11 @@ pub struct IssuesConfig {
     pub rules: RulesConfig,
 }
 
-/// Repository labels configuration.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
-pub struct LabelsConfig {
-    /// List of label names to prune.
-    #[serde(default)]
-    pub deprecated: Vec<String>,
-    /// Whether to prune unmanaged labels.
-    #[serde(default)]
-    pub prune_unmanaged: bool,
-    /// Desired labels to enforce.
-    #[serde(default)]
-    pub items: Vec<RepoLabel>,
-}
+/// Repository labels configuration (alias for [`RepoLabelsSpec`]).
+pub type LabelsConfig = RepoLabelsSpec;
 
-/// Repository milestones configuration.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
-pub struct MilestonesConfig {
-    /// Deprecated milestone titles to close/prune.
-    #[serde(default)]
-    pub deprecated: Vec<String>,
-    /// Whether to prune unmanaged milestones.
-    #[serde(default)]
-    pub prune_unmanaged: bool,
-    /// Desired milestones to enforce.
-    #[serde(default)]
-    pub items: Vec<RepoMilestoneSpec>,
-}
+/// Repository milestones configuration (alias for [`RepoMilestonesSpec`]).
+pub type MilestonesConfig = RepoMilestonesSpec;
 
 /// Granular boolean toggles for each issues-check rule.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]

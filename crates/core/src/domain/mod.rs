@@ -22,8 +22,9 @@ pub use crate::domain::issue::{IssueNumber, Lifecycle, Role, Status};
 pub use crate::domain::links::{Blocker, Blockers, Links, Parent};
 pub use crate::domain::plan::{Gap, Gaps, Move, Moves, Plan, Reason, Transition};
 pub use crate::domain::repo::{
-    DeleteReason, LabelDiff, MilestoneDiff, MilestoneState, RepoEntities, RepoLabel, RepoMilestone,
-    RepoMilestoneSpec, RepoPlan, RepoSettings, RepoState, SettingDiff,
+    DeleteReason, LabelDiff, MilestoneDiff, MilestoneState, RepoEntities, RepoLabel,
+    RepoLabelsSpec, RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec, RepoPlan, RepoSettings,
+    RepoState, SettingDiff,
 };
 pub use crate::domain::snapshot::{Closing, Snapshot};
 pub use crate::domain::target::target;

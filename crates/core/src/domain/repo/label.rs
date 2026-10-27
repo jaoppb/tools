@@ -18,6 +18,20 @@ pub struct RepoLabel {
     pub description: String,
 }
 
+/// Repository labels specification and reconciliation policy.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+pub struct RepoLabelsSpec {
+    /// List of label names to prune.
+    #[serde(default)]
+    pub deprecated: Vec<String>,
+    /// Whether to prune unmanaged labels.
+    #[serde(default)]
+    pub prune_unmanaged: bool,
+    /// Desired labels to enforce.
+    #[serde(default)]
+    pub items: Vec<RepoLabel>,
+}
+
 fn normalize_hex_color(color: &str) -> String {
     color.trim_start_matches('#').to_ascii_lowercase()
 }

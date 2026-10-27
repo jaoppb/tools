@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 use crate::adapters::github::target::Target;
 use crate::application::repo::RepoSyncMode;
-use crate::config::{LabelsConfig, MilestonesConfig, load_or_find};
-use crate::domain::repo::{RepoEntities, RepoSettings};
+use crate::config::load_or_find;
+use crate::domain::repo::{RepoEntities, RepoLabelsSpec, RepoMilestonesSpec, RepoSettings};
 
 const PROGRAM: &str = "repo-sync";
 const CHECK: &str = "check";
@@ -35,7 +35,7 @@ impl RepoUsageError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoArguments {
     mode: RepoSyncMode,
-    entities: RepoEntities,
+    explicit_entities: Option<RepoEntities>,
     config_path: Option<PathBuf>,
     owner: Option<String>,
     repo: Option<String>,
@@ -49,9 +49,9 @@ pub struct ResolvedRepo {
     /// Desired repository settings, if configured and selected.
     pub settings: Option<RepoSettings>,
     /// Desired labels configuration, if configured and selected.
-    pub labels: Option<LabelsConfig>,
+    pub labels: Option<RepoLabelsSpec>,
     /// Desired milestones configuration, if configured and selected.
-    pub milestones: Option<MilestonesConfig>,
+    pub milestones: Option<RepoMilestonesSpec>,
 }
 
 impl RepoArguments {
@@ -74,19 +74,19 @@ impl RepoArguments {
             || matches.get_flag(LABELS)
             || matches.get_flag(MILESTONES);
 
-        let entities = if has_filter {
-            RepoEntities {
+        let explicit_entities = if has_filter {
+            Some(RepoEntities {
                 settings: matches.get_flag(SETTINGS),
                 labels: matches.get_flag(LABELS),
                 milestones: matches.get_flag(MILESTONES),
-            }
+            })
         } else {
-            RepoEntities::ALL
+            None
         };
 
         Ok(Self {
             mode,
-            entities,
+            explicit_entities,
             config_path: matches.get_one::<String>(CONFIG).map(PathBuf::from),
             owner: matches.get_one::<String>(OWNER).cloned(),
             repo: matches.get_one::<String>(REPO).cloned(),
@@ -99,10 +99,13 @@ impl RepoArguments {
         self.mode
     }
 
-    /// Selected entities.
+    /// Selected entities, or all entities if no explicit filter flags were supplied.
     #[must_use]
     pub const fn entities(&self) -> RepoEntities {
-        self.entities
+        match self.explicit_entities {
+            Some(entities) => entities,
+            None => RepoEntities::ALL,
+        }
     }
 
     /// Resolves target and all configured resources from `tools.toml` and CLI flags.
@@ -116,25 +119,27 @@ impl RepoArguments {
         let all_labels = cfg.labels().cloned();
         let all_milestones = cfg.milestones().cloned();
 
-        let has_filter = self.entities != RepoEntities::ALL;
-
-        if has_filter {
-            if self.entities.settings && all_settings.is_none() {
+        let (settings, labels, milestones) = if let Some(entities) = self.explicit_entities {
+            if entities.settings && all_settings.is_none() {
                 return Err("repository settings requested via --settings, but not configured in tools.toml under [github.repository.settings]".into());
             }
-            if self.entities.labels && all_labels.is_none() {
+            if entities.labels && all_labels.is_none() {
                 return Err("repository labels requested via --labels, but not configured in tools.toml under [github.labels]".into());
             }
-            if self.entities.milestones && all_milestones.is_none() {
+            if entities.milestones && all_milestones.is_none() {
                 return Err("repository milestones requested via --milestones, but not configured in tools.toml under [github.milestones]".into());
             }
-        } else if all_settings.is_none() && all_labels.is_none() && all_milestones.is_none() {
-            return Err("no repository settings, labels, or milestones configured in tools.toml".into());
-        }
-
-        let settings = if self.entities.settings { all_settings } else { None };
-        let labels = if self.entities.labels { all_labels } else { None };
-        let milestones = if self.entities.milestones { all_milestones } else { None };
+            (
+                if entities.settings { all_settings } else { None },
+                if entities.labels { all_labels } else { None },
+                if entities.milestones { all_milestones } else { None },
+            )
+        } else {
+            if all_settings.is_none() && all_labels.is_none() && all_milestones.is_none() {
+                return Err("no repository settings, labels, or milestones configured in tools.toml".into());
+            }
+            (all_settings, all_labels, all_milestones)
+        };
 
         let owner = self
             .owner
@@ -290,6 +295,19 @@ mod tests {
 
         let err = args.resolve().unwrap_err();
         assert!(err.contains("repository labels requested via --labels, but not configured"));
+
+        let args_all_flags = RepoArguments::parse([
+            "repo-sync".into(),
+            "--settings".into(),
+            "--labels".into(),
+            "--milestones".into(),
+            "--config".into(),
+            path.to_str().unwrap().into(),
+        ])
+        .unwrap();
+
+        let err_all_flags = args_all_flags.resolve().unwrap_err();
+        assert!(err_all_flags.contains("requested via --settings, but not configured"));
 
         let args_all = RepoArguments::parse([
             "repo-sync".into(),

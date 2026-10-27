@@ -16,6 +16,7 @@ mod parse;
 mod queries;
 mod references;
 mod release;
+mod repo_arguments;
 mod texts_parse;
 mod transitions;
 mod violation;

@@ -2,10 +2,9 @@
 
 use std::fmt;
 
-use crate::config::{LabelsConfig, MilestonesConfig};
 use crate::domain::repo::{
-    LabelDiff, MilestoneDiff, RepoEntities, RepoLabel, RepoMilestoneSpec, RepoPlan, RepoSettings,
-    RepoState,
+    LabelDiff, MilestoneDiff, RepoEntities, RepoLabel, RepoLabelsSpec, RepoMilestoneSpec,
+    RepoMilestonesSpec, RepoPlan, RepoSettings, RepoState,
 };
 
 /// Port for querying and modifying repository configuration on GitHub.
@@ -150,8 +149,8 @@ impl fmt::Display for RepoSyncOutcome {
 pub struct RepoSync<P> {
     port: P,
     desired_settings: Option<RepoSettings>,
-    desired_labels: Option<LabelsConfig>,
-    desired_milestones: Option<MilestonesConfig>,
+    desired_labels: Option<RepoLabelsSpec>,
+    desired_milestones: Option<RepoMilestonesSpec>,
 }
 
 impl<P: RepoPort> RepoSync<P> {
@@ -160,8 +159,8 @@ impl<P: RepoPort> RepoSync<P> {
     pub const fn new(
         port: P,
         desired_settings: Option<RepoSettings>,
-        desired_labels: Option<LabelsConfig>,
-        desired_milestones: Option<MilestonesConfig>,
+        desired_labels: Option<RepoLabelsSpec>,
+        desired_milestones: Option<RepoMilestonesSpec>,
     ) -> Self {
         Self {
             port,
@@ -377,7 +376,7 @@ mod tests {
     #[test]
     fn sync_applies_changes_to_port() {
         let port = MockRepoPort::new(RepoState::new(None, Vec::new(), Vec::new()));
-        let desired_labels = LabelsConfig {
+        let desired_labels = RepoLabelsSpec {
             deprecated: vec!["old-label".into()],
             prune_unmanaged: false,
             items: vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
