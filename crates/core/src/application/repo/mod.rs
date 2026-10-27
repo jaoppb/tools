@@ -345,19 +345,19 @@ mod tests {
                 allow_squash_merge: false,
                 allow_rebase_merge: false,
                 delete_branch_on_merge: true,
-                merge_commit_title: "PR_TITLE".into(),
-                merge_commit_message: "PR_BODY".into(),
+                merge_commit_title: Default::default(),
+                merge_commit_message: Default::default(),
             }),
-            Vec::new(),
-            Vec::new(),
+            Some(Vec::new()),
+            Some(Vec::new()),
         ));
         let desired = RepoSettings {
             allow_merge_commit: true,
             allow_squash_merge: false,
             allow_rebase_merge: false,
             delete_branch_on_merge: true,
-            merge_commit_title: "PR_TITLE".into(),
-            merge_commit_message: "PR_BODY".into(),
+            merge_commit_title: Default::default(),
+            merge_commit_message: Default::default(),
         };
         let sync = RepoSync::new(port, RepoSpec::new(Some(desired), None, None));
 
@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn sync_applies_changes_to_port() {
-        let port = MockRepoPort::new(RepoState::new(None, Vec::new(), Vec::new()));
+        let port = MockRepoPort::new(RepoState::new(None, Some(Vec::new()), None));
         let desired_labels = RepoLabelsSpec {
             deprecated: vec!["old-label".into()],
             prune_unmanaged: false,

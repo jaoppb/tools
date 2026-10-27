@@ -2,7 +2,8 @@
 
 use crate::adapters::github::target::Target;
 pub use crate::domain::repo::{
-    MilestoneState, RepoLabel, RepoLabelsSpec, RepoMilestoneSpec, RepoMilestonesSpec, RepoSettings,
+    MergeCommitMessage, MergeCommitTitle, MilestoneState, RepoLabel, RepoLabelsSpec,
+    RepoMilestoneSpec, RepoMilestonesSpec, RepoSettings,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -266,8 +267,8 @@ mod tests {
         assert!(!settings.allow_squash_merge);
         assert!(!settings.allow_rebase_merge);
         assert!(settings.delete_branch_on_merge);
-        assert_eq!(settings.merge_commit_title, "PR_TITLE");
-        assert_eq!(settings.merge_commit_message, "PR_BODY");
+        assert_eq!(settings.merge_commit_title, MergeCommitTitle::PrTitle);
+        assert_eq!(settings.merge_commit_message, MergeCommitMessage::PrBody);
 
         assert!(!config.rules().cycle);
         assert!(config.rules().labels);

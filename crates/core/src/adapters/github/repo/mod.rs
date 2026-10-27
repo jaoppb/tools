@@ -1,7 +1,9 @@
 //! Reading repository state via GraphQL and REST API, and updating via REST API.
 
 use crate::adapters::github::error::GhError;
-use crate::adapters::github::parse::{parse_repo_labels, parse_repo_milestones};
+use crate::adapters::github::parse::{
+    parse_repo_labels, parse_repo_milestones, parse_repo_settings,
+};
 use crate::adapters::github::project::cursor_fields;
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
@@ -51,9 +53,7 @@ impl GhRepo {
     fn get_settings(&self) -> Result<RepoSettings, GhError> {
         let endpoint = self.repo_endpoint("");
         let output = self.runner.rest_get(&endpoint)?;
-        serde_json::from_str(&output).map_err(|error| GhError::BadReply {
-            reason: format!("failed to parse repository settings: {error}"),
-        })
+        parse_repo_settings(&output)
     }
 
     fn get_labels(&self) -> Result<Vec<RepoLabel>, GhError> {
@@ -85,17 +85,21 @@ impl RepoPort for GhRepo {
         };
 
         let labels = if entities.labels {
-            self.get_labels()
-                .map_err(|err| RepoSyncError::Read(err.to_string()))?
+            Some(
+                self.get_labels()
+                    .map_err(|err| RepoSyncError::Read(err.to_string()))?,
+            )
         } else {
-            Vec::new()
+            None
         };
 
         let milestones = if entities.milestones {
-            self.get_milestones()
-                .map_err(|err| RepoSyncError::Read(err.to_string()))?
+            Some(
+                self.get_milestones()
+                    .map_err(|err| RepoSyncError::Read(err.to_string()))?,
+            )
         } else {
-            Vec::new()
+            None
         };
 
         Ok(RepoState {

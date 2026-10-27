@@ -1,9 +1,8 @@
 //! Repository milestone representation and diffing.
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 
-use crate::domain::repo::DeleteReason;
+use crate::domain::repo::{DeleteReason, ReconcileHandler, reconcile_by_key};
 
 /// Repository milestone state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -76,67 +75,57 @@ impl RepoMilestone {
         deprecated: &[String],
         prune_unmanaged: bool,
     ) -> Vec<MilestoneDiff> {
-        let mut diffs = Vec::new();
-        let current_by_title: HashMap<String, &Self> = current
-            .iter()
-            .map(|m| (m.title.to_ascii_lowercase(), m))
-            .collect();
-        let desired_by_title: HashMap<String, &RepoMilestoneSpec> = desired
-            .iter()
-            .map(|m| (m.title.to_ascii_lowercase(), m))
-            .collect();
-        let deprecated_titles: HashSet<String> = deprecated
-            .iter()
-            .map(|name| name.to_ascii_lowercase())
-            .collect();
+        reconcile_by_key(
+            current,
+            desired,
+            deprecated,
+            prune_unmanaged,
+            MilestoneReconciler,
+        )
+    }
+}
 
-        // 1. Reconcile desired milestones against current (O(M))
-        for item in desired {
-            let key = item.title.to_ascii_lowercase();
-            if let Some(existing) = current_by_title.get(&key) {
-                let title_differs = existing.title != item.title;
-                let desc_differs = existing.description != item.description;
-                let state_differs = existing.state != item.state;
+struct MilestoneReconciler;
 
-                if title_differs || desc_differs || state_differs {
-                    diffs.push(MilestoneDiff::Update {
-                        current: (*existing).clone(),
-                        desired: item.clone(),
-                    });
-                }
-            } else {
-                diffs.push(MilestoneDiff::Create(item.clone()));
-            }
+impl ReconcileHandler<RepoMilestone, RepoMilestoneSpec, MilestoneDiff> for MilestoneReconciler {
+    fn key_current<'a>(&self, item: &'a RepoMilestone) -> &'a str {
+        &item.title
+    }
+
+    fn key_desired<'a>(&self, item: &'a RepoMilestoneSpec) -> &'a str {
+        &item.title
+    }
+
+    fn diff(&self, current: &RepoMilestone, desired: &RepoMilestoneSpec) -> Option<MilestoneDiff> {
+        let title_differs = current.title != desired.title;
+        let desc_differs = current.description != desired.description;
+        let state_differs = current.state != desired.state;
+        if title_differs || desc_differs || state_differs {
+            Some(MilestoneDiff::Update {
+                current: current.clone(),
+                desired: desired.clone(),
+            })
+        } else {
+            None
         }
+    }
 
-        // 2. Reconcile current milestones for deprecated or unmanaged (O(N))
-        for milestone in current {
-            let key = milestone.title.to_ascii_lowercase();
-            if desired_by_title.contains_key(&key) {
-                // Already reconciled in Step 1. Desired takes precedence.
-                continue;
-            }
+    fn create(&self, desired: &RepoMilestoneSpec) -> MilestoneDiff {
+        MilestoneDiff::Create(desired.clone())
+    }
 
-            if deprecated_titles.contains(&key) {
-                diffs.push(MilestoneDiff::Delete {
-                    number: milestone.number,
-                    title: milestone.title.clone(),
-                    reason: DeleteReason::Deprecated,
-                });
-            } else if prune_unmanaged {
-                diffs.push(MilestoneDiff::Delete {
-                    number: milestone.number,
-                    title: milestone.title.clone(),
-                    reason: DeleteReason::Unmanaged,
-                });
-            } else {
-                diffs.push(MilestoneDiff::Unmanaged {
-                    title: milestone.title.clone(),
-                });
-            }
+    fn delete(&self, current: &RepoMilestone, reason: DeleteReason) -> MilestoneDiff {
+        MilestoneDiff::Delete {
+            number: current.number,
+            title: current.title.clone(),
+            reason,
         }
+    }
 
-        diffs
+    fn unmanaged(&self, current: &RepoMilestone) -> MilestoneDiff {
+        MilestoneDiff::Unmanaged {
+            title: current.title.clone(),
+        }
     }
 }
 

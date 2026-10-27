@@ -6,6 +6,49 @@ const fn default_true() -> bool {
     true
 }
 
+/// Default merge commit title format enforced on GitHub.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum MergeCommitTitle {
+    /// Use the pull request title.
+    #[default]
+    PrTitle,
+    /// Use the classic merge message.
+    MergeMessage,
+}
+
+impl std::fmt::Display for MergeCommitTitle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PrTitle => write!(formatter, "PR_TITLE"),
+            Self::MergeMessage => write!(formatter, "MERGE_MESSAGE"),
+        }
+    }
+}
+
+/// Default merge commit message format enforced on GitHub.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum MergeCommitMessage {
+    /// Use the pull request body.
+    #[default]
+    PrBody,
+    /// Use the pull request title.
+    PrTitle,
+    /// Default to blank.
+    Blank,
+}
+
+impl std::fmt::Display for MergeCommitMessage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PrBody => write!(formatter, "PR_BODY"),
+            Self::PrTitle => write!(formatter, "PR_TITLE"),
+            Self::Blank => write!(formatter, "BLANK"),
+        }
+    }
+}
+
 /// Repository settings enforced on GitHub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoSettings {
@@ -22,9 +65,11 @@ pub struct RepoSettings {
     #[serde(default = "default_true")]
     pub delete_branch_on_merge: bool,
     /// Default merge commit title format (e.g. `PR_TITLE` or `MERGE_MESSAGE`).
-    pub merge_commit_title: String,
+    #[serde(default)]
+    pub merge_commit_title: MergeCommitTitle,
     /// Default merge commit message format (e.g. `PR_BODY`, `PR_TITLE`, or `BLANK`).
-    pub merge_commit_message: String,
+    #[serde(default)]
+    pub merge_commit_message: MergeCommitMessage,
 }
 
 /// A difference found between current and desired repository settings.
@@ -84,15 +129,15 @@ impl RepoSettings {
         if self.merge_commit_title != desired.merge_commit_title {
             diffs.push(SettingDiff {
                 name: "merge_commit_title",
-                current: self.merge_commit_title.clone(),
-                desired: desired.merge_commit_title.clone(),
+                current: self.merge_commit_title.to_string(),
+                desired: desired.merge_commit_title.to_string(),
             });
         }
         if self.merge_commit_message != desired.merge_commit_message {
             diffs.push(SettingDiff {
                 name: "merge_commit_message",
-                current: self.merge_commit_message.clone(),
-                desired: desired.merge_commit_message.clone(),
+                current: self.merge_commit_message.to_string(),
+                desired: desired.merge_commit_message.to_string(),
             });
         }
         diffs
@@ -110,16 +155,16 @@ mod tests {
             allow_squash_merge: true,
             allow_rebase_merge: false,
             delete_branch_on_merge: false,
-            merge_commit_title: "MERGE_MESSAGE".into(),
-            merge_commit_message: "PR_TITLE".into(),
+            merge_commit_title: MergeCommitTitle::MergeMessage,
+            merge_commit_message: MergeCommitMessage::PrTitle,
         };
         let desired = RepoSettings {
             allow_merge_commit: true,
             allow_squash_merge: false,
             allow_rebase_merge: false,
             delete_branch_on_merge: true,
-            merge_commit_title: "PR_TITLE".into(),
-            merge_commit_message: "PR_BODY".into(),
+            merge_commit_title: MergeCommitTitle::PrTitle,
+            merge_commit_message: MergeCommitMessage::PrBody,
         };
 
         let diffs = current.diff(&desired);

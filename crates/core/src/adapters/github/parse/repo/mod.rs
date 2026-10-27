@@ -4,7 +4,9 @@ use serde::Deserialize;
 
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{PageCursor, bad_reply};
-use crate::domain::repo::{MilestoneState, RepoLabel, RepoMilestone};
+use crate::domain::repo::{
+    MergeCommitMessage, MergeCommitTitle, MilestoneState, RepoLabel, RepoMilestone, RepoSettings,
+};
 
 /// One page of repository labels, with the cursor of the next page.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,9 +141,64 @@ pub fn parse_repo_milestones(json: &str) -> Result<RepoMilestonesPage, GhError> 
     Ok(RepoMilestonesPage { milestones, next })
 }
 
+#[derive(Debug, Deserialize)]
+struct RepoSettingsRaw {
+    #[serde(default = "default_true")]
+    allow_merge_commit: bool,
+    #[serde(default)]
+    allow_squash_merge: bool,
+    #[serde(default)]
+    allow_rebase_merge: bool,
+    #[serde(default = "default_true")]
+    delete_branch_on_merge: bool,
+    #[serde(default)]
+    merge_commit_title: Option<MergeCommitTitle>,
+    #[serde(default)]
+    merge_commit_message: Option<MergeCommitMessage>,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+/// Parses repository settings from GitHub REST API reply, coalescing null or omitted values.
+///
+/// # Errors
+///
+/// Returns [`GhError::BadReply`] when the reply cannot be parsed.
+pub fn parse_repo_settings(json: &str) -> Result<RepoSettings, GhError> {
+    let raw: RepoSettingsRaw = serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
+    Ok(RepoSettings {
+        allow_merge_commit: raw.allow_merge_commit,
+        allow_squash_merge: raw.allow_squash_merge,
+        allow_rebase_merge: raw.allow_rebase_merge,
+        delete_branch_on_merge: raw.delete_branch_on_merge,
+        merge_commit_title: raw.merge_commit_title.unwrap_or_default(),
+        merge_commit_message: raw.merge_commit_message.unwrap_or_default(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_repo_settings_with_null_and_omitted_commit_options() {
+        let json = r#"{
+            "allow_merge_commit": true,
+            "allow_squash_merge": false,
+            "allow_rebase_merge": false,
+            "delete_branch_on_merge": true,
+            "merge_commit_title": null,
+            "merge_commit_message": null
+        }"#;
+
+        let settings = parse_repo_settings(json).expect("should parse settings with nulls");
+        assert!(settings.allow_merge_commit);
+        assert!(!settings.allow_squash_merge);
+        assert_eq!(settings.merge_commit_title, MergeCommitTitle::PrTitle);
+        assert_eq!(settings.merge_commit_message, MergeCommitMessage::PrBody);
+    }
 
     #[test]
     fn parses_labels_graphql_response() {

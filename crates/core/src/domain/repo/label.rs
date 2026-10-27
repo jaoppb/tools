@@ -1,9 +1,8 @@
 //! Repository label representation and diffing.
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 
-use crate::domain::repo::DeleteReason;
+use crate::domain::repo::{DeleteReason, ReconcileHandler, reconcile_by_key};
 
 /// Repository label representation on GitHub and in configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,64 +62,56 @@ impl RepoLabel {
         deprecated: &[String],
         prune_unmanaged: bool,
     ) -> Vec<LabelDiff> {
-        let mut diffs = Vec::new();
-        let current_by_name: HashMap<String, &Self> = current
-            .iter()
-            .map(|item| (item.name.to_ascii_lowercase(), item))
-            .collect();
-        let desired_by_name: HashMap<String, &Self> = desired
-            .iter()
-            .map(|item| (item.name.to_ascii_lowercase(), item))
-            .collect();
-        let deprecated_names: HashSet<String> = deprecated
-            .iter()
-            .map(|name| name.to_ascii_lowercase())
-            .collect();
+        reconcile_by_key(
+            current,
+            desired,
+            deprecated,
+            prune_unmanaged,
+            LabelReconciler,
+        )
+    }
+}
 
-        // 1. Reconcile desired labels against current (O(M))
-        for item in desired {
-            let key = item.name.to_ascii_lowercase();
-            if let Some(existing) = current_by_name.get(&key) {
-                let name_differs = existing.name != item.name;
-                let color_differs = existing.color != item.color;
-                let desc_differs = existing.description != item.description;
-                if name_differs || color_differs || desc_differs {
-                    diffs.push(LabelDiff::Update {
-                        current: (*existing).clone(),
-                        desired: item.clone(),
-                    });
-                }
-            } else {
-                diffs.push(LabelDiff::Create(item.clone()));
-            }
+struct LabelReconciler;
+
+impl ReconcileHandler<RepoLabel, RepoLabel, LabelDiff> for LabelReconciler {
+    fn key_current<'a>(&self, item: &'a RepoLabel) -> &'a str {
+        &item.name
+    }
+
+    fn key_desired<'a>(&self, item: &'a RepoLabel) -> &'a str {
+        &item.name
+    }
+
+    fn diff(&self, current: &RepoLabel, desired: &RepoLabel) -> Option<LabelDiff> {
+        let name_differs = current.name != desired.name;
+        let color_differs = current.color != desired.color;
+        let desc_differs = current.description != desired.description;
+        if name_differs || color_differs || desc_differs {
+            Some(LabelDiff::Update {
+                current: current.clone(),
+                desired: desired.clone(),
+            })
+        } else {
+            None
         }
+    }
 
-        // 2. Reconcile current labels for deprecated or unmanaged (O(N))
-        for label in current {
-            let key = label.name.to_ascii_lowercase();
-            if desired_by_name.contains_key(&key) {
-                // Already reconciled in Step 1 (in sync or updated). Desired takes precedence.
-                continue;
-            }
+    fn create(&self, desired: &RepoLabel) -> LabelDiff {
+        LabelDiff::Create(desired.clone())
+    }
 
-            if deprecated_names.contains(&key) {
-                diffs.push(LabelDiff::Delete {
-                    name: label.name.clone(),
-                    reason: DeleteReason::Deprecated,
-                });
-            } else if prune_unmanaged {
-                diffs.push(LabelDiff::Delete {
-                    name: label.name.clone(),
-                    reason: DeleteReason::Unmanaged,
-                });
-            } else {
-                diffs.push(LabelDiff::Unmanaged {
-                    name: label.name.clone(),
-                });
-            }
+    fn delete(&self, current: &RepoLabel, reason: DeleteReason) -> LabelDiff {
+        LabelDiff::Delete {
+            name: current.name.clone(),
+            reason,
         }
+    }
 
-        diffs
+    fn unmanaged(&self, current: &RepoLabel) -> LabelDiff {
+        LabelDiff::Unmanaged {
+            name: current.name.clone(),
+        }
     }
 }
 

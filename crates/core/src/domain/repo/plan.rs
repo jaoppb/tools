@@ -183,9 +183,9 @@ pub struct RepoState {
     /// Current repository settings, if queried.
     pub settings: Option<RepoSettings>,
     /// Current repository labels, if queried.
-    pub labels: Vec<RepoLabel>,
+    pub labels: Option<Vec<RepoLabel>>,
     /// Current repository milestones, if queried.
-    pub milestones: Vec<RepoMilestone>,
+    pub milestones: Option<Vec<RepoMilestone>>,
 }
 
 impl RepoState {
@@ -193,8 +193,8 @@ impl RepoState {
     #[must_use]
     pub const fn new(
         settings: Option<RepoSettings>,
-        labels: Vec<RepoLabel>,
-        milestones: Vec<RepoMilestone>,
+        labels: Option<Vec<RepoLabel>>,
+        milestones: Option<Vec<RepoMilestone>>,
     ) -> Self {
         Self {
             settings,
@@ -215,26 +215,30 @@ impl RepoState {
         let label_diffs = desired
             .labels
             .as_ref()
-            .map(|desired| {
-                RepoLabel::diff(
-                    &self.labels,
-                    &desired.items,
-                    &desired.deprecated,
-                    desired.prune_unmanaged,
-                )
+            .and_then(|desired| {
+                self.labels.as_ref().map(|current| {
+                    RepoLabel::diff(
+                        current,
+                        &desired.items,
+                        &desired.deprecated,
+                        desired.prune_unmanaged,
+                    )
+                })
             })
             .unwrap_or_default();
 
         let milestone_diffs = desired
             .milestones
             .as_ref()
-            .map(|desired| {
-                RepoMilestone::diff(
-                    &self.milestones,
-                    &desired.items,
-                    &desired.deprecated,
-                    desired.prune_unmanaged,
-                )
+            .and_then(|desired| {
+                self.milestones.as_ref().map(|current| {
+                    RepoMilestone::diff(
+                        current,
+                        &desired.items,
+                        &desired.deprecated,
+                        desired.prune_unmanaged,
+                    )
+                })
             })
             .unwrap_or_default();
 
@@ -245,7 +249,7 @@ impl RepoState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::repo::MilestoneState;
+    use crate::domain::repo::{MergeCommitMessage, MergeCommitTitle, MilestoneState};
 
     #[test]
     fn repo_state_plan_gathers_selected_entity_diffs() {
@@ -255,16 +259,16 @@ mod tests {
                 allow_squash_merge: false,
                 allow_rebase_merge: false,
                 delete_branch_on_merge: true,
-                merge_commit_title: "PR_TITLE".into(),
-                merge_commit_message: "PR_BODY".into(),
+                merge_commit_title: MergeCommitTitle::PrTitle,
+                merge_commit_message: MergeCommitMessage::PrBody,
             }),
-            vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
-            vec![RepoMilestone {
+            Some(vec![RepoLabel::new("type:feat", "1d76db", "Feature")]),
+            Some(vec![RepoMilestone {
                 number: 1,
                 title: "v0".into(),
                 description: String::new(),
                 state: MilestoneState::Open,
-            }],
+            }]),
         );
 
         let desired_settings = RepoSettings {
@@ -272,8 +276,8 @@ mod tests {
             allow_squash_merge: false,
             allow_rebase_merge: false,
             delete_branch_on_merge: true,
-            merge_commit_title: "PR_TITLE".into(),
-            merge_commit_message: "PR_BODY".into(),
+            merge_commit_title: MergeCommitTitle::PrTitle,
+            merge_commit_message: MergeCommitMessage::PrBody,
         };
 
         let desired_labels = RepoLabelsSpec {

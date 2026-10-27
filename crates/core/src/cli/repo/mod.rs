@@ -95,15 +95,6 @@ impl RepoArguments {
         self.mode
     }
 
-    /// Selected entities, or all entities if no explicit filter flags were supplied.
-    #[must_use]
-    pub const fn entities(&self) -> RepoEntities {
-        match self.explicit_entities {
-            Some(entities) => entities,
-            None => RepoEntities::ALL,
-        }
-    }
-
     /// Resolves target and all configured resources from `tools.toml` and CLI flags.
     ///
     /// # Errors
@@ -214,40 +205,12 @@ mod tests {
     fn parses_flags_correctly() {
         let args = RepoArguments::parse(["repo-sync".into(), "--check".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Check);
-        assert_eq!(args.entities(), RepoEntities::ALL);
 
         let args = RepoArguments::parse(["repo-sync".into(), "--dry-run".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Preview);
-        assert_eq!(args.entities(), RepoEntities::ALL);
 
         let args = RepoArguments::parse(["repo-sync".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Apply);
-        assert_eq!(args.entities(), RepoEntities::ALL);
-
-        let args = RepoArguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
-        assert_eq!(
-            args.entities(),
-            RepoEntities {
-                settings: false,
-                labels: true,
-                milestones: false,
-            }
-        );
-
-        let args = RepoArguments::parse([
-            "repo-sync".into(),
-            "--settings".into(),
-            "--milestones".into(),
-        ])
-        .unwrap();
-        assert_eq!(
-            args.entities(),
-            RepoEntities {
-                settings: true,
-                labels: false,
-                milestones: true,
-            }
-        );
     }
 
     #[test]

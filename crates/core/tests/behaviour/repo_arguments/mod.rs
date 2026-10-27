@@ -2,7 +2,6 @@
 
 use tools_core::application::RepoSyncMode;
 use tools_core::cli::{RepoArguments, RepoUsageError};
-use tools_core::domain::RepoEntities;
 
 fn parse(words: &[&str]) -> Result<RepoArguments, RepoUsageError> {
     let command_line = std::iter::once("repo-sync")
@@ -12,24 +11,21 @@ fn parse(words: &[&str]) -> Result<RepoArguments, RepoUsageError> {
 }
 
 #[test]
-fn no_argument_means_apply_and_all_entities() {
+fn no_argument_means_apply_mode() {
     let arguments = parse(&[]).expect("no argument is valid");
     assert_eq!(arguments.mode(), RepoSyncMode::Apply);
-    assert_eq!(arguments.entities(), RepoEntities::ALL);
 }
 
 #[test]
 fn check_means_check_mode() {
     let arguments = parse(&["--check"]).expect("--check is valid");
     assert_eq!(arguments.mode(), RepoSyncMode::Check);
-    assert_eq!(arguments.entities(), RepoEntities::ALL);
 }
 
 #[test]
 fn dry_run_means_preview_mode() {
     let arguments = parse(&["--dry-run"]).expect("--dry-run is valid");
     assert_eq!(arguments.mode(), RepoSyncMode::Preview);
-    assert_eq!(arguments.entities(), RepoEntities::ALL);
 }
 
 #[test]
@@ -37,29 +33,6 @@ fn check_and_dry_run_conflict() {
     let failure = parse(&["--check", "--dry-run"]).expect_err("mutually exclusive flags fail");
     assert_eq!(failure.exit_code(), 2);
     assert!(failure.to_string().contains("--dry-run"));
-}
-
-#[test]
-fn entity_flags_select_individual_entities() {
-    let labels_only = parse(&["--labels"]).expect("--labels is valid");
-    assert_eq!(
-        labels_only.entities(),
-        RepoEntities {
-            settings: false,
-            labels: true,
-            milestones: false,
-        }
-    );
-
-    let multiple = parse(&["--settings", "--milestones"]).expect("multiple flags are valid");
-    assert_eq!(
-        multiple.entities(),
-        RepoEntities {
-            settings: true,
-            labels: false,
-            milestones: true,
-        }
-    );
 }
 
 #[test]
