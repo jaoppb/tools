@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::adapters::github::target::Target;
 use crate::application::repo::RepoSyncMode;
 use crate::config::load_or_find;
-use crate::domain::repo::{RepoEntities, RepoSpec};
+use crate::domain::repo::RepoSpec;
 
 const PROGRAM: &str = "repo-sync";
 const CHECK: &str = "check";
@@ -17,6 +17,14 @@ const MILESTONES: &str = "milestones";
 const CONFIG: &str = "config";
 const OWNER: &str = "owner";
 const REPO: &str = "repo";
+
+/// Internal entity filter from command-line flags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EntityFilter {
+    settings: bool,
+    labels: bool,
+    milestones: bool,
+}
 
 /// A command line that was not run: an argument clap rejected, or `--help`.
 #[derive(Debug, thiserror::Error)]
@@ -35,7 +43,7 @@ impl RepoUsageError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoArguments {
     mode: RepoSyncMode,
-    explicit_entities: Option<RepoEntities>,
+    explicit_entities: Option<EntityFilter>,
     config_path: Option<PathBuf>,
     owner: Option<String>,
     repo: Option<String>,
@@ -71,7 +79,7 @@ impl RepoArguments {
             || matches.get_flag(MILESTONES);
 
         let explicit_entities = if has_filter {
-            Some(RepoEntities {
+            Some(EntityFilter {
                 settings: matches.get_flag(SETTINGS),
                 labels: matches.get_flag(LABELS),
                 milestones: matches.get_flag(MILESTONES),

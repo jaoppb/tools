@@ -1,5 +1,6 @@
 //! The real [`ProjectState`]: the Cosmo Project read and written through `gh`.
 
+use crate::adapters::github::cursor_fields;
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{
     StatusField, parse_item_id, parse_items, parse_pulls, parse_status_field,
@@ -91,13 +92,6 @@ impl GhProject {
             .graphql(&query::status_field(&self.target), &[])?;
         parse_status_field(&reply)
     }
-}
-
-pub(crate) fn cursor_fields(cursor: Option<&str>) -> Vec<String> {
-    cursor
-        .map(|value| format!("cursor={value}"))
-        .into_iter()
-        .collect()
 }
 
 fn assignment(field: &StatusField, item: &str, option: &str) -> Vec<String> {

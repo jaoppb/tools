@@ -4,13 +4,13 @@ use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{
     parse_repo_labels, parse_repo_milestones, parse_repo_settings,
 };
-use crate::adapters::github::project::cursor_fields;
+use crate::adapters::github::cursor_fields;
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
 use crate::application::repo::{RepoPort, RepoSyncError};
 use crate::domain::repo::{
-    RepoEntities, RepoLabel, RepoMilestone, RepoMilestoneSpec, RepoSettings, RepoState,
+    RepoLabel, RepoMilestone, RepoMilestoneSpec, RepoSettings, RepoSpec, RepoState, SettingsDiff,
 };
 
 /// Communicates with GitHub GraphQL and REST APIs for repository management.
@@ -74,8 +74,8 @@ impl GhRepo {
 }
 
 impl RepoPort for GhRepo {
-    fn get_state(&self, entities: RepoEntities) -> Result<RepoState, RepoSyncError> {
-        let settings = if entities.settings {
+    fn get_state(&self, spec: &RepoSpec) -> Result<RepoState, RepoSyncError> {
+        let settings = if spec.settings.is_some() {
             Some(
                 self.get_settings()
                     .map_err(|err| RepoSyncError::Read(err.to_string()))?,
@@ -84,7 +84,7 @@ impl RepoPort for GhRepo {
             None
         };
 
-        let labels = if entities.labels {
+        let labels = if spec.labels.is_some() {
             Some(
                 self.get_labels()
                     .map_err(|err| RepoSyncError::Read(err.to_string()))?,
@@ -93,7 +93,7 @@ impl RepoPort for GhRepo {
             None
         };
 
-        let milestones = if entities.milestones {
+        let milestones = if spec.milestones.is_some() {
             Some(
                 self.get_milestones()
                     .map_err(|err| RepoSyncError::Read(err.to_string()))?,
@@ -109,11 +109,9 @@ impl RepoPort for GhRepo {
         })
     }
 
-    fn update_settings(&self, settings: &RepoSettings) -> Result<(), RepoSyncError> {
+    fn update_settings(&self, settings: &SettingsDiff) -> Result<(), RepoSyncError> {
         let endpoint = self.repo_endpoint("");
-        let payload = serde_json::to_string(settings).map_err(|error| {
-            RepoSyncError::Write(format!("failed to serialize repository settings: {error}"))
-        })?;
+        let payload = settings.to_patch_payload().to_string();
         self.runner.rest_patch(&endpoint, &payload).map_err(|err| {
             RepoSyncError::Write(format!("failed to update repository settings: {err}"))
         })?;

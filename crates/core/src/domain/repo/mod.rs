@@ -12,7 +12,7 @@ pub use self::label::{LabelDiff, RepoLabel, RepoLabelsSpec};
 pub use self::milestone::{
     MilestoneDiff, MilestoneState, RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec,
 };
-pub use self::plan::{DeleteReason, RepoEntities, RepoPlan, RepoSpec, RepoState};
+pub use self::plan::{DeleteReason, RepoPlan, RepoPlanError, RepoSpec, RepoState};
 pub use self::settings::{
-    MergeCommitMessage, MergeCommitTitle, RepoSettings, SettingDiff,
+    MergeCommitMessage, MergeCommitTitle, RepoSettings, SettingDiff, SettingsDiff,
 };

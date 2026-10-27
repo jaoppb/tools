@@ -3,7 +3,7 @@
 
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{TextsPage, parse_issue_texts, parse_pull_texts};
-use crate::adapters::github::project::cursor_fields;
+use crate::adapters::github::cursor_fields;
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
