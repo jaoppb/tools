@@ -14,12 +14,6 @@ pub struct RepoLabelsPage {
 }
 
 impl RepoLabelsPage {
-    /// The labels of this page.
-    #[must_use]
-    pub fn labels(&self) -> &[RepoLabel] {
-        &self.labels
-    }
-
     /// Takes the labels of this page.
     #[must_use]
     pub fn into_labels(self) -> Vec<RepoLabel> {
@@ -41,12 +35,6 @@ pub struct RepoMilestonesPage {
 }
 
 impl RepoMilestonesPage {
-    /// The milestones of this page.
-    #[must_use]
-    pub fn milestones(&self) -> &[RepoMilestone] {
-        &self.milestones
-    }
-
     /// Takes the milestones of this page.
     #[must_use]
     pub fn into_milestones(self) -> Vec<RepoMilestone> {

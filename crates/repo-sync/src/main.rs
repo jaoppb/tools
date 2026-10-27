@@ -1,7 +1,7 @@
-//! Command-line entry point: `repo-sync [--check | --dry-run]`.
+//! Command-line entry point: `repo-sync [--check | --dry-run] [--settings] [--labels] [--milestones]`.
 //!
-//! Exits with 0 when settings are in sync or applied, with 1 when `--check`
-//! finds settings drift, and with 2 on configuration or runtime errors.
+//! Exits with 0 when repository configuration is in sync or applied, with 1 when `--check`
+//! finds configuration drift, and with 2 on configuration or runtime errors.
 //! The report goes to standard error because printing macros are forbidden.
 
 use std::io::Write;
@@ -38,11 +38,10 @@ fn run() -> Result<String, Exit> {
         resolved.settings,
         resolved.labels,
         resolved.milestones,
-        resolved.entities,
     );
     let outcome = repo_sync.run(arguments.mode()).map_err(|error| match error {
-        RepoSyncError::Drift(report) => Exit {
-            text: report,
+        RepoSyncError::Drift(outcome) => Exit {
+            text: outcome.to_string(),
             code: 1,
         },
         RepoSyncError::Read(reason) | RepoSyncError::Write(reason) => Exit {

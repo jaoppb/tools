@@ -110,7 +110,6 @@ impl RepoMilestone {
                 });
             } else {
                 diffs.push(MilestoneDiff::Unmanaged {
-                    number: milestone.number,
                     title: milestone.title.clone(),
                 });
             }
@@ -143,8 +142,6 @@ pub enum MilestoneDiff {
     },
     /// Milestone exists on GitHub but is unmanaged (reported when pruning is disabled).
     Unmanaged {
-        /// Milestone number on GitHub.
-        number: u64,
         /// Milestone title.
         title: String,
     },
@@ -168,11 +165,7 @@ impl std::fmt::Display for MilestoneDiff {
                     m.title, m.state
                 )
             }
-            Self::Update {
-                current,
-                desired,
-                ..
-            } => {
+            Self::Update { current, desired } => {
                 let mut changes = Vec::new();
                 let cur_desc = current.description.as_deref().unwrap_or_default();
                 let des_desc = desired.description.as_deref().unwrap_or_default();
@@ -184,10 +177,14 @@ impl std::fmt::Display for MilestoneDiff {
                 }
                 write!(formatter, "milestone '{}': update {}", desired.title, changes.join(", "))
             }
-            Self::Delete { title, reason, .. } => {
+            Self::Delete {
+                number: _,
+                title,
+                reason,
+            } => {
                 write!(formatter, "milestone '{title}': delete ({reason})")
             }
-            Self::Unmanaged { title, .. } => {
+            Self::Unmanaged { title } => {
                 write!(
                     formatter,
                     "milestone '{title}': unmanaged (exists on GitHub but not in tools.toml)"
@@ -265,7 +262,7 @@ mod tests {
         // 4. historical unmanaged
         assert!(matches!(
             &diffs[3],
-            MilestoneDiff::Unmanaged { number: 3, title } if title == "historical"
+            MilestoneDiff::Unmanaged { title } if title == "historical"
         ));
     }
 

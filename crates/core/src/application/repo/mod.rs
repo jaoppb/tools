@@ -92,8 +92,8 @@ pub enum RepoSyncError {
     #[error("failed to update repository: {0}")]
     Write(String),
     /// State drifted in check mode.
-    #[error("repository drift detected:\n{0}")]
-    Drift(String),
+    #[error("{0}")]
+    Drift(Box<RepoSyncOutcome>),
 }
 
 /// Outcome of a repository sync run.
@@ -152,25 +152,22 @@ pub struct RepoSync<P> {
     desired_settings: Option<RepoSettings>,
     desired_labels: Option<LabelsConfig>,
     desired_milestones: Option<MilestonesConfig>,
-    entities: RepoEntities,
 }
 
 impl<P: RepoPort> RepoSync<P> {
-    /// Creates a `RepoSync` handler with all desired configurations and selected entities.
+    /// Creates a `RepoSync` handler with all desired configurations.
     #[must_use]
     pub const fn new(
         port: P,
         desired_settings: Option<RepoSettings>,
         desired_labels: Option<LabelsConfig>,
         desired_milestones: Option<MilestonesConfig>,
-        entities: RepoEntities,
     ) -> Self {
         Self {
             port,
             desired_settings,
             desired_labels,
             desired_milestones,
-            entities,
         }
     }
 
@@ -180,18 +177,17 @@ impl<P: RepoPort> RepoSync<P> {
     ///
     /// Returns [`RepoSyncError`] if reading or writing fails, or if in [`RepoSyncMode::Check`] and actionable drift is found.
     pub fn run(&self, mode: RepoSyncMode) -> Result<RepoSyncOutcome, RepoSyncError> {
-        let effective_entities = RepoEntities {
-            settings: self.entities.settings && self.desired_settings.is_some(),
-            labels: self.entities.labels && self.desired_labels.is_some(),
-            milestones: self.entities.milestones && self.desired_milestones.is_some(),
-        };
+        let entities = RepoEntities::from_presence(
+            self.desired_settings.is_some(),
+            self.desired_labels.is_some(),
+            self.desired_milestones.is_some(),
+        );
 
-        let current_state = self.port.get_state(effective_entities)?;
+        let current_state = self.port.get_state(entities)?;
         let plan = current_state.plan(
             self.desired_settings.as_ref(),
             self.desired_labels.as_ref(),
             self.desired_milestones.as_ref(),
-            self.entities,
         );
 
         let outcome = RepoSyncOutcome::new(plan, mode);
@@ -202,8 +198,7 @@ impl<P: RepoPort> RepoSync<P> {
         match mode {
             RepoSyncMode::Check => {
                 if outcome.plan().has_actionable_drift() {
-                    let report = outcome.to_string();
-                    Err(RepoSyncError::Drift(report))
+                    Err(RepoSyncError::Drift(Box::new(outcome)))
                 } else {
                     Ok(outcome)
                 }
@@ -373,7 +368,7 @@ mod tests {
             merge_commit_title: "PR_TITLE".into(),
             merge_commit_message: "PR_BODY".into(),
         };
-        let sync = RepoSync::new(port, Some(desired), None, None, RepoEntities::ALL);
+        let sync = RepoSync::new(port, Some(desired), None, None);
 
         let err = sync.run(RepoSyncMode::Check).unwrap_err();
         assert!(matches!(err, RepoSyncError::Drift(_)));
@@ -392,11 +387,6 @@ mod tests {
             None,
             Some(desired_labels),
             None,
-            RepoEntities {
-                settings: false,
-                labels: true,
-                milestones: false,
-            },
         );
 
         let outcome = sync.run(RepoSyncMode::Apply).unwrap();

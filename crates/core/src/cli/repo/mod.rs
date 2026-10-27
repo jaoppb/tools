@@ -46,14 +46,12 @@ pub struct RepoArguments {
 pub struct ResolvedRepo {
     /// Repository target.
     pub target: Target,
-    /// Desired repository settings, if configured.
+    /// Desired repository settings, if configured and selected.
     pub settings: Option<RepoSettings>,
-    /// Desired labels configuration, if configured.
+    /// Desired labels configuration, if configured and selected.
     pub labels: Option<LabelsConfig>,
-    /// Desired milestones configuration, if configured.
+    /// Desired milestones configuration, if configured and selected.
     pub milestones: Option<MilestonesConfig>,
-    /// Active entity selection.
-    pub entities: RepoEntities,
 }
 
 impl RepoArguments {
@@ -114,25 +112,29 @@ impl RepoArguments {
     /// Fails when configuration cannot be found or read, or when a requested entity is not configured.
     pub fn resolve(&self) -> Result<ResolvedRepo, String> {
         let cfg = load_or_find(self.config_path.as_deref()).map_err(|err| err.to_string())?;
-        let settings = cfg.repo_settings().map(RepoSettings::from);
-        let labels = cfg.labels().cloned();
-        let milestones = cfg.milestones().cloned();
+        let all_settings = cfg.repo_settings().map(RepoSettings::from);
+        let all_labels = cfg.labels().cloned();
+        let all_milestones = cfg.milestones().cloned();
 
         let has_filter = self.entities != RepoEntities::ALL;
 
         if has_filter {
-            if self.entities.settings && settings.is_none() {
+            if self.entities.settings && all_settings.is_none() {
                 return Err("repository settings requested via --settings, but not configured in tools.toml under [github.repository.settings]".into());
             }
-            if self.entities.labels && labels.is_none() {
+            if self.entities.labels && all_labels.is_none() {
                 return Err("repository labels requested via --labels, but not configured in tools.toml under [github.labels]".into());
             }
-            if self.entities.milestones && milestones.is_none() {
+            if self.entities.milestones && all_milestones.is_none() {
                 return Err("repository milestones requested via --milestones, but not configured in tools.toml under [github.milestones]".into());
             }
-        } else if settings.is_none() && labels.is_none() && milestones.is_none() {
+        } else if all_settings.is_none() && all_labels.is_none() && all_milestones.is_none() {
             return Err("no repository settings, labels, or milestones configured in tools.toml".into());
         }
+
+        let settings = if self.entities.settings { all_settings } else { None };
+        let labels = if self.entities.labels { all_labels } else { None };
+        let milestones = if self.entities.milestones { all_milestones } else { None };
 
         let owner = self
             .owner
@@ -149,7 +151,6 @@ impl RepoArguments {
             settings,
             labels,
             milestones,
-            entities: self.entities,
         })
     }
 }
@@ -299,6 +300,62 @@ mod tests {
 
         let err_all = args_all.resolve().unwrap_err();
         assert!(err_all.contains("no repository settings, labels, or milestones configured"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn resolve_filters_selected_entities() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("test-tools-filter.toml");
+        let content = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.repository.settings]
+            allow_merge_commit = true
+            allow_squash_merge = false
+            allow_rebase_merge = false
+            delete_branch_on_merge = true
+            merge_commit_title = "PR_TITLE"
+            merge_commit_message = "PR_BODY"
+
+            [github.labels]
+            items = [
+                { name = "type:feat", color = "1d76db", description = "Feature" }
+            ]
+        "#;
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(content.as_bytes())
+            .unwrap();
+
+        // When --labels is passed, settings should be None
+        let args = RepoArguments::parse([
+            "repo-sync".into(),
+            "--labels".into(),
+            "--config".into(),
+            path.to_str().unwrap().into(),
+        ])
+        .unwrap();
+        let resolved = args.resolve().unwrap();
+        assert!(resolved.settings.is_none());
+        assert!(resolved.labels.is_some());
+        assert!(resolved.milestones.is_none());
+
+        // When no filter is passed, configured entities should be Some
+        let args_all = RepoArguments::parse([
+            "repo-sync".into(),
+            "--config".into(),
+            path.to_str().unwrap().into(),
+        ])
+        .unwrap();
+        let resolved_all = args_all.resolve().unwrap();
+        assert!(resolved_all.settings.is_some());
+        assert!(resolved_all.labels.is_some());
+        assert!(resolved_all.milestones.is_none());
 
         let _ = std::fs::remove_file(path);
     }

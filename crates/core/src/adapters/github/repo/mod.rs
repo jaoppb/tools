@@ -7,8 +7,9 @@ use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
 use crate::application::repo::{RepoPort, RepoSyncError};
-pub use crate::domain::repo::{RepoEntities, RepoState};
-use crate::domain::repo::{RepoLabel, RepoMilestone, RepoMilestoneSpec, RepoSettings};
+use crate::domain::repo::{
+    RepoEntities, RepoLabel, RepoMilestone, RepoMilestoneSpec, RepoSettings, RepoState,
+};
 
 /// Communicates with GitHub GraphQL and REST APIs for repository management.
 #[derive(Debug, Clone)]
@@ -39,12 +40,7 @@ impl GhRepo {
         &self.target
     }
 
-    /// Fetches the current repository settings via REST.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if the call fails or the response cannot be parsed.
-    pub fn get_settings(&self) -> Result<RepoSettings, GhError> {
+    fn get_settings(&self) -> Result<RepoSettings, GhError> {
         let endpoint = format!("repos/{}", self.target.full_name());
         let output = self.runner.rest_get(&endpoint)?;
         serde_json::from_str(&output).map_err(|error| GhError::BadReply {
@@ -52,12 +48,7 @@ impl GhRepo {
         })
     }
 
-    /// Fetches all repository labels via GraphQL with cursor pagination.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if the call fails or the response cannot be parsed.
-    pub fn get_labels(&self) -> Result<Vec<RepoLabel>, GhError> {
+    fn get_labels(&self) -> Result<Vec<RepoLabel>, GhError> {
         let request = query::repo_labels(&self.target);
         paginate(&self.runner, &request, |reply| {
             let page = parse_repo_labels(reply)?;
@@ -65,39 +56,36 @@ impl GhRepo {
         })
     }
 
-    /// Fetches all repository milestones via GraphQL with cursor pagination.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if the call fails or the response cannot be parsed.
-    pub fn get_milestones(&self) -> Result<Vec<RepoMilestone>, GhError> {
+    fn get_milestones(&self) -> Result<Vec<RepoMilestone>, GhError> {
         let request = query::repo_milestones(&self.target);
         paginate(&self.runner, &request, |reply| {
             let page = parse_repo_milestones(reply)?;
             Ok((page.next().map(str::to_owned), page.into_milestones()))
         })
     }
+}
 
-    /// Fetches repository state for selected entities.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if any query fails or returns an unreadable reply.
-    pub fn get_state(&self, entities: RepoEntities) -> Result<RepoState, GhError> {
+impl RepoPort for GhRepo {
+    fn get_state(&self, entities: RepoEntities) -> Result<RepoState, RepoSyncError> {
         let settings = if entities.settings {
-            Some(self.get_settings()?)
+            Some(
+                self.get_settings()
+                    .map_err(|err| RepoSyncError::Read(err.to_string()))?,
+            )
         } else {
             None
         };
 
         let labels = if entities.labels {
-            self.get_labels()?
+            self.get_labels()
+                .map_err(|err| RepoSyncError::Read(err.to_string()))?
         } else {
             Vec::new()
         };
 
         let milestones = if entities.milestones {
-            self.get_milestones()?
+            self.get_milestones()
+                .map_err(|err| RepoSyncError::Read(err.to_string()))?
         } else {
             Vec::new()
         };
@@ -109,42 +97,29 @@ impl GhRepo {
         })
     }
 
-    /// Updates repository settings to `settings` via REST PATCH.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if the call fails.
-    pub fn update_settings(&self, settings: &RepoSettings) -> Result<(), GhError> {
+    fn update_settings(&self, settings: &RepoSettings) -> Result<(), RepoSyncError> {
         let endpoint = format!("repos/{}", self.target.full_name());
-        let payload = serde_json::to_string(settings).map_err(|error| GhError::BadReply {
-            reason: format!("failed to serialize repository settings: {error}"),
+        let payload = serde_json::to_string(settings).map_err(|error| {
+            RepoSyncError::Write(format!("failed to serialize repository settings: {error}"))
         })?;
-        self.runner.rest_patch(&endpoint, &payload)?;
+        self.runner.rest_patch(&endpoint, &payload).map_err(|err| {
+            RepoSyncError::Write(format!("failed to update repository settings: {err}"))
+        })?;
         Ok(())
     }
 
-    /// Creates a repository label via REST POST.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if the call fails.
-    pub fn create_label(&self, label: &RepoLabel) -> Result<(), GhError> {
+    fn create_label(&self, label: &RepoLabel) -> Result<(), RepoSyncError> {
         let endpoint = format!("repos/{}/labels", self.target.full_name());
-        let payload = serde_json::json!({
-            "name": label.name,
-            "color": label.color,
-            "description": label.description,
-        });
-        self.runner.rest_post(&endpoint, &payload.to_string())?;
+        let payload = serde_json::to_string(label).map_err(|error| {
+            RepoSyncError::Write(format!("failed to serialize label '{}': {error}", label.name))
+        })?;
+        self.runner.rest_post(&endpoint, &payload).map_err(|err| {
+            RepoSyncError::Write(format!("failed to create label '{}': {err}", label.name))
+        })?;
         Ok(())
     }
 
-    /// Updates a repository label via REST PATCH.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if the call fails.
-    pub fn update_label(&self, current_name: &str, label: &RepoLabel) -> Result<(), GhError> {
+    fn update_label(&self, current_name: &str, label: &RepoLabel) -> Result<(), RepoSyncError> {
         let encoded_name = percent_encode_path_segment(current_name);
         let endpoint = format!("repos/{}/labels/{encoded_name}", self.target.full_name());
         let payload = serde_json::json!({
@@ -152,58 +127,56 @@ impl GhRepo {
             "color": label.color,
             "description": label.description,
         });
-        self.runner.rest_patch(&endpoint, &payload.to_string())?;
+        self.runner
+            .rest_patch(&endpoint, &payload.to_string())
+            .map_err(|err| {
+                RepoSyncError::Write(format!("failed to update label '{}': {err}", label.name))
+            })?;
         Ok(())
     }
 
-    /// Deletes a repository label via REST DELETE.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if the call fails.
-    pub fn delete_label(&self, name: &str) -> Result<(), GhError> {
+    fn delete_label(&self, name: &str) -> Result<(), RepoSyncError> {
         let encoded_name = percent_encode_path_segment(name);
         let endpoint = format!("repos/{}/labels/{encoded_name}", self.target.full_name());
-        self.runner.rest_delete(&endpoint)?;
+        self.runner.rest_delete(&endpoint).map_err(|err| {
+            RepoSyncError::Write(format!("failed to delete label '{name}': {err}"))
+        })?;
         Ok(())
     }
 
-    /// Creates a repository milestone via REST POST.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if the call fails.
-    pub fn create_milestone(&self, milestone: &RepoMilestoneSpec) -> Result<(), GhError> {
+    fn create_milestone(&self, milestone: &RepoMilestoneSpec) -> Result<(), RepoSyncError> {
         let endpoint = format!("repos/{}/milestones", self.target.full_name());
         let payload = milestone_payload(milestone);
-        self.runner.rest_post(&endpoint, &payload)?;
+        self.runner.rest_post(&endpoint, &payload).map_err(|err| {
+            RepoSyncError::Write(format!(
+                "failed to create milestone '{}': {err}",
+                milestone.title
+            ))
+        })?;
         Ok(())
     }
 
-    /// Updates a repository milestone via REST PATCH.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if the call fails.
-    pub fn update_milestone(
+    fn update_milestone(
         &self,
         number: u64,
         milestone: &RepoMilestoneSpec,
-    ) -> Result<(), GhError> {
+    ) -> Result<(), RepoSyncError> {
         let endpoint = format!("repos/{}/milestones/{number}", self.target.full_name());
         let payload = milestone_payload(milestone);
-        self.runner.rest_patch(&endpoint, &payload)?;
+        self.runner.rest_patch(&endpoint, &payload).map_err(|err| {
+            RepoSyncError::Write(format!(
+                "failed to update milestone '{}': {err}",
+                milestone.title
+            ))
+        })?;
         Ok(())
     }
 
-    /// Deletes a repository milestone via REST DELETE.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GhError`] if the call fails.
-    pub fn delete_milestone(&self, number: u64) -> Result<(), GhError> {
+    fn delete_milestone(&self, number: u64) -> Result<(), RepoSyncError> {
         let endpoint = format!("repos/{}/milestones/{number}", self.target.full_name());
-        self.runner.rest_delete(&endpoint)?;
+        self.runner.rest_delete(&endpoint).map_err(|err| {
+            RepoSyncError::Write(format!("failed to delete milestone {number}: {err}"))
+        })?;
         Ok(())
     }
 }
@@ -215,65 +188,6 @@ fn milestone_payload(milestone: &RepoMilestoneSpec) -> String {
         "state": milestone.state.to_string(),
     })
     .to_string()
-}
-
-impl RepoPort for GhRepo {
-    fn get_state(&self, entities: RepoEntities) -> Result<RepoState, RepoSyncError> {
-        self.get_state(entities)
-            .map_err(|err| RepoSyncError::Read(err.to_string()))
-    }
-
-    fn update_settings(&self, settings: &RepoSettings) -> Result<(), RepoSyncError> {
-        self.update_settings(settings).map_err(|err| {
-            RepoSyncError::Write(format!("failed to update repository settings: {err}"))
-        })
-    }
-
-    fn create_label(&self, label: &RepoLabel) -> Result<(), RepoSyncError> {
-        self.create_label(label).map_err(|err| {
-            RepoSyncError::Write(format!("failed to create label '{}': {err}", label.name))
-        })
-    }
-
-    fn update_label(&self, current_name: &str, label: &RepoLabel) -> Result<(), RepoSyncError> {
-        self.update_label(current_name, label).map_err(|err| {
-            RepoSyncError::Write(format!("failed to update label '{}': {err}", label.name))
-        })
-    }
-
-    fn delete_label(&self, name: &str) -> Result<(), RepoSyncError> {
-        self.delete_label(name).map_err(|err| {
-            RepoSyncError::Write(format!("failed to delete label '{name}': {err}"))
-        })
-    }
-
-    fn create_milestone(&self, milestone: &RepoMilestoneSpec) -> Result<(), RepoSyncError> {
-        self.create_milestone(milestone).map_err(|err| {
-            RepoSyncError::Write(format!(
-                "failed to create milestone '{}': {err}",
-                milestone.title
-            ))
-        })
-    }
-
-    fn update_milestone(
-        &self,
-        number: u64,
-        milestone: &RepoMilestoneSpec,
-    ) -> Result<(), RepoSyncError> {
-        self.update_milestone(number, milestone).map_err(|err| {
-            RepoSyncError::Write(format!(
-                "failed to update milestone '{}': {err}",
-                milestone.title
-            ))
-        })
-    }
-
-    fn delete_milestone(&self, number: u64) -> Result<(), RepoSyncError> {
-        self.delete_milestone(number).map_err(|err| {
-            RepoSyncError::Write(format!("failed to delete milestone {number}: {err}"))
-        })
-    }
 }
 
 fn percent_encode_path_segment(input: &str) -> String {

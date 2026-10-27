@@ -47,10 +47,14 @@ impl RepoEntities {
         milestones: true,
     };
 
-    /// Whether any entity is selected.
+    /// Creates entity selection based on desired configurations presence.
     #[must_use]
-    pub const fn any(&self) -> bool {
-        self.settings || self.labels || self.milestones
+    pub const fn from_presence(settings: bool, labels: bool, milestones: bool) -> Self {
+        Self {
+            settings,
+            labels,
+            milestones,
+        }
     }
 }
 
@@ -165,49 +169,39 @@ impl RepoState {
         }
     }
 
-    /// Computes the reconciliation plan against desired configurations for selected entities.
+    /// Computes the reconciliation plan against desired configurations.
     #[must_use]
     pub fn plan(
         &self,
         desired_settings: Option<&RepoSettings>,
         desired_labels: Option<&crate::config::LabelsConfig>,
         desired_milestones: Option<&crate::config::MilestonesConfig>,
-        entities: RepoEntities,
     ) -> RepoPlan {
-        let setting_diffs = if entities.settings
-            && let Some(desired) = desired_settings
-            && let Some(ref current) = self.settings
-        {
-            current.diff(desired)
-        } else {
-            Vec::new()
-        };
+        let setting_diffs = desired_settings
+            .and_then(|desired| self.settings.as_ref().map(|current| current.diff(desired)))
+            .unwrap_or_default();
 
-        let label_diffs = if entities.labels
-            && let Some(desired) = desired_labels
-        {
-            RepoLabel::diff(
-                &self.labels,
-                &desired.items,
-                &desired.deprecated,
-                desired.prune_unmanaged,
-            )
-        } else {
-            Vec::new()
-        };
+        let label_diffs = desired_labels
+            .map(|desired| {
+                RepoLabel::diff(
+                    &self.labels,
+                    &desired.items,
+                    &desired.deprecated,
+                    desired.prune_unmanaged,
+                )
+            })
+            .unwrap_or_default();
 
-        let milestone_diffs = if entities.milestones
-            && let Some(desired) = desired_milestones
-        {
-            crate::domain::repo::RepoMilestone::diff(
-                &self.milestones,
-                &desired.items,
-                &desired.deprecated,
-                desired.prune_unmanaged,
-            )
-        } else {
-            Vec::new()
-        };
+        let milestone_diffs = desired_milestones
+            .map(|desired| {
+                crate::domain::repo::RepoMilestone::diff(
+                    &self.milestones,
+                    &desired.items,
+                    &desired.deprecated,
+                    desired.prune_unmanaged,
+                )
+            })
+            .unwrap_or_default();
 
         RepoPlan::new(setting_diffs, label_diffs, milestone_diffs)
     }
@@ -259,25 +253,19 @@ mod tests {
         // When only settings selected
         let plan_settings = current_state.plan(
             Some(&desired_settings),
-            Some(&desired_labels),
             None,
-            RepoEntities {
-                settings: true,
-                labels: false,
-                milestones: false,
-            },
+            None,
         );
         assert_eq!(plan_settings.setting_diffs().len(), 1);
         assert!(plan_settings.label_diffs().is_empty());
         assert!(plan_settings.milestone_diffs().is_empty());
         assert!(plan_settings.has_actionable_drift());
 
-        // When all selected
+        // When settings and labels selected
         let plan_all = current_state.plan(
             Some(&desired_settings),
             Some(&desired_labels),
             None,
-            RepoEntities::ALL,
         );
         assert_eq!(plan_all.setting_diffs().len(), 1);
         assert_eq!(plan_all.label_diffs().len(), 1);
