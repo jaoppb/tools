@@ -2,16 +2,24 @@
 
 use serde::{Deserialize, Serialize};
 
+const fn default_true() -> bool {
+    true
+}
+
 /// Repository settings enforced on GitHub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoSettings {
     /// Whether merge commits are allowed.
+    #[serde(default = "default_true")]
     pub allow_merge_commit: bool,
     /// Whether squash merges are allowed.
+    #[serde(default)]
     pub allow_squash_merge: bool,
     /// Whether rebase merges are allowed.
+    #[serde(default)]
     pub allow_rebase_merge: bool,
     /// Whether head branches are automatically deleted upon merge.
+    #[serde(default = "default_true")]
     pub delete_branch_on_merge: bool,
     /// Default merge commit title format (e.g. `PR_TITLE` or `MERGE_MESSAGE`).
     pub merge_commit_title: String,

@@ -32,7 +32,7 @@ pub struct RepoMilestoneSpec {
     pub title: String,
     /// Milestone description.
     #[serde(default)]
-    pub description: Option<String>,
+    pub description: String,
     /// Milestone state (`open` or `closed`).
     #[serde(default)]
     pub state: MilestoneState,
@@ -61,7 +61,7 @@ pub struct RepoMilestone {
     pub title: String,
     /// Milestone description.
     #[serde(default)]
-    pub description: Option<String>,
+    pub description: String,
     /// Milestone state (`open` or `closed`).
     #[serde(default)]
     pub state: MilestoneState,
@@ -77,21 +77,28 @@ impl RepoMilestone {
         prune_unmanaged: bool,
     ) -> Vec<MilestoneDiff> {
         let mut diffs = Vec::new();
-        let current_by_title: HashMap<&str, &Self> =
-            current.iter().map(|m| (m.title.as_str(), m)).collect();
-        let desired_by_title: HashMap<&str, &RepoMilestoneSpec> =
-            desired.iter().map(|m| (m.title.as_str(), m)).collect();
-        let deprecated_titles: HashSet<&str> = deprecated.iter().map(String::as_str).collect();
+        let current_by_title: HashMap<String, &Self> = current
+            .iter()
+            .map(|m| (m.title.to_ascii_lowercase(), m))
+            .collect();
+        let desired_by_title: HashMap<String, &RepoMilestoneSpec> = desired
+            .iter()
+            .map(|m| (m.title.to_ascii_lowercase(), m))
+            .collect();
+        let deprecated_titles: HashSet<String> = deprecated
+            .iter()
+            .map(|name| name.to_ascii_lowercase())
+            .collect();
 
         // 1. Reconcile desired milestones against current (O(M))
         for item in desired {
-            if let Some(existing) = current_by_title.get(item.title.as_str()) {
-                let cur_desc = existing.description.as_deref().unwrap_or_default();
-                let des_desc = item.description.as_deref().unwrap_or_default();
-                let desc_differs = cur_desc != des_desc;
+            let key = item.title.to_ascii_lowercase();
+            if let Some(existing) = current_by_title.get(&key) {
+                let title_differs = existing.title != item.title;
+                let desc_differs = existing.description != item.description;
                 let state_differs = existing.state != item.state;
 
-                if desc_differs || state_differs {
+                if title_differs || desc_differs || state_differs {
                     diffs.push(MilestoneDiff::Update {
                         current: (*existing).clone(),
                         desired: item.clone(),
@@ -104,13 +111,13 @@ impl RepoMilestone {
 
         // 2. Reconcile current milestones for deprecated or unmanaged (O(N))
         for milestone in current {
-            let title = milestone.title.as_str();
-            if desired_by_title.contains_key(title) {
+            let key = milestone.title.to_ascii_lowercase();
+            if desired_by_title.contains_key(&key) {
                 // Already reconciled in Step 1. Desired takes precedence.
                 continue;
             }
 
-            if deprecated_titles.contains(title) {
+            if deprecated_titles.contains(&key) {
                 diffs.push(MilestoneDiff::Delete {
                     number: milestone.number,
                     title: milestone.title.clone(),
@@ -181,10 +188,14 @@ impl std::fmt::Display for MilestoneDiff {
             }
             Self::Update { current, desired } => {
                 let mut changes = Vec::new();
-                let cur_desc = current.description.as_deref().unwrap_or_default();
-                let des_desc = desired.description.as_deref().unwrap_or_default();
-                if cur_desc != des_desc {
-                    changes.push(format!("description '{cur_desc}' -> '{des_desc}'"));
+                if current.title != desired.title {
+                    changes.push(format!("title '{}' -> '{}'", current.title, desired.title));
+                }
+                if current.description != desired.description {
+                    changes.push(format!(
+                        "description '{}' -> '{}'",
+                        current.description, desired.description
+                    ));
                 }
                 if current.state != desired.state {
                     changes.push(format!("state '{}' -> '{}'", current.state, desired.state));
@@ -218,19 +229,19 @@ mod tests {
             RepoMilestone {
                 number: 1,
                 title: "v0".into(),
-                description: Some("Old bootstrap".into()),
+                description: "Old bootstrap".into(),
                 state: MilestoneState::Open,
             },
             RepoMilestone {
                 number: 2,
                 title: "v0.9".into(),
-                description: None,
+                description: String::new(),
                 state: MilestoneState::Open,
             },
             RepoMilestone {
                 number: 3,
                 title: "historical".into(),
-                description: None,
+                description: String::new(),
                 state: MilestoneState::Closed,
             },
         ];
@@ -238,12 +249,12 @@ mod tests {
         let desired_items = vec![
             RepoMilestoneSpec {
                 title: "v0".into(),
-                description: Some("New bootstrap".into()),
+                description: "New bootstrap".into(),
                 state: MilestoneState::Open,
             },
             RepoMilestoneSpec {
                 title: "v1".into(),
-                description: Some("Stable release".into()),
+                description: "Stable release".into(),
                 state: MilestoneState::Open,
             },
         ];
@@ -258,7 +269,7 @@ mod tests {
             MilestoneDiff::Update {
                 current,
                 desired,
-            } if current.number == 1 && desired.title == "v0" && current.description.as_deref() == Some("Old bootstrap") && desired.description.as_deref() == Some("New bootstrap")
+            } if current.number == 1 && desired.title == "v0" && current.description == "Old bootstrap" && desired.description == "New bootstrap"
         ));
 
         // 2. v1 created
@@ -281,11 +292,38 @@ mod tests {
     }
 
     #[test]
+    fn milestone_diff_matches_case_insensitively_and_updates_casing() {
+        let current = vec![RepoMilestone {
+            number: 1,
+            title: "V0".into(),
+            description: "Bootstrap".into(),
+            state: MilestoneState::Open,
+        }];
+
+        let desired_items = vec![RepoMilestoneSpec {
+            title: "v0".into(),
+            description: "Bootstrap".into(),
+            state: MilestoneState::Open,
+        }];
+
+        let diffs = RepoMilestone::diff(&current, &desired_items, &[], false);
+        assert_eq!(diffs.len(), 1);
+        match &diffs[0] {
+            MilestoneDiff::Update { current, desired } => {
+                assert_eq!(current.number, 1);
+                assert_eq!(current.title, "V0");
+                assert_eq!(desired.title, "v0");
+            }
+            other => panic!("expected MilestoneDiff::Update, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn milestone_diff_prunes_unmanaged_with_unmanaged_reason() {
         let current = vec![RepoMilestone {
             number: 4,
             title: "unmanaged-m".into(),
-            description: None,
+            description: String::new(),
             state: MilestoneState::Open,
         }];
 
@@ -302,13 +340,13 @@ mod tests {
         let current = vec![RepoMilestone {
             number: 5,
             title: "v0.8".into(),
-            description: Some("Old text".into()),
+            description: "Old text".into(),
             state: MilestoneState::Closed,
         }];
 
         let desired_items = vec![RepoMilestoneSpec {
             title: "v0.8".into(),
-            description: Some("New updated text".into()),
+            description: "New updated text".into(),
             state: MilestoneState::Closed,
         }];
 
@@ -322,7 +360,7 @@ mod tests {
                 assert_eq!(current.number, 5);
                 assert_eq!(current.state, MilestoneState::Closed);
                 assert_eq!(desired.state, MilestoneState::Closed);
-                assert_eq!(desired.description.as_deref(), Some("New updated text"));
+                assert_eq!(desired.description, "New updated text");
             }
             other => panic!("expected MilestoneDiff::Update, got {:?}", other),
         }
@@ -333,16 +371,16 @@ mod tests {
         let current = vec![RepoMilestone {
             number: 1,
             title: "v0".into(),
-            description: None,
+            description: String::new(),
             state: MilestoneState::Open,
         }];
         let desired = vec![RepoMilestoneSpec {
             title: "v0".into(),
-            description: None,
+            description: String::new(),
             state: MilestoneState::Open,
         }];
-        // "v0" mistakenly also in deprecated
-        let deprecated = vec!["v0".into()];
+        // "v0" mistakenly also in deprecated (with differing casing)
+        let deprecated = vec!["V0".into()];
 
         let diffs = RepoMilestone::diff(&current, &desired, &deprecated, false);
         // Should NOT emit a Delete; desired takes precedence and it is in sync

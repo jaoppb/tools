@@ -40,8 +40,16 @@ impl GhRepo {
         &self.target
     }
 
+    fn repo_endpoint(&self, subpath: &str) -> String {
+        if subpath.is_empty() {
+            format!("repos/{}", self.target.full_name())
+        } else {
+            format!("repos/{}/{subpath}", self.target.full_name())
+        }
+    }
+
     fn get_settings(&self) -> Result<RepoSettings, GhError> {
-        let endpoint = format!("repos/{}", self.target.full_name());
+        let endpoint = self.repo_endpoint("");
         let output = self.runner.rest_get(&endpoint)?;
         serde_json::from_str(&output).map_err(|error| GhError::BadReply {
             reason: format!("failed to parse repository settings: {error}"),
@@ -98,7 +106,7 @@ impl RepoPort for GhRepo {
     }
 
     fn update_settings(&self, settings: &RepoSettings) -> Result<(), RepoSyncError> {
-        let endpoint = format!("repos/{}", self.target.full_name());
+        let endpoint = self.repo_endpoint("");
         let payload = serde_json::to_string(settings).map_err(|error| {
             RepoSyncError::Write(format!("failed to serialize repository settings: {error}"))
         })?;
@@ -109,7 +117,7 @@ impl RepoPort for GhRepo {
     }
 
     fn create_label(&self, label: &RepoLabel) -> Result<(), RepoSyncError> {
-        let endpoint = format!("repos/{}/labels", self.target.full_name());
+        let endpoint = self.repo_endpoint("labels");
         let payload = serde_json::to_string(label).map_err(|error| {
             RepoSyncError::Write(format!("failed to serialize label '{}': {error}", label.name))
         })?;
@@ -121,7 +129,7 @@ impl RepoPort for GhRepo {
 
     fn update_label(&self, current_name: &str, label: &RepoLabel) -> Result<(), RepoSyncError> {
         let encoded_name = percent_encode_path_segment(current_name);
-        let endpoint = format!("repos/{}/labels/{encoded_name}", self.target.full_name());
+        let endpoint = self.repo_endpoint(&format!("labels/{encoded_name}"));
         let payload = serde_json::json!({
             "new_name": label.name,
             "color": label.color,
@@ -137,7 +145,7 @@ impl RepoPort for GhRepo {
 
     fn delete_label(&self, name: &str) -> Result<(), RepoSyncError> {
         let encoded_name = percent_encode_path_segment(name);
-        let endpoint = format!("repos/{}/labels/{encoded_name}", self.target.full_name());
+        let endpoint = self.repo_endpoint(&format!("labels/{encoded_name}"));
         self.runner.rest_delete(&endpoint).map_err(|err| {
             RepoSyncError::Write(format!("failed to delete label '{name}': {err}"))
         })?;
@@ -145,7 +153,7 @@ impl RepoPort for GhRepo {
     }
 
     fn create_milestone(&self, milestone: &RepoMilestoneSpec) -> Result<(), RepoSyncError> {
-        let endpoint = format!("repos/{}/milestones", self.target.full_name());
+        let endpoint = self.repo_endpoint("milestones");
         let payload = milestone_payload(milestone);
         self.runner.rest_post(&endpoint, &payload).map_err(|err| {
             RepoSyncError::Write(format!(
@@ -161,7 +169,7 @@ impl RepoPort for GhRepo {
         number: u64,
         milestone: &RepoMilestoneSpec,
     ) -> Result<(), RepoSyncError> {
-        let endpoint = format!("repos/{}/milestones/{number}", self.target.full_name());
+        let endpoint = self.repo_endpoint(&format!("milestones/{number}"));
         let payload = milestone_payload(milestone);
         self.runner.rest_patch(&endpoint, &payload).map_err(|err| {
             RepoSyncError::Write(format!(
@@ -173,7 +181,7 @@ impl RepoPort for GhRepo {
     }
 
     fn delete_milestone(&self, number: u64) -> Result<(), RepoSyncError> {
-        let endpoint = format!("repos/{}/milestones/{number}", self.target.full_name());
+        let endpoint = self.repo_endpoint(&format!("milestones/{number}"));
         self.runner.rest_delete(&endpoint).map_err(|err| {
             RepoSyncError::Write(format!("failed to delete milestone {number}: {err}"))
         })?;
@@ -184,7 +192,7 @@ impl RepoPort for GhRepo {
 fn milestone_payload(milestone: &RepoMilestoneSpec) -> String {
     serde_json::json!({
         "title": milestone.title,
-        "description": milestone.description.as_deref().unwrap_or(""),
+        "description": milestone.description,
         "state": milestone.state.to_string(),
     })
     .to_string()

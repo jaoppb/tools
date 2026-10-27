@@ -24,7 +24,7 @@ pub use crate::domain::plan::{Gap, Gaps, Move, Moves, Plan, Reason, Transition};
 pub use crate::domain::repo::{
     DeleteReason, LabelDiff, MilestoneDiff, MilestoneState, RepoEntities, RepoLabel,
     RepoLabelsSpec, RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec, RepoPlan, RepoSettings,
-    RepoState, SettingDiff,
+    RepoSpec, RepoState, SettingDiff,
 };
 pub use crate::domain::snapshot::{Closing, Snapshot};
 pub use crate::domain::target::target;

@@ -33,12 +33,7 @@ fn run() -> Result<String, Exit> {
     let resolved = arguments
         .resolve()
         .map_err(|err| Exit { text: err, code: 2 })?;
-    let repo_sync = RepoSync::new(
-        GhRepo::new(resolved.target),
-        resolved.settings,
-        resolved.labels,
-        resolved.milestones,
-    );
+    let repo_sync = RepoSync::new(GhRepo::new(resolved.target), resolved.spec);
     let outcome = repo_sync.run(arguments.mode()).map_err(|error| match error {
         RepoSyncError::Drift(outcome) => Exit {
             text: outcome.to_string(),

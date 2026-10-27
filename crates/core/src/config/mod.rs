@@ -82,40 +82,6 @@ pub struct RepositoryConfig {
     pub settings: Option<RepositorySettingsConfig>,
 }
 
-/// Repository merge and branch settings enforced on GitHub.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct RepositorySettingsConfig {
-    /// Whether merge commits are enabled.
-    #[serde(default = "default_true")]
-    pub allow_merge_commit: bool,
-    /// Whether squash merges are enabled.
-    #[serde(default)]
-    pub allow_squash_merge: bool,
-    /// Whether rebase merges are enabled.
-    #[serde(default)]
-    pub allow_rebase_merge: bool,
-    /// Whether head branches are automatically deleted upon merge.
-    #[serde(default = "default_true")]
-    pub delete_branch_on_merge: bool,
-    /// Default merge commit title format (e.g. `PR_TITLE` or `MERGE_MESSAGE`).
-    pub merge_commit_title: String,
-    /// Default merge commit message format (e.g. `PR_BODY`, `PR_TITLE`, or `BLANK`).
-    pub merge_commit_message: String,
-}
-
-impl From<&RepositorySettingsConfig> for RepoSettings {
-    fn from(config: &RepositorySettingsConfig) -> Self {
-        Self {
-            allow_merge_commit: config.allow_merge_commit,
-            allow_squash_merge: config.allow_squash_merge,
-            allow_rebase_merge: config.allow_rebase_merge,
-            delete_branch_on_merge: config.delete_branch_on_merge,
-            merge_commit_title: config.merge_commit_title.clone(),
-            merge_commit_message: config.merge_commit_message.clone(),
-        }
-    }
-}
-
 /// Project parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 pub struct ProjectConfig {
@@ -131,6 +97,9 @@ pub struct IssuesConfig {
     #[serde(default)]
     pub rules: RulesConfig,
 }
+
+/// Repository merge and branch settings configuration (alias for [`RepoSettings`]).
+pub type RepositorySettingsConfig = RepoSettings;
 
 /// Repository labels configuration (alias for [`RepoLabelsSpec`]).
 pub type LabelsConfig = RepoLabelsSpec;
@@ -340,8 +309,10 @@ mod tests {
         assert_eq!(milestones.deprecated, vec!["v0.9"]);
         assert_eq!(milestones.items.len(), 2);
         assert_eq!(milestones.items[0].title, "v0");
+        assert_eq!(milestones.items[0].description, "Bootstrap");
         assert_eq!(milestones.items[0].state, MilestoneState::Open); // default open
         assert_eq!(milestones.items[1].title, "v1");
+        assert_eq!(milestones.items[1].description, "Stable");
         assert_eq!(milestones.items[1].state, MilestoneState::Closed);
     }
 }

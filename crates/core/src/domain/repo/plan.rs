@@ -47,15 +47,48 @@ impl RepoEntities {
         labels: true,
         milestones: true,
     };
+}
 
-    /// Creates entity selection based on desired configurations presence.
+/// Desired configuration specification for repository entities.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RepoSpec {
+    /// Desired repository settings, if configured.
+    pub settings: Option<RepoSettings>,
+    /// Desired repository labels, if configured.
+    pub labels: Option<RepoLabelsSpec>,
+    /// Desired repository milestones, if configured.
+    pub milestones: Option<RepoMilestonesSpec>,
+}
+
+impl RepoSpec {
+    /// Creates a new desired repository specification.
     #[must_use]
-    pub const fn from_presence(settings: bool, labels: bool, milestones: bool) -> Self {
+    pub const fn new(
+        settings: Option<RepoSettings>,
+        labels: Option<RepoLabelsSpec>,
+        milestones: Option<RepoMilestonesSpec>,
+    ) -> Self {
         Self {
             settings,
             labels,
             milestones,
         }
+    }
+
+    /// Entities targeted by this desired specification.
+    #[must_use]
+    pub const fn entities(&self) -> RepoEntities {
+        RepoEntities {
+            settings: self.settings.is_some(),
+            labels: self.labels.is_some(),
+            milestones: self.milestones.is_some(),
+        }
+    }
+
+    /// Whether any entity is configured.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.settings.is_none() && self.labels.is_none() && self.milestones.is_none()
     }
 }
 
@@ -170,19 +203,18 @@ impl RepoState {
         }
     }
 
-    /// Computes the reconciliation plan against desired configurations.
+    /// Computes the reconciliation plan against desired configuration specification.
     #[must_use]
-    pub fn plan(
-        &self,
-        desired_settings: Option<&RepoSettings>,
-        desired_labels: Option<&RepoLabelsSpec>,
-        desired_milestones: Option<&RepoMilestonesSpec>,
-    ) -> RepoPlan {
-        let setting_diffs = desired_settings
+    pub fn plan(&self, desired: &RepoSpec) -> RepoPlan {
+        let setting_diffs = desired
+            .settings
+            .as_ref()
             .and_then(|desired| self.settings.as_ref().map(|current| current.diff(desired)))
             .unwrap_or_default();
 
-        let label_diffs = desired_labels
+        let label_diffs = desired
+            .labels
+            .as_ref()
             .map(|desired| {
                 RepoLabel::diff(
                     &self.labels,
@@ -193,7 +225,9 @@ impl RepoState {
             })
             .unwrap_or_default();
 
-        let milestone_diffs = desired_milestones
+        let milestone_diffs = desired
+            .milestones
+            .as_ref()
             .map(|desired| {
                 RepoMilestone::diff(
                     &self.milestones,
@@ -228,7 +262,7 @@ mod tests {
             vec![RepoMilestone {
                 number: 1,
                 title: "v0".into(),
-                description: None,
+                description: String::new(),
                 state: MilestoneState::Open,
             }],
         );
@@ -252,22 +286,16 @@ mod tests {
         };
 
         // When only settings selected
-        let plan_settings = current_state.plan(
-            Some(&desired_settings),
-            None,
-            None,
-        );
+        let spec_settings = RepoSpec::new(Some(desired_settings.clone()), None, None);
+        let plan_settings = current_state.plan(&spec_settings);
         assert_eq!(plan_settings.setting_diffs().len(), 1);
         assert!(plan_settings.label_diffs().is_empty());
         assert!(plan_settings.milestone_diffs().is_empty());
         assert!(plan_settings.has_actionable_drift());
 
         // When settings and labels selected
-        let plan_all = current_state.plan(
-            Some(&desired_settings),
-            Some(&desired_labels),
-            None,
-        );
+        let spec_all = RepoSpec::new(Some(desired_settings), Some(desired_labels), None);
+        let plan_all = current_state.plan(&spec_all);
         assert_eq!(plan_all.setting_diffs().len(), 1);
         assert_eq!(plan_all.label_diffs().len(), 1);
         assert!(plan_all.has_actionable_drift());

@@ -3,8 +3,8 @@
 use std::fmt;
 
 use crate::domain::repo::{
-    LabelDiff, MilestoneDiff, RepoEntities, RepoLabel, RepoLabelsSpec, RepoMilestoneSpec,
-    RepoMilestonesSpec, RepoPlan, RepoSettings, RepoState,
+    LabelDiff, MilestoneDiff, RepoEntities, RepoLabel, RepoMilestoneSpec, RepoPlan, RepoSettings,
+    RepoSpec, RepoState,
 };
 
 /// Port for querying and modifying repository configuration on GitHub.
@@ -139,7 +139,13 @@ impl fmt::Display for RepoSyncOutcome {
                 }
             }
             RepoSyncMode::Preview => writeln!(formatter, "dry-run: no changes applied"),
-            RepoSyncMode::Apply => writeln!(formatter, "repository successfully updated"),
+            RepoSyncMode::Apply => {
+                if self.plan.has_actionable_drift() {
+                    writeln!(formatter, "repository successfully updated")
+                } else {
+                    writeln!(formatter, "no changes applied (unmanaged items ignored)")
+                }
+            }
         }
     }
 }
@@ -148,26 +154,14 @@ impl fmt::Display for RepoSyncOutcome {
 #[derive(Debug)]
 pub struct RepoSync<P> {
     port: P,
-    desired_settings: Option<RepoSettings>,
-    desired_labels: Option<RepoLabelsSpec>,
-    desired_milestones: Option<RepoMilestonesSpec>,
+    desired: RepoSpec,
 }
 
 impl<P: RepoPort> RepoSync<P> {
-    /// Creates a `RepoSync` handler with all desired configurations.
+    /// Creates a `RepoSync` handler with desired configuration specification.
     #[must_use]
-    pub const fn new(
-        port: P,
-        desired_settings: Option<RepoSettings>,
-        desired_labels: Option<RepoLabelsSpec>,
-        desired_milestones: Option<RepoMilestonesSpec>,
-    ) -> Self {
-        Self {
-            port,
-            desired_settings,
-            desired_labels,
-            desired_milestones,
-        }
+    pub const fn new(port: P, desired: RepoSpec) -> Self {
+        Self { port, desired }
     }
 
     /// Runs repository sync under `mode`.
@@ -176,18 +170,8 @@ impl<P: RepoPort> RepoSync<P> {
     ///
     /// Returns [`RepoSyncError`] if reading or writing fails, or if in [`RepoSyncMode::Check`] and actionable drift is found.
     pub fn run(&self, mode: RepoSyncMode) -> Result<RepoSyncOutcome, RepoSyncError> {
-        let entities = RepoEntities::from_presence(
-            self.desired_settings.is_some(),
-            self.desired_labels.is_some(),
-            self.desired_milestones.is_some(),
-        );
-
-        let current_state = self.port.get_state(entities)?;
-        let plan = current_state.plan(
-            self.desired_settings.as_ref(),
-            self.desired_labels.as_ref(),
-            self.desired_milestones.as_ref(),
-        );
+        let current_state = self.port.get_state(self.desired.entities())?;
+        let plan = current_state.plan(&self.desired);
 
         let outcome = RepoSyncOutcome::new(plan, mode);
         if !outcome.plan().has_diffs() {
@@ -213,7 +197,7 @@ impl<P: RepoPort> RepoSync<P> {
     fn apply(&self, plan: &RepoPlan) -> Result<(), RepoSyncError> {
         // 1. Apply settings updates
         if !plan.setting_diffs().is_empty()
-            && let Some(ref desired) = self.desired_settings
+            && let Some(ref desired) = self.desired.settings
         {
             self.port.update_settings(desired)?;
         }
@@ -257,7 +241,7 @@ impl<P: RepoPort> RepoSync<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::repo::SettingDiff;
+    use crate::domain::repo::{RepoLabelsSpec, SettingDiff};
     use std::sync::Mutex;
 
     #[derive(Default)]
@@ -330,9 +314,13 @@ mod tests {
             name: "random-tag".into(),
         };
         let plan = RepoPlan::new(Vec::new(), vec![unmanaged_label], Vec::new());
-        let outcome = RepoSyncOutcome::new(plan, RepoSyncMode::Check);
+        let outcome = RepoSyncOutcome::new(plan.clone(), RepoSyncMode::Check);
         assert!(outcome.plan().has_diffs());
         assert!(!outcome.plan().has_actionable_drift());
+        assert!(outcome.to_string().contains("unmanaged items detected"));
+
+        let apply_unmanaged = RepoSyncOutcome::new(plan, RepoSyncMode::Apply);
+        assert!(apply_unmanaged.to_string().contains("no changes applied (unmanaged items ignored)"));
 
         let setting_diff = SettingDiff {
             name: "allow_merge_commit",
@@ -340,9 +328,13 @@ mod tests {
             desired: "true".into(),
         };
         let drift_plan = RepoPlan::new(vec![setting_diff], Vec::new(), Vec::new());
-        let drift_outcome = RepoSyncOutcome::new(drift_plan, RepoSyncMode::Check);
+        let drift_outcome = RepoSyncOutcome::new(drift_plan.clone(), RepoSyncMode::Check);
         assert!(drift_outcome.plan().has_diffs());
         assert!(drift_outcome.plan().has_actionable_drift());
+        assert!(drift_outcome.to_string().contains("drift detected (check failed)"));
+
+        let apply_drift = RepoSyncOutcome::new(drift_plan, RepoSyncMode::Apply);
+        assert!(apply_drift.to_string().contains("repository successfully updated"));
     }
 
     #[test]
@@ -367,7 +359,7 @@ mod tests {
             merge_commit_title: "PR_TITLE".into(),
             merge_commit_message: "PR_BODY".into(),
         };
-        let sync = RepoSync::new(port, Some(desired), None, None);
+        let sync = RepoSync::new(port, RepoSpec::new(Some(desired), None, None));
 
         let err = sync.run(RepoSyncMode::Check).unwrap_err();
         assert!(matches!(err, RepoSyncError::Drift(_)));
@@ -383,9 +375,7 @@ mod tests {
         };
         let sync = RepoSync::new(
             port,
-            None,
-            Some(desired_labels),
-            None,
+            RepoSpec::new(None, Some(desired_labels), None),
         );
 
         let outcome = sync.run(RepoSyncMode::Apply).unwrap();

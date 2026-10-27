@@ -132,7 +132,7 @@ pub fn parse_repo_milestones(json: &str) -> Result<RepoMilestonesPage, GhError> 
         milestones.push(RepoMilestone {
             number: node.number,
             title: node.title,
-            description: node.description,
+            description: node.description.unwrap_or_default(),
             state,
         });
     }
@@ -215,9 +215,11 @@ mod tests {
         assert_eq!(page.milestones.len(), 2);
         assert_eq!(page.milestones[0].number, 1);
         assert_eq!(page.milestones[0].title, "v0");
+        assert_eq!(page.milestones[0].description, "Bootstrap");
         assert_eq!(page.milestones[0].state, MilestoneState::Open);
         assert_eq!(page.milestones[1].number, 2);
         assert_eq!(page.milestones[1].title, "v1");
+        assert_eq!(page.milestones[1].description, "");
         assert_eq!(page.milestones[1].state, MilestoneState::Closed);
     }
 

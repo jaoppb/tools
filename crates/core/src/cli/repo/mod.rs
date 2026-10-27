@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::adapters::github::target::Target;
 use crate::application::repo::RepoSyncMode;
 use crate::config::load_or_find;
-use crate::domain::repo::{RepoEntities, RepoLabelsSpec, RepoMilestonesSpec, RepoSettings};
+use crate::domain::repo::{RepoEntities, RepoSpec};
 
 const PROGRAM: &str = "repo-sync";
 const CHECK: &str = "check";
@@ -41,17 +41,13 @@ pub struct RepoArguments {
     repo: Option<String>,
 }
 
-/// Resolved repository target and desired configurations.
+/// Resolved repository target and desired configuration specification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedRepo {
     /// Repository target.
     pub target: Target,
-    /// Desired repository settings, if configured and selected.
-    pub settings: Option<RepoSettings>,
-    /// Desired labels configuration, if configured and selected.
-    pub labels: Option<RepoLabelsSpec>,
-    /// Desired milestones configuration, if configured and selected.
-    pub milestones: Option<RepoMilestonesSpec>,
+    /// Desired configuration specification.
+    pub spec: RepoSpec,
 }
 
 impl RepoArguments {
@@ -115,7 +111,7 @@ impl RepoArguments {
     /// Fails when configuration cannot be found or read, or when a requested entity is not configured.
     pub fn resolve(&self) -> Result<ResolvedRepo, String> {
         let cfg = load_or_find(self.config_path.as_deref()).map_err(|err| err.to_string())?;
-        let all_settings = cfg.repo_settings().map(RepoSettings::from);
+        let all_settings = cfg.repo_settings().cloned();
         let all_labels = cfg.labels().cloned();
         let all_milestones = cfg.milestones().cloned();
 
@@ -151,12 +147,8 @@ impl RepoArguments {
             .unwrap_or(cfg.github.repository.name);
 
         let target = Target::new(owner, repo, None);
-        Ok(ResolvedRepo {
-            target,
-            settings,
-            labels,
-            milestones,
-        })
+        let spec = RepoSpec::new(settings, labels, milestones);
+        Ok(ResolvedRepo { target, spec })
     }
 }
 
@@ -359,9 +351,9 @@ mod tests {
         ])
         .unwrap();
         let resolved = args.resolve().unwrap();
-        assert!(resolved.settings.is_none());
-        assert!(resolved.labels.is_some());
-        assert!(resolved.milestones.is_none());
+        assert!(resolved.spec.settings.is_none());
+        assert!(resolved.spec.labels.is_some());
+        assert!(resolved.spec.milestones.is_none());
 
         // When no filter is passed, configured entities should be Some
         let args_all = RepoArguments::parse([
@@ -371,9 +363,9 @@ mod tests {
         ])
         .unwrap();
         let resolved_all = args_all.resolve().unwrap();
-        assert!(resolved_all.settings.is_some());
-        assert!(resolved_all.labels.is_some());
-        assert!(resolved_all.milestones.is_none());
+        assert!(resolved_all.spec.settings.is_some());
+        assert!(resolved_all.spec.labels.is_some());
+        assert!(resolved_all.spec.milestones.is_none());
 
         let _ = std::fs::remove_file(path);
     }
