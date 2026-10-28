@@ -30,13 +30,13 @@ This repository is a monorepo for developer tools, repository management utiliti
 | Form structure | `.github/ISSUE_TEMPLATE/*.yml` with `blank_issues_enabled: false` | Enforced |
 | Repository configuration (settings, labels, milestones) | `just repo-check` & PR review | Enforced |
 | Workspace compilation, lints, tests | `just check` (also via Lefthook `pre-push`) | Enforced |
-| Automated pre-commit formatting & lints | Lefthook `pre-commit` (`just setup`) | Enforced |
+| Pre-commit formatting & lint validation | Lefthook `pre-commit` (`just setup`) | Enforced |
 
 ## 2. Developer setup & Git hooks
 
 - **Lefthook.** Local Git hooks are managed by Lefthook to automate formatting, linting, and quality checks.
 - **Setup.** Run `just setup` to configure Git hooks in your local clone.
 - **Hooks:**
-  - `pre-commit`: Automatically formats staged Rust files (`cargo fmt`) with auto-staging, followed by workspace linting (`cargo clippy --workspace -- -D warnings`) when Rust or Cargo manifest files change.
+  - `pre-commit`: Validates Rust code formatting (`cargo fmt --all -- --check`) and workspace lints (`cargo clippy --workspace -- -D warnings`) when Rust or Cargo manifest files change.
   - `pre-push`: Runs full workspace validation (`just check`) and issue workflow audit (`just issues-check`).
   - Local custom overrides can be placed in `lefthook-local.yml` (ignored by git).
