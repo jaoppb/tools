@@ -1,0 +1,22 @@
+# Lefthook Git hooks configuration
+# Documentation: https://github.com/evilmartians/lefthook
+
+pre-commit:
+  parallel: false
+  commands:
+    fmt:
+      priority: 1
+      glob: "*.rs"
+      run: cargo fmt -- {staged_files}
+      stage_fixed: true
+    clippy:
+      priority: 2
+      glob: "*.{rs,toml,lock}"
+      run: cargo clippy --workspace -- -D warnings
+
+pre-push:
+  commands:
+    check:
+      run: just check
+    issues-check:
+      run: just issues-check

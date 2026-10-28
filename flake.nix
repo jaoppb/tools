@@ -34,6 +34,7 @@
             rustfmt
             gh
             just
+            lefthook
           ];
         };
       }

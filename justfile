@@ -3,6 +3,10 @@
 default:
     @just --list
 
+# Set up development environment and Git hooks
+setup:
+    lefthook install
+
 # Run workspace checks, lints, and test suite
 check:
     cargo check --workspace
