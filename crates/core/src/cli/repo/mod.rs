@@ -5,15 +5,67 @@ use std::path::PathBuf;
 
 use crate::adapters::github::target::Target;
 use crate::application::repo::RepoSyncMode;
-use crate::config::{ConfigError, load_or_find};
-use crate::domain::repo::RepoSettings;
+use crate::config::{Config, ConfigError, load_or_find};
+use crate::domain::repo::RepoSpec;
 
 const PROGRAM: &str = "repo-sync";
 const CHECK: &str = "check";
 const DRY_RUN: &str = "dry-run";
+const SETTINGS: &str = "settings";
+const LABELS: &str = "labels";
+const MILESTONES: &str = "milestones";
 const CONFIG: &str = "config";
 const OWNER: &str = "owner";
 const REPO: &str = "repo";
+
+/// Internal entity filter from command-line flags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EntityFilter {
+    settings: bool,
+    labels: bool,
+    milestones: bool,
+}
+
+impl EntityFilter {
+    fn apply(self, spec: RepoSpec) -> Result<RepoSpec, RepoResolveError> {
+        Ok(RepoSpec {
+            settings: select_entity(
+                self.settings,
+                spec.settings,
+                "settings",
+                "[github.repository.settings]",
+            )?,
+            labels: select_entity(self.labels, spec.labels, "labels", "[github.labels]")?,
+            milestones: select_entity(
+                self.milestones,
+                spec.milestones,
+                "milestones",
+                "[github.milestones]",
+            )?,
+        })
+    }
+}
+
+/// An error resolving repository configuration from tools.toml and CLI arguments.
+#[derive(Debug, thiserror::Error)]
+pub enum RepoResolveError {
+    /// Failed to find or read configuration.
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    /// No repository settings, labels, or milestones configured in tools.toml.
+    #[error("no repository settings, labels, or milestones configured in tools.toml")]
+    EmptyConfig,
+    /// Requested entity not configured in tools.toml.
+    #[error(
+        "repository {entity} requested via --{entity}, but not configured in tools.toml under {section}"
+    )]
+    MissingEntity {
+        /// The entity name (e.g. `settings`, `labels`, `milestones`).
+        entity: &'static str,
+        /// The tools.toml section (e.g. `[github.labels]`).
+        section: &'static str,
+    },
+}
 
 /// A command line that was not run: an argument clap rejected, or `--help`.
 #[derive(Debug, thiserror::Error)]
@@ -32,9 +84,19 @@ impl RepoUsageError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoArguments {
     mode: RepoSyncMode,
+    explicit_entities: Option<EntityFilter>,
     config_path: Option<PathBuf>,
     owner: Option<String>,
     repo: Option<String>,
+}
+
+/// Resolved repository target and desired configuration specification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedRepo {
+    /// Repository target.
+    pub target: Target,
+    /// Desired configuration specification.
+    pub spec: RepoSpec,
 }
 
 impl RepoArguments {
@@ -53,8 +115,22 @@ impl RepoArguments {
             RepoSyncMode::Apply
         };
 
+        let has_filter =
+            matches.get_flag(SETTINGS) || matches.get_flag(LABELS) || matches.get_flag(MILESTONES);
+
+        let explicit_entities = if has_filter {
+            Some(EntityFilter {
+                settings: matches.get_flag(SETTINGS),
+                labels: matches.get_flag(LABELS),
+                milestones: matches.get_flag(MILESTONES),
+            })
+        } else {
+            None
+        };
+
         Ok(Self {
             mode,
+            explicit_entities,
             config_path: matches.get_one::<String>(CONFIG).map(PathBuf::from),
             owner: matches.get_one::<String>(OWNER).cloned(),
             repo: matches.get_one::<String>(REPO).cloned(),
@@ -67,49 +143,62 @@ impl RepoArguments {
         self.mode
     }
 
-    /// Resolves the target and desired settings from configuration and CLI overrides.
+    /// Resolves target and all configured resources from `tools.toml` and CLI flags.
     ///
     /// # Errors
     ///
-    /// Fails when configuration cannot be found, or settings are missing.
-    pub fn resolve(&self) -> Result<(Target, RepoSettings), String> {
-        let loaded = load_or_find(self.config_path.as_deref());
-        let (cfg_owner, cfg_repo, cfg_settings) = match loaded {
-            Ok(cfg) => {
-                let s = cfg.repo_settings().cloned();
-                (
-                    Some(cfg.github.repository.owner),
-                    Some(cfg.github.repository.name),
-                    s,
-                )
-            }
-            Err(ConfigError::NotFound) => (None, None, None),
-            Err(err) => return Err(err.to_string()),
+    /// Fails when configuration cannot be found or read, or when a requested entity is not configured.
+    pub fn resolve(&self) -> Result<ResolvedRepo, RepoResolveError> {
+        let cfg = load_or_find(self.config_path.as_deref())?;
+        self.resolve_with_config(cfg)
+    }
+
+    /// Resolves target and configuration specification from an already loaded [`Config`] and CLI flags.
+    ///
+    /// # Errors
+    ///
+    /// Fails when a requested entity is not configured or when tools.toml has no repository configuration.
+    pub fn resolve_with_config(&self, cfg: Config) -> Result<ResolvedRepo, RepoResolveError> {
+        let owner = self.owner.clone().unwrap_or(cfg.github.repository.owner);
+        let repo = self.repo.clone().unwrap_or(cfg.github.repository.name);
+        let target = Target::new(owner, repo, None);
+
+        let spec = RepoSpec::new(
+            cfg.github.repository.settings,
+            cfg.github.labels,
+            cfg.github.milestones,
+        );
+        let spec = match self.explicit_entities {
+            Some(filter) => filter.apply(spec)?,
+            None if spec.is_empty() => return Err(RepoResolveError::EmptyConfig),
+            None => spec,
         };
 
-        let owner = self.owner.clone().or(cfg_owner).ok_or_else(|| {
-            "owner is required (specify via --owner or in tools.toml)".to_string()
-        })?;
-        let repo = self.repo.clone().or(cfg_repo).ok_or_else(|| {
-            "repository is required (specify via --repo or in tools.toml)".to_string()
-        })?;
-        let settings = cfg_settings.ok_or_else(|| {
-            "repository settings not configured in tools.toml under [github.repository.settings]".to_string()
-        })?;
+        Ok(ResolvedRepo { target, spec })
+    }
+}
 
-        let target = Target::new(owner, repo, None);
-        Ok((target, RepoSettings::from(&settings)))
+fn select_entity<T>(
+    flag: bool,
+    opt: Option<T>,
+    entity: &'static str,
+    section: &'static str,
+) -> Result<Option<T>, RepoResolveError> {
+    match (flag, opt) {
+        (true, None) => Err(RepoResolveError::MissingEntity { entity, section }),
+        (true, Some(val)) => Ok(Some(val)),
+        (false, _) => Ok(None),
     }
 }
 
 fn command() -> Command {
     Command::new(PROGRAM)
-        .about("Synchronizes and audits GitHub repository settings against tools.toml")
+        .about("Synchronizes and audits GitHub repository settings, labels, and milestones against tools.toml")
         .arg(
             Arg::new(CHECK)
                 .long(CHECK)
                 .action(ArgAction::SetTrue)
-                .help("Audit settings and exit with non-zero code if drift is detected"),
+                .help("Audit repository state and exit with non-zero code if drift is detected"),
         )
         .arg(
             Arg::new(DRY_RUN)
@@ -117,6 +206,24 @@ fn command() -> Command {
                 .action(ArgAction::SetTrue)
                 .conflicts_with(CHECK)
                 .help("Print differences without applying changes to GitHub"),
+        )
+        .arg(
+            Arg::new(SETTINGS)
+                .long(SETTINGS)
+                .action(ArgAction::SetTrue)
+                .help("Reconcile repository merge and branch settings"),
+        )
+        .arg(
+            Arg::new(LABELS)
+                .long(LABELS)
+                .action(ArgAction::SetTrue)
+                .help("Reconcile repository labels"),
+        )
+        .arg(
+            Arg::new(MILESTONES)
+                .long(MILESTONES)
+                .action(ArgAction::SetTrue)
+                .help("Reconcile repository milestones"),
         )
         .arg(
             Arg::new(CONFIG)
@@ -152,5 +259,97 @@ mod tests {
 
         let args = RepoArguments::parse(["repo-sync".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Apply);
+    }
+
+    #[test]
+    fn resolve_fails_loud_when_config_is_missing() {
+        let args = RepoArguments::parse([
+            "repo-sync".into(),
+            "--config".into(),
+            "non-existent-tools.toml".into(),
+        ])
+        .unwrap();
+        let err = args.resolve().unwrap_err();
+        assert!(matches!(
+            err,
+            RepoResolveError::Config(ConfigError::Io { .. })
+        ));
+    }
+
+    #[test]
+    fn resolve_fails_loud_when_requested_entity_is_missing() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args = RepoArguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let err = args.resolve_with_config(config.clone()).unwrap_err();
+        assert!(matches!(
+            err,
+            RepoResolveError::MissingEntity {
+                entity: "labels",
+                section: "[github.labels]"
+            }
+        ));
+
+        let args_all_flags = RepoArguments::parse([
+            "repo-sync".into(),
+            "--settings".into(),
+            "--labels".into(),
+            "--milestones".into(),
+        ])
+        .unwrap();
+        let err_all_flags = args_all_flags.resolve_with_config(config.clone()).unwrap_err();
+        assert!(matches!(
+            err_all_flags,
+            RepoResolveError::MissingEntity {
+                entity: "settings",
+                section: "[github.repository.settings]"
+            }
+        ));
+
+        let args_all = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let err_all = args_all.resolve_with_config(config).unwrap_err();
+        assert!(matches!(err_all, RepoResolveError::EmptyConfig));
+    }
+
+    #[test]
+    fn resolve_filters_selected_entities() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.repository.settings]
+            allow_merge_commit = true
+            allow_squash_merge = false
+            allow_rebase_merge = false
+            delete_branch_on_merge = true
+            merge_commit_title = "PR_TITLE"
+            merge_commit_message = "PR_BODY"
+
+            [github.labels]
+            items = [
+                { name = "type:feat", color = "1d76db", description = "Feature" }
+            ]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        // When --labels is passed, settings should be None
+        let args = RepoArguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let resolved = args.resolve_with_config(config.clone()).unwrap();
+        assert!(resolved.spec.settings.is_none());
+        assert!(resolved.spec.labels.is_some());
+        assert!(resolved.spec.milestones.is_none());
+
+        // When no filter is passed, configured entities should be Some
+        let args_all = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let resolved_all = args_all.resolve_with_config(config).unwrap();
+        assert!(resolved_all.spec.settings.is_some());
+        assert!(resolved_all.spec.labels.is_some());
+        assert!(resolved_all.spec.milestones.is_none());
     }
 }

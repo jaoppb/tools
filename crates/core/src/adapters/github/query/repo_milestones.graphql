@@ -1,0 +1,17 @@
+# One page of the repository's milestones, open and closed.
+query($cursor: String) {
+  repository(owner: "@OWNER@", name: "@REPOSITORY@") {
+    milestones(first: 100, states: [OPEN, CLOSED], after: $cursor) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        number
+        title
+        description
+        state
+      }
+    }
+  }
+}

@@ -1,6 +1,10 @@
 //! Configuration for repository target, repository settings, and audit rules, read from `tools.toml`.
 
 use crate::adapters::github::target::Target;
+pub use crate::domain::repo::{
+    MergeCommitMessage, MergeCommitTitle, MilestoneState, RepoLabel, RepoLabelsSpec,
+    RepoMilestoneSpec, RepoMilestonesSpec, RepoSettings, RepoSpec,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -33,6 +37,28 @@ impl Config {
     pub const fn repo_settings(&self) -> Option<&RepositorySettingsConfig> {
         self.github.repository.settings.as_ref()
     }
+
+    /// The repository labels configuration, if specified.
+    #[must_use]
+    pub const fn labels(&self) -> Option<&LabelsConfig> {
+        self.github.labels.as_ref()
+    }
+
+    /// The repository milestones configuration, if specified.
+    #[must_use]
+    pub const fn milestones(&self) -> Option<&MilestonesConfig> {
+        self.github.milestones.as_ref()
+    }
+
+    /// Converts this configuration into a desired repository specification.
+    #[must_use]
+    pub fn into_repo_spec(self) -> RepoSpec {
+        RepoSpec::new(
+            self.github.repository.settings,
+            self.github.labels,
+            self.github.milestones,
+        )
+    }
 }
 
 /// GitHub configuration namespace.
@@ -46,6 +72,12 @@ pub struct GithubConfig {
     /// Issue rules configuration.
     #[serde(default)]
     pub issues: IssuesConfig,
+    /// Repository labels configuration.
+    #[serde(default)]
+    pub labels: Option<LabelsConfig>,
+    /// Repository milestones configuration.
+    #[serde(default)]
+    pub milestones: Option<MilestonesConfig>,
 }
 
 /// Repository coordinates and optional settings.
@@ -59,27 +91,6 @@ pub struct RepositoryConfig {
     /// Target repository settings.
     #[serde(default)]
     pub settings: Option<RepositorySettingsConfig>,
-}
-
-/// Repository merge and branch settings enforced on GitHub.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct RepositorySettingsConfig {
-    /// Whether merge commits are enabled.
-    #[serde(default = "default_true")]
-    pub allow_merge_commit: bool,
-    /// Whether squash merges are enabled.
-    #[serde(default)]
-    pub allow_squash_merge: bool,
-    /// Whether rebase merges are enabled.
-    #[serde(default)]
-    pub allow_rebase_merge: bool,
-    /// Whether head branches are automatically deleted upon merge.
-    #[serde(default = "default_true")]
-    pub delete_branch_on_merge: bool,
-    /// Default merge commit title format (e.g. `PR_TITLE` or `MERGE_MESSAGE`).
-    pub merge_commit_title: String,
-    /// Default merge commit message format (e.g. `PR_BODY`, `PR_TITLE`, or `BLANK`).
-    pub merge_commit_message: String,
 }
 
 /// Project parameters.
@@ -97,6 +108,15 @@ pub struct IssuesConfig {
     #[serde(default)]
     pub rules: RulesConfig,
 }
+
+/// Repository merge and branch settings configuration (alias for [`RepoSettings`]).
+pub type RepositorySettingsConfig = RepoSettings;
+
+/// Repository labels configuration (alias for [`RepoLabelsSpec`]).
+pub type LabelsConfig = RepoLabelsSpec;
+
+/// Repository milestones configuration (alias for [`RepoMilestonesSpec`]).
+pub type MilestonesConfig = RepoMilestonesSpec;
 
 /// Granular boolean toggles for each issues-check rule.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -257,11 +277,53 @@ mod tests {
         assert!(!settings.allow_squash_merge);
         assert!(!settings.allow_rebase_merge);
         assert!(settings.delete_branch_on_merge);
-        assert_eq!(settings.merge_commit_title, "PR_TITLE");
-        assert_eq!(settings.merge_commit_message, "PR_BODY");
+        assert_eq!(settings.merge_commit_title, MergeCommitTitle::PrTitle);
+        assert_eq!(settings.merge_commit_message, MergeCommitMessage::PrBody);
 
         assert!(!config.rules().cycle);
         assert!(config.rules().labels);
         assert!(config.rules().milestone);
+    }
+
+    #[test]
+    fn parses_labels_and_milestones_config() {
+        let toml_str = r##"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.labels]
+            deprecated = ["bug", "epic"]
+            prune_unmanaged = true
+            items = [
+                { name = "type:feat", color = "#1D76DB", description = "New feature" },
+                { name = "type:fix", color = "d73a4a", description = "Bug fix" }
+            ]
+
+            [github.milestones]
+            deprecated = ["v0.9"]
+            items = [
+                { title = "v0", description = "Bootstrap" },
+                { title = "v1", description = "Stable", state = "closed" }
+            ]
+        "##;
+        let config: Config = toml::from_str(toml_str).expect("should parse");
+        let labels = config.labels().expect("labels should exist");
+        assert_eq!(labels.deprecated, vec!["bug", "epic"]);
+        assert!(labels.prune_unmanaged);
+        assert_eq!(labels.items.len(), 2);
+        assert_eq!(labels.items[0].name, "type:feat");
+        assert_eq!(labels.items[0].color, "1d76db"); // normalized: no # and lowercase
+        assert_eq!(labels.items[0].description, "New feature");
+
+        let milestones = config.milestones().expect("milestones should exist");
+        assert_eq!(milestones.deprecated, vec!["v0.9"]);
+        assert_eq!(milestones.items.len(), 2);
+        assert_eq!(milestones.items[0].title, "v0");
+        assert_eq!(milestones.items[0].description, "Bootstrap");
+        assert_eq!(milestones.items[0].state, MilestoneState::Open); // default open
+        assert_eq!(milestones.items[1].title, "v1");
+        assert_eq!(milestones.items[1].description, "Stable");
+        assert_eq!(milestones.items[1].state, MilestoneState::Closed);
     }
 }

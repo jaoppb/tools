@@ -61,9 +61,35 @@ impl GhRunner {
     /// Returns [`GhError::Missing`] when the program is not installed, and
     /// [`GhError::Failed`] when it fails or exits with an error.
     pub fn rest_patch(&self, endpoint: &str, body: &str) -> Result<String, GhError> {
+        self.rest_send("PATCH", endpoint, body)
+    }
+
+    /// Runs a REST API POST request against GitHub with a JSON payload provided on standard input.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GhError::Missing`] when the program is not installed, and
+    /// [`GhError::Failed`] when it fails or exits with an error.
+    pub fn rest_post(&self, endpoint: &str, body: &str) -> Result<String, GhError> {
+        self.rest_send("POST", endpoint, body)
+    }
+
+    fn rest_send(&self, method: &str, endpoint: &str, body: &str) -> Result<String, GhError> {
         let mut command = Command::new(&self.program);
-        command.args(["api", "-X", "PATCH", endpoint, "--input", "-"]);
+        command.args(["api", "-X", method, endpoint, "--input", "-"]);
         run_with_input(&mut command, body)
+    }
+
+    /// Runs a REST API DELETE request against GitHub.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GhError::Missing`] when the program is not installed, and
+    /// [`GhError::Failed`] when it fails or exits with an error.
+    pub fn rest_delete(&self, endpoint: &str) -> Result<String, GhError> {
+        let mut command = Command::new(&self.program);
+        command.args(["api", "-X", "DELETE", endpoint]);
+        run(&mut command)
     }
 }
 
@@ -95,8 +121,19 @@ fn run_with_input(command: &mut Command, input: &str) -> Result<String, GhError>
         },
     })?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(input.as_bytes());
+    if let Some(mut stdin) = child.stdin.take()
+        && let Err(write_err) = stdin.write_all(input.as_bytes())
+    {
+        drop(stdin);
+        if let Ok(output) = child.wait_with_output() {
+            let said = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            if !said.is_empty() {
+                return Err(GhError::Failed { reason: said });
+            }
+        }
+        return Err(GhError::Failed {
+            reason: format!("failed to write payload to standard input: {write_err}"),
+        });
     }
 
     let output = child.wait_with_output().map_err(|error| GhError::Failed {

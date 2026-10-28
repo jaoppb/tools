@@ -1,121 +1,310 @@
-//! Synchronizing and auditing repository settings.
+//! Synchronizing and auditing repository settings, labels, and milestones.
 
 use std::fmt;
 
-use crate::adapters::github::GhRepo;
-use crate::domain::repo::{RepoSettings, SettingDiff};
+use crate::domain::repo::{LabelDiff, MilestoneDiff, RepoPlan, RepoSpec, RepoState, SettingDiff};
+
+/// Port for querying and modifying repository configuration on GitHub.
+pub trait RepoPort {
+    /// Reads current repository state for requested specification.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoSyncError::Read`] if reading fails.
+    fn get_state(&self, spec: &RepoSpec) -> Result<RepoState, RepoSyncError>;
+
+    /// Updates repository settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoSyncError::Write`] if applying updates fails.
+    fn update_settings(&self, settings: &[SettingDiff]) -> Result<(), RepoSyncError>;
+
+    /// Applies a repository label difference (create, update, or delete).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoSyncError::Write`] if applying the difference fails.
+    fn apply_label(&self, diff: &LabelDiff) -> Result<(), RepoSyncError>;
+
+    /// Applies a repository milestone difference (create, update, or delete).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoSyncError::Write`] if applying the difference fails.
+    fn apply_milestone(&self, diff: &MilestoneDiff) -> Result<(), RepoSyncError>;
+}
 
 /// Execution mode for repository synchronization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepoSyncMode {
-    /// Audit only: report differences and return an error if settings drift.
+    /// Audit only: report differences and return an error if settings or entities drift.
     Check,
     /// Dry run: report differences without applying them, succeeding.
     Preview,
-    /// Apply: update GitHub settings to match desired configuration.
+    /// Apply: update GitHub repository to match desired configuration.
     Apply,
 }
 
 /// Errors occurring during repository synchronization.
 #[derive(Debug, thiserror::Error)]
 pub enum RepoSyncError {
-    /// Failed to read current settings.
-    #[error("failed to read repository settings: {0}")]
+    /// Failed to read current repository state.
+    #[error("{0}")]
     Read(String),
-    /// Failed to apply updated settings.
-    #[error("failed to update repository settings: {0}")]
+    /// Failed to apply updated state.
+    #[error("{0}")]
     Write(String),
-    /// Settings drifted in check mode.
-    #[error("repository settings drift detected:\n{0}")]
-    Drift(String),
+    /// State drifted in check mode.
+    #[error("{0}")]
+    Drift(Box<RepoSyncOutcome>),
 }
 
 /// Outcome of a repository sync run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoSyncOutcome {
-    diffs: Vec<SettingDiff>,
+    plan: RepoPlan,
     mode: RepoSyncMode,
 }
 
 impl RepoSyncOutcome {
-    /// New outcome with `diffs` under `mode`.
+    /// New outcome with diffs under `mode`.
     #[must_use]
-    pub const fn new(diffs: Vec<SettingDiff>, mode: RepoSyncMode) -> Self {
-        Self { diffs, mode }
+    pub const fn new(plan: RepoPlan, mode: RepoSyncMode) -> Self {
+        Self { plan, mode }
     }
 
-    /// Whether any differences were detected.
+    /// The reconciliation plan produced.
     #[must_use]
-    pub fn has_diffs(&self) -> bool {
-        !self.diffs.is_empty()
+    pub const fn plan(&self) -> &RepoPlan {
+        &self.plan
     }
 
-    /// The differences detected.
+    /// Execution mode of the run.
     #[must_use]
-    pub fn diffs(&self) -> &[SettingDiff] {
-        &self.diffs
+    pub const fn mode(&self) -> RepoSyncMode {
+        self.mode
     }
 }
 
 impl fmt::Display for RepoSyncOutcome {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.diffs.is_empty() {
-            return writeln!(formatter, "repository settings are in sync");
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> fmt::Result {
+        if !self.plan.has_diffs() {
+            return writeln!(formatter, "repository configuration is in sync");
         }
-        for diff in &self.diffs {
-            writeln!(formatter, "  • {diff}")?;
-        }
+
+        write!(formatter, "{}", self.plan)?;
+
         match self.mode {
-            RepoSyncMode::Check => writeln!(formatter, "drift detected (check failed)"),
+            RepoSyncMode::Check => {
+                if self.plan.has_actionable_drift() {
+                    writeln!(formatter, "drift detected (check failed)")
+                } else {
+                    writeln!(formatter, "unmanaged items detected (pruning disabled)")
+                }
+            }
             RepoSyncMode::Preview => writeln!(formatter, "dry-run: no changes applied"),
-            RepoSyncMode::Apply => writeln!(formatter, "settings successfully updated"),
+            RepoSyncMode::Apply => {
+                if self.plan.has_actionable_drift() {
+                    writeln!(formatter, "repository successfully updated")
+                } else {
+                    writeln!(formatter, "no changes applied (unmanaged items ignored)")
+                }
+            }
         }
     }
 }
 
-/// Orchestrates repository settings audit and synchronization.
+/// Orchestrates repository audit and synchronization.
 #[derive(Debug)]
-pub struct RepoSync {
-    repo: GhRepo,
-    desired: RepoSettings,
+pub struct RepoSync<P> {
+    port: P,
+    desired: RepoSpec,
 }
 
-impl RepoSync {
-    /// Creates a new `RepoSync` handler.
+impl<P: RepoPort> RepoSync<P> {
+    /// Creates a `RepoSync` handler with desired configuration specification.
     #[must_use]
-    pub const fn new(repo: GhRepo, desired: RepoSettings) -> Self {
-        Self { repo, desired }
+    pub const fn new(port: P, desired: RepoSpec) -> Self {
+        Self { port, desired }
     }
 
     /// Runs repository sync under `mode`.
     ///
     /// # Errors
     ///
-    /// Returns [`RepoSyncError`] if reading or writing fails, or if in [`RepoSyncMode::Check`] and drift is found.
+    /// Returns [`RepoSyncError`] if reading or writing fails, or if in [`RepoSyncMode::Check`] and actionable drift is found.
     pub fn run(&self, mode: RepoSyncMode) -> Result<RepoSyncOutcome, RepoSyncError> {
-        let current = self
-            .repo
-            .get_settings()
+        let current_state = self.port.get_state(&self.desired)?;
+        let plan = current_state
+            .plan(&self.desired)
             .map_err(|err| RepoSyncError::Read(err.to_string()))?;
-        let diffs = current.diff(&self.desired);
-        let outcome = RepoSyncOutcome::new(diffs, mode);
 
-        if !outcome.has_diffs() {
+        let outcome = RepoSyncOutcome::new(plan, mode);
+        if !outcome.plan().has_diffs() {
             return Ok(outcome);
         }
 
         match mode {
             RepoSyncMode::Check => {
-                let report = outcome.to_string();
-                Err(RepoSyncError::Drift(report))
+                if outcome.plan().has_actionable_drift() {
+                    Err(RepoSyncError::Drift(Box::new(outcome)))
+                } else {
+                    Ok(outcome)
+                }
             }
             RepoSyncMode::Preview => Ok(outcome),
             RepoSyncMode::Apply => {
-                self.repo
-                    .update_settings(&self.desired)
-                    .map_err(|err| RepoSyncError::Write(err.to_string()))?;
+                self.apply(outcome.plan())?;
                 Ok(outcome)
             }
         }
+    }
+
+    fn apply(&self, plan: &RepoPlan) -> Result<(), RepoSyncError> {
+        if !plan.setting_diffs().is_empty() {
+            self.port.update_settings(plan.setting_diffs())?;
+        }
+        for diff in plan.label_diffs().iter().filter(|d| d.is_actionable()) {
+            self.port.apply_label(diff)?;
+        }
+        for diff in plan.milestone_diffs().iter().filter(|d| d.is_actionable()) {
+            self.port.apply_milestone(diff)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::repo::{RepoLabel, RepoLabelsSpec, RepoSettings, SettingDiff};
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct MockRepoPort {
+        state: RepoState,
+        applied_settings: Mutex<Vec<Vec<SettingDiff>>>,
+        applied_labels: Mutex<Vec<LabelDiff>>,
+        applied_milestones: Mutex<Vec<MilestoneDiff>>,
+    }
+
+    impl MockRepoPort {
+        fn new(state: RepoState) -> Self {
+            Self {
+                state,
+                applied_settings: Mutex::new(Vec::new()),
+                applied_labels: Mutex::new(Vec::new()),
+                applied_milestones: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl RepoPort for MockRepoPort {
+        fn get_state(&self, _spec: &RepoSpec) -> Result<RepoState, RepoSyncError> {
+            Ok(self.state.clone())
+        }
+
+        fn update_settings(&self, settings: &[SettingDiff]) -> Result<(), RepoSyncError> {
+            self.applied_settings
+                .lock()
+                .unwrap()
+                .push(settings.to_vec());
+            Ok(())
+        }
+
+        fn apply_label(&self, diff: &LabelDiff) -> Result<(), RepoSyncError> {
+            self.applied_labels.lock().unwrap().push(diff.clone());
+            Ok(())
+        }
+
+        fn apply_milestone(&self, diff: &MilestoneDiff) -> Result<(), RepoSyncError> {
+            self.applied_milestones.lock().unwrap().push(diff.clone());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn outcome_distinguishes_actionable_drift_from_unmanaged_items() {
+        let unmanaged_label = LabelDiff::Unmanaged {
+            name: "random-tag".into(),
+        };
+        let plan = RepoPlan::new(Vec::new(), vec![unmanaged_label], Vec::new());
+        let outcome = RepoSyncOutcome::new(plan.clone(), RepoSyncMode::Check);
+        assert!(outcome.plan().has_diffs());
+        assert!(!outcome.plan().has_actionable_drift());
+        assert!(outcome.to_string().contains("unmanaged items detected"));
+
+        let apply_unmanaged = RepoSyncOutcome::new(plan, RepoSyncMode::Apply);
+        assert!(
+            apply_unmanaged
+                .to_string()
+                .contains("no changes applied (unmanaged items ignored)")
+        );
+
+        let setting_diff = SettingDiff::AllowMergeCommit {
+            current: false,
+            desired: true,
+        };
+        let drift_plan = RepoPlan::new(vec![setting_diff], Vec::new(), Vec::new());
+        let drift_outcome = RepoSyncOutcome::new(drift_plan.clone(), RepoSyncMode::Check);
+        assert!(drift_outcome.plan().has_diffs());
+        assert!(drift_outcome.plan().has_actionable_drift());
+        assert!(
+            drift_outcome
+                .to_string()
+                .contains("drift detected (check failed)")
+        );
+
+        let apply_drift = RepoSyncOutcome::new(drift_plan, RepoSyncMode::Apply);
+        assert!(
+            apply_drift
+                .to_string()
+                .contains("repository successfully updated")
+        );
+    }
+
+    #[test]
+    fn sync_runs_check_mode_and_reports_drift() {
+        let port = MockRepoPort::new(RepoState::new(
+            Some(RepoSettings {
+                allow_merge_commit: false,
+                allow_squash_merge: false,
+                allow_rebase_merge: false,
+                delete_branch_on_merge: true,
+                merge_commit_title: Default::default(),
+                merge_commit_message: Default::default(),
+            }),
+            Some(Vec::new()),
+            Some(Vec::new()),
+        ));
+        let desired = RepoSettings {
+            allow_merge_commit: true,
+            allow_squash_merge: false,
+            allow_rebase_merge: false,
+            delete_branch_on_merge: true,
+            merge_commit_title: Default::default(),
+            merge_commit_message: Default::default(),
+        };
+        let sync = RepoSync::new(port, RepoSpec::new(Some(desired), None, None));
+
+        let err = sync.run(RepoSyncMode::Check).unwrap_err();
+        assert!(matches!(err, RepoSyncError::Drift(_)));
+    }
+
+    #[test]
+    fn sync_applies_changes_to_port() {
+        let port = MockRepoPort::new(RepoState::new(None, Some(Vec::new()), None));
+        let desired_labels = RepoLabelsSpec {
+            deprecated: vec!["old-label".into()],
+            prune_unmanaged: false,
+            items: vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
+        };
+        let sync = RepoSync::new(port, RepoSpec::new(None, Some(desired_labels), None));
+
+        let outcome = sync.run(RepoSyncMode::Apply).unwrap();
+        assert!(outcome.plan().has_diffs());
+        assert_eq!(outcome.mode(), RepoSyncMode::Apply);
+        assert_eq!(sync.port.applied_labels.lock().unwrap().len(), 1);
     }
 }

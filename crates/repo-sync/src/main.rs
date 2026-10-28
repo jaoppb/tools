@@ -1,7 +1,7 @@
-//! Command-line entry point: `repo-sync [--check | --dry-run]`.
+//! Command-line entry point: `repo-sync [--check | --dry-run] [--settings] [--labels] [--milestones]`.
 //!
-//! Exits with 0 when settings are in sync or applied, with 1 when `--check`
-//! finds settings drift, and with 2 on configuration or runtime errors.
+//! Exits with 0 when repository configuration is in sync or applied, with 1 when `--check`
+//! finds configuration drift, and with 2 on configuration or runtime errors.
 //! The report goes to standard error because printing macros are forbidden.
 
 use std::io::Write;
@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use tools_core::adapters::github::GhRepo;
 use tools_core::application::{RepoSync, RepoSyncError};
-use tools_core::cli::{RepoArguments, RepoUsageError};
+use tools_core::cli::RepoArguments;
 
 /// What to print and how to exit.
 struct Exit {
@@ -26,24 +26,27 @@ fn main() -> ExitCode {
 
 fn run() -> Result<String, Exit> {
     let command_line = std::env::args_os().map(|argument| argument.to_string_lossy().into_owned());
-    let arguments = RepoArguments::parse(command_line).map_err(|usage: RepoUsageError| Exit {
+    let arguments = RepoArguments::parse(command_line).map_err(|usage| Exit {
         text: usage.to_string(),
         code: usage.exit_code(),
     })?;
-    let (target, desired) = arguments
-        .resolve()
-        .map_err(|err| Exit { text: err, code: 2 })?;
-    let repo_sync = RepoSync::new(GhRepo::new(target), desired);
-    let outcome = repo_sync.run(arguments.mode()).map_err(|error| match error {
-        RepoSyncError::Drift(report) => Exit {
-            text: report,
-            code: 1,
-        },
-        RepoSyncError::Read(reason) | RepoSyncError::Write(reason) => Exit {
-            text: reason,
-            code: 2,
-        },
+    let resolved = arguments.resolve().map_err(|err| Exit {
+        text: err.to_string(),
+        code: 2,
     })?;
+    let repo_sync = RepoSync::new(GhRepo::new(resolved.target), resolved.spec);
+    let outcome = repo_sync
+        .run(arguments.mode())
+        .map_err(|error| match error {
+            RepoSyncError::Drift(outcome) => Exit {
+                text: outcome.to_string(),
+                code: 1,
+            },
+            RepoSyncError::Read(reason) | RepoSyncError::Write(reason) => Exit {
+                text: reason,
+                code: 2,
+            },
+        })?;
     Ok(outcome.to_string())
 }
 

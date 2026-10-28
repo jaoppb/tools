@@ -1,6 +1,6 @@
 //! The rules of the issue lifecycle, over a snapshot of the Project.
 //!
-//! This layer imports only `std`: it never sees `gh`, JSON or the network.
+//! This layer imports only `std` and `serde`: it never sees `gh`, JSON or the network.
 
 pub mod audit;
 pub mod card;
@@ -21,6 +21,10 @@ pub use crate::domain::facts::{Effort, Facts, Label, Labels, Milestone, Missing,
 pub use crate::domain::issue::{IssueNumber, Lifecycle, Role, Status};
 pub use crate::domain::links::{Blocker, Blockers, Links, Parent};
 pub use crate::domain::plan::{Gap, Gaps, Move, Moves, Plan, Reason, Transition};
-pub use crate::domain::repo::{RepoSettings, SettingDiff};
+pub use crate::domain::repo::{
+    DeleteReason, LabelDiff, MilestoneDiff, MilestoneState, RepoLabel, RepoLabelsSpec,
+    RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec, RepoPlan, RepoPlanError, RepoSettings,
+    RepoSpec, RepoState, SettingDiff,
+};
 pub use crate::domain::snapshot::{Closing, Snapshot};
 pub use crate::domain::target::target;
