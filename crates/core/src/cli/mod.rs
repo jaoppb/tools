@@ -3,7 +3,7 @@
 pub mod audit;
 pub mod repo;
 
-pub use crate::cli::repo::{RepoArguments, RepoUsageError};
+pub use crate::cli::repo::{RepoArguments, RepoResolveError, RepoUsageError};
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::path::PathBuf;

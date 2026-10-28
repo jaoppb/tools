@@ -123,127 +123,37 @@ impl std::fmt::Display for SettingDiff {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AllowMergeCommit { current, desired } => {
-                write!(
-                    formatter,
-                    "allow_merge_commit: current '{current}' != desired '{desired}'"
-                )
+                write!(formatter, "allow_merge_commit: '{current}' -> '{desired}'")
             }
             Self::AllowSquashMerge { current, desired } => {
-                write!(
-                    formatter,
-                    "allow_squash_merge: current '{current}' != desired '{desired}'"
-                )
+                write!(formatter, "allow_squash_merge: '{current}' -> '{desired}'")
             }
             Self::AllowRebaseMerge { current, desired } => {
-                write!(
-                    formatter,
-                    "allow_rebase_merge: current '{current}' != desired '{desired}'"
-                )
+                write!(formatter, "allow_rebase_merge: '{current}' -> '{desired}'")
             }
             Self::DeleteBranchOnMerge { current, desired } => {
                 write!(
                     formatter,
-                    "delete_branch_on_merge: current '{current}' != desired '{desired}'"
+                    "delete_branch_on_merge: '{current}' -> '{desired}'"
                 )
             }
             Self::MergeCommitTitle { current, desired } => {
-                write!(
-                    formatter,
-                    "merge_commit_title: current '{current}' != desired '{desired}'"
-                )
+                write!(formatter, "merge_commit_title: '{current}' -> '{desired}'")
             }
             Self::MergeCommitMessage { current, desired } => {
                 write!(
                     formatter,
-                    "merge_commit_message: current '{current}' != desired '{desired}'"
+                    "merge_commit_message: '{current}' -> '{desired}'"
                 )
             }
         }
-    }
-}
-
-/// Grouped repository settings differences containing all field-level differences.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct SettingsDiff {
-    diffs: Vec<SettingDiff>,
-}
-
-impl SettingsDiff {
-    /// Creates a new group of settings differences.
-    #[must_use]
-    pub const fn new(diffs: Vec<SettingDiff>) -> Self {
-        Self { diffs }
-    }
-
-    /// The list of setting differences.
-    #[must_use]
-    pub fn diffs(&self) -> &[SettingDiff] {
-        &self.diffs
-    }
-
-    /// Whether there are any setting differences.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.diffs.is_empty()
-    }
-
-    /// The number of setting differences.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.diffs.len()
-    }
-
-    /// Converts the changed settings into a minimal JSON PATCH payload map.
-    #[must_use]
-    pub fn to_patch_payload(&self) -> serde_json::Value {
-        let mut map = serde_json::Map::new();
-        for diff in &self.diffs {
-            match diff {
-                SettingDiff::AllowMergeCommit { desired, .. } => {
-                    map.insert("allow_merge_commit".into(), (*desired).into());
-                }
-                SettingDiff::AllowSquashMerge { desired, .. } => {
-                    map.insert("allow_squash_merge".into(), (*desired).into());
-                }
-                SettingDiff::AllowRebaseMerge { desired, .. } => {
-                    map.insert("allow_rebase_merge".into(), (*desired).into());
-                }
-                SettingDiff::DeleteBranchOnMerge { desired, .. } => {
-                    map.insert("delete_branch_on_merge".into(), (*desired).into());
-                }
-                SettingDiff::MergeCommitTitle { desired, .. } => {
-                    map.insert("merge_commit_title".into(), desired.to_string().into());
-                }
-                SettingDiff::MergeCommitMessage { desired, .. } => {
-                    map.insert("merge_commit_message".into(), desired.to_string().into());
-                }
-            }
-        }
-        serde_json::Value::Object(map)
-    }
-}
-
-impl std::ops::Deref for SettingsDiff {
-    type Target = [SettingDiff];
-
-    fn deref(&self) -> &Self::Target {
-        &self.diffs
-    }
-}
-
-impl<'a> IntoIterator for &'a SettingsDiff {
-    type Item = &'a SettingDiff;
-    type IntoIter = std::slice::Iter<'a, SettingDiff>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.diffs.iter()
     }
 }
 
 impl RepoSettings {
     /// Computes differences between current settings (`self`) and `desired` settings.
     #[must_use]
-    pub fn diff(&self, desired: &Self) -> SettingsDiff {
+    pub fn diff(&self, desired: &Self) -> Vec<SettingDiff> {
         let mut diffs = Vec::new();
         if self.allow_merge_commit != desired.allow_merge_commit {
             diffs.push(SettingDiff::AllowMergeCommit {
@@ -281,7 +191,7 @@ impl RepoSettings {
                 desired: desired.merge_commit_message,
             });
         }
-        SettingsDiff::new(diffs)
+        diffs
     }
 }
 
@@ -310,34 +220,21 @@ mod tests {
 
         let diffs = current.diff(&desired);
         assert_eq!(diffs.len(), 4);
-        assert!(matches!(
-            &diffs[0],
-            SettingDiff::AllowSquashMerge { current: true, desired: false }
-        ));
-        assert!(matches!(
-            &diffs[1],
-            SettingDiff::DeleteBranchOnMerge { current: false, desired: true }
-        ));
-        assert!(matches!(
-            &diffs[2],
-            SettingDiff::MergeCommitTitle {
-                current: MergeCommitTitle::MergeMessage,
-                desired: MergeCommitTitle::PrTitle,
-            }
-        ));
-        assert!(matches!(
-            &diffs[3],
-            SettingDiff::MergeCommitMessage {
-                current: MergeCommitMessage::PrTitle,
-                desired: MergeCommitMessage::PrBody,
-            }
-        ));
-
-        let payload = diffs.to_patch_payload();
-        assert_eq!(payload["allow_squash_merge"], false);
-        assert_eq!(payload["delete_branch_on_merge"], true);
-        assert_eq!(payload["merge_commit_title"], "PR_TITLE");
-        assert_eq!(payload["merge_commit_message"], "PR_BODY");
-        assert!(payload.get("allow_merge_commit").is_none());
+        assert_eq!(
+            diffs[0].to_string(),
+            "allow_squash_merge: 'true' -> 'false'"
+        );
+        assert_eq!(
+            diffs[1].to_string(),
+            "delete_branch_on_merge: 'false' -> 'true'"
+        );
+        assert_eq!(
+            diffs[2].to_string(),
+            "merge_commit_title: 'MERGE_MESSAGE' -> 'PR_TITLE'"
+        );
+        assert_eq!(
+            diffs[3].to_string(),
+            "merge_commit_message: 'PR_TITLE' -> 'PR_BODY'"
+        );
     }
 }

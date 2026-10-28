@@ -1,16 +1,17 @@
 //! Reading repository state via GraphQL and REST API, and updating via REST API.
 
+use crate::adapters::github::cursor_fields;
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{
     parse_repo_labels, parse_repo_milestones, parse_repo_settings,
 };
-use crate::adapters::github::cursor_fields;
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
 use crate::application::repo::{RepoPort, RepoSyncError};
 use crate::domain::repo::{
-    RepoLabel, RepoMilestone, RepoMilestoneSpec, RepoSettings, RepoSpec, RepoState, SettingsDiff,
+    LabelDiff, MilestoneDiff, RepoLabel, RepoMilestone, RepoMilestoneSpec, RepoSettings, RepoSpec,
+    RepoState, SettingDiff,
 };
 
 /// Communicates with GitHub GraphQL and REST APIs for repository management.
@@ -109,19 +110,44 @@ impl RepoPort for GhRepo {
         })
     }
 
-    fn update_settings(&self, settings: &SettingsDiff) -> Result<(), RepoSyncError> {
+    fn update_settings(&self, settings: &[SettingDiff]) -> Result<(), RepoSyncError> {
         let endpoint = self.repo_endpoint("");
-        let payload = settings.to_patch_payload().to_string();
+        let payload = settings_patch_payload(settings);
         self.runner.rest_patch(&endpoint, &payload).map_err(|err| {
             RepoSyncError::Write(format!("failed to update repository settings: {err}"))
         })?;
         Ok(())
     }
 
+    fn apply_label(&self, diff: &LabelDiff) -> Result<(), RepoSyncError> {
+        match diff {
+            LabelDiff::Create(label) => self.create_label(label),
+            LabelDiff::Update { current, desired } => self.update_label(&current.name, desired),
+            LabelDiff::Delete { name, .. } => self.delete_label(name),
+            LabelDiff::Unmanaged { .. } => Ok(()),
+        }
+    }
+
+    fn apply_milestone(&self, diff: &MilestoneDiff) -> Result<(), RepoSyncError> {
+        match diff {
+            MilestoneDiff::Create(milestone) => self.create_milestone(milestone),
+            MilestoneDiff::Update { current, desired } => {
+                self.update_milestone(current.number, desired)
+            }
+            MilestoneDiff::Delete { number, .. } => self.delete_milestone(*number),
+            MilestoneDiff::Unmanaged { .. } => Ok(()),
+        }
+    }
+}
+
+impl GhRepo {
     fn create_label(&self, label: &RepoLabel) -> Result<(), RepoSyncError> {
         let endpoint = self.repo_endpoint("labels");
         let payload = serde_json::to_string(label).map_err(|error| {
-            RepoSyncError::Write(format!("failed to serialize label '{}': {error}", label.name))
+            RepoSyncError::Write(format!(
+                "failed to serialize label '{}': {error}",
+                label.name
+            ))
         })?;
         self.runner.rest_post(&endpoint, &payload).map_err(|err| {
             RepoSyncError::Write(format!("failed to create label '{}': {err}", label.name))
@@ -191,6 +217,33 @@ impl RepoPort for GhRepo {
     }
 }
 
+fn settings_patch_payload(diffs: &[SettingDiff]) -> String {
+    let mut map = serde_json::Map::new();
+    for diff in diffs {
+        match diff {
+            SettingDiff::AllowMergeCommit { desired, .. } => {
+                map.insert("allow_merge_commit".into(), (*desired).into());
+            }
+            SettingDiff::AllowSquashMerge { desired, .. } => {
+                map.insert("allow_squash_merge".into(), (*desired).into());
+            }
+            SettingDiff::AllowRebaseMerge { desired, .. } => {
+                map.insert("allow_rebase_merge".into(), (*desired).into());
+            }
+            SettingDiff::DeleteBranchOnMerge { desired, .. } => {
+                map.insert("delete_branch_on_merge".into(), (*desired).into());
+            }
+            SettingDiff::MergeCommitTitle { desired, .. } => {
+                map.insert("merge_commit_title".into(), desired.to_string().into());
+            }
+            SettingDiff::MergeCommitMessage { desired, .. } => {
+                map.insert("merge_commit_message".into(), desired.to_string().into());
+            }
+        }
+    }
+    serde_json::Value::Object(map).to_string()
+}
+
 fn milestone_payload(milestone: &RepoMilestoneSpec) -> String {
     serde_json::json!({
         "title": milestone.title,
@@ -239,6 +292,7 @@ fn paginate<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::repo::{MergeCommitMessage, MergeCommitTitle};
 
     #[test]
     fn percent_encodes_spaces_and_special_characters() {
@@ -251,5 +305,35 @@ mod tests {
             percent_encode_path_segment("simple-name_1.0"),
             "simple-name_1.0"
         );
+    }
+
+    #[test]
+    fn settings_patch_payload_serializes_only_differing_fields() {
+        let diffs = vec![
+            SettingDiff::AllowSquashMerge {
+                current: true,
+                desired: false,
+            },
+            SettingDiff::DeleteBranchOnMerge {
+                current: false,
+                desired: true,
+            },
+            SettingDiff::MergeCommitTitle {
+                current: MergeCommitTitle::MergeMessage,
+                desired: MergeCommitTitle::PrTitle,
+            },
+            SettingDiff::MergeCommitMessage {
+                current: MergeCommitMessage::PrTitle,
+                desired: MergeCommitMessage::PrBody,
+            },
+        ];
+
+        let payload_str = settings_patch_payload(&diffs);
+        let payload: serde_json::Value = serde_json::from_str(&payload_str).unwrap();
+        assert_eq!(payload["allow_squash_merge"], false);
+        assert_eq!(payload["delete_branch_on_merge"], true);
+        assert_eq!(payload["merge_commit_title"], "PR_TITLE");
+        assert_eq!(payload["merge_commit_message"], "PR_BODY");
+        assert!(payload.get("allow_merge_commit").is_none());
     }
 }

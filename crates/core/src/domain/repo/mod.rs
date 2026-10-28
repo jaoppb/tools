@@ -13,6 +13,4 @@ pub use self::milestone::{
     MilestoneDiff, MilestoneState, RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec,
 };
 pub use self::plan::{DeleteReason, RepoPlan, RepoPlanError, RepoSpec, RepoState};
-pub use self::settings::{
-    MergeCommitMessage, MergeCommitTitle, RepoSettings, SettingDiff, SettingsDiff,
-};
+pub use self::settings::{MergeCommitMessage, MergeCommitTitle, RepoSettings, SettingDiff};

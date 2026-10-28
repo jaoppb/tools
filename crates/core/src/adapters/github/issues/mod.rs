@@ -1,8 +1,8 @@
 //! The real [`RepositoryIssues`]: the repository's issues read through `gh`.
 
+use crate::adapters::github::cursor_fields;
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{IssuesPage, parse_issues};
-use crate::adapters::github::cursor_fields;
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;

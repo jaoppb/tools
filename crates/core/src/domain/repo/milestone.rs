@@ -189,7 +189,12 @@ impl std::fmt::Display for MilestoneDiff {
                 if current.state != desired.state {
                     changes.push(format!("state '{}' -> '{}'", current.state, desired.state));
                 }
-                write!(formatter, "milestone '{}': update {}", desired.title, changes.join(", "))
+                write!(
+                    formatter,
+                    "milestone '{}': update {}",
+                    desired.title,
+                    changes.join(", ")
+                )
             }
             Self::Delete {
                 number: _,
@@ -342,10 +347,7 @@ mod tests {
         let diffs = RepoMilestone::diff(&current, &desired_items, &[], false);
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
-            MilestoneDiff::Update {
-                current,
-                desired,
-            } => {
+            MilestoneDiff::Update { current, desired } => {
                 assert_eq!(current.number, 5);
                 assert_eq!(current.state, MilestoneState::Closed);
                 assert_eq!(desired.state, MilestoneState::Closed);

@@ -173,7 +173,12 @@ impl std::fmt::Display for LabelDiff {
                         current.description, desired.description
                     ));
                 }
-                write!(formatter, "label '{}': update {}", desired.name, changes.join(", "))
+                write!(
+                    formatter,
+                    "label '{}': update {}",
+                    desired.name,
+                    changes.join(", ")
+                )
             }
             Self::Delete { name, reason } => {
                 write!(formatter, "label '{name}': delete ({reason})")

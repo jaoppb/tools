@@ -2,10 +2,7 @@
 
 use std::fmt;
 
-use crate::domain::repo::{
-    LabelDiff, MilestoneDiff, RepoLabel, RepoMilestoneSpec, RepoPlan, RepoSpec, RepoState,
-    SettingsDiff,
-};
+use crate::domain::repo::{LabelDiff, MilestoneDiff, RepoPlan, RepoSpec, RepoState, SettingDiff};
 
 /// Port for querying and modifying repository configuration on GitHub.
 pub trait RepoPort {
@@ -21,53 +18,21 @@ pub trait RepoPort {
     /// # Errors
     ///
     /// Returns [`RepoSyncError::Write`] if applying updates fails.
-    fn update_settings(&self, settings: &SettingsDiff) -> Result<(), RepoSyncError>;
+    fn update_settings(&self, settings: &[SettingDiff]) -> Result<(), RepoSyncError>;
 
-    /// Creates a repository label.
+    /// Applies a repository label difference (create, update, or delete).
     ///
     /// # Errors
     ///
-    /// Returns [`RepoSyncError::Write`] if creation fails.
-    fn create_label(&self, label: &RepoLabel) -> Result<(), RepoSyncError>;
+    /// Returns [`RepoSyncError::Write`] if applying the difference fails.
+    fn apply_label(&self, diff: &LabelDiff) -> Result<(), RepoSyncError>;
 
-    /// Updates a repository label.
+    /// Applies a repository milestone difference (create, update, or delete).
     ///
     /// # Errors
     ///
-    /// Returns [`RepoSyncError::Write`] if update fails.
-    fn update_label(&self, current_name: &str, label: &RepoLabel) -> Result<(), RepoSyncError>;
-
-    /// Deletes a repository label by name.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`RepoSyncError::Write`] if deletion fails.
-    fn delete_label(&self, name: &str) -> Result<(), RepoSyncError>;
-
-    /// Creates a repository milestone.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`RepoSyncError::Write`] if creation fails.
-    fn create_milestone(&self, milestone: &RepoMilestoneSpec) -> Result<(), RepoSyncError>;
-
-    /// Updates an existing repository milestone.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`RepoSyncError::Write`] if update fails.
-    fn update_milestone(
-        &self,
-        number: u64,
-        milestone: &RepoMilestoneSpec,
-    ) -> Result<(), RepoSyncError>;
-
-    /// Deletes a repository milestone by number.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`RepoSyncError::Write`] if deletion fails.
-    fn delete_milestone(&self, number: u64) -> Result<(), RepoSyncError>;
+    /// Returns [`RepoSyncError::Write`] if applying the difference fails.
+    fn apply_milestone(&self, diff: &MilestoneDiff) -> Result<(), RepoSyncError>;
 }
 
 /// Execution mode for repository synchronization.
@@ -85,10 +50,10 @@ pub enum RepoSyncMode {
 #[derive(Debug, thiserror::Error)]
 pub enum RepoSyncError {
     /// Failed to read current repository state.
-    #[error("failed to read repository state: {0}")]
+    #[error("{0}")]
     Read(String),
     /// Failed to apply updated state.
-    #[error("failed to update repository: {0}")]
+    #[error("{0}")]
     Write(String),
     /// State drifted in check mode.
     #[error("{0}")]
@@ -197,43 +162,15 @@ impl<P: RepoPort> RepoSync<P> {
     }
 
     fn apply(&self, plan: &RepoPlan) -> Result<(), RepoSyncError> {
-        // 1. Apply settings updates
         if !plan.setting_diffs().is_empty() {
             self.port.update_settings(plan.setting_diffs())?;
         }
-
-        // 2. Apply label updates
-        for diff in plan.label_diffs() {
-            match diff {
-                LabelDiff::Create(label) => {
-                    self.port.create_label(label)?;
-                }
-                LabelDiff::Update { current, desired } => {
-                    self.port.update_label(&current.name, desired)?;
-                }
-                LabelDiff::Delete { name, .. } => {
-                    self.port.delete_label(name)?;
-                }
-                LabelDiff::Unmanaged { .. } => {}
-            }
+        for diff in plan.label_diffs().iter().filter(|d| d.is_actionable()) {
+            self.port.apply_label(diff)?;
         }
-
-        // 3. Apply milestone updates
-        for diff in plan.milestone_diffs() {
-            match diff {
-                MilestoneDiff::Create(milestone) => {
-                    self.port.create_milestone(milestone)?;
-                }
-                MilestoneDiff::Update { current, desired } => {
-                    self.port.update_milestone(current.number, desired)?;
-                }
-                MilestoneDiff::Delete { number, .. } => {
-                    self.port.delete_milestone(*number)?;
-                }
-                MilestoneDiff::Unmanaged { .. } => {}
-            }
+        for diff in plan.milestone_diffs().iter().filter(|d| d.is_actionable()) {
+            self.port.apply_milestone(diff)?;
         }
-
         Ok(())
     }
 }
@@ -241,15 +178,15 @@ impl<P: RepoPort> RepoSync<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::repo::{RepoLabelsSpec, RepoSettings, SettingDiff};
+    use crate::domain::repo::{RepoLabel, RepoLabelsSpec, RepoSettings, SettingDiff};
     use std::sync::Mutex;
 
     #[derive(Default)]
     struct MockRepoPort {
         state: RepoState,
-        applied_settings: Mutex<Vec<SettingsDiff>>,
-        created_labels: Mutex<Vec<RepoLabel>>,
-        deleted_labels: Mutex<Vec<String>>,
+        applied_settings: Mutex<Vec<Vec<SettingDiff>>>,
+        applied_labels: Mutex<Vec<LabelDiff>>,
+        applied_milestones: Mutex<Vec<MilestoneDiff>>,
     }
 
     impl MockRepoPort {
@@ -257,8 +194,8 @@ mod tests {
             Self {
                 state,
                 applied_settings: Mutex::new(Vec::new()),
-                created_labels: Mutex::new(Vec::new()),
-                deleted_labels: Mutex::new(Vec::new()),
+                applied_labels: Mutex::new(Vec::new()),
+                applied_milestones: Mutex::new(Vec::new()),
             }
         }
     }
@@ -268,42 +205,21 @@ mod tests {
             Ok(self.state.clone())
         }
 
-        fn update_settings(&self, settings: &SettingsDiff) -> Result<(), RepoSyncError> {
-            self.applied_settings.lock().unwrap().push(settings.clone());
+        fn update_settings(&self, settings: &[SettingDiff]) -> Result<(), RepoSyncError> {
+            self.applied_settings
+                .lock()
+                .unwrap()
+                .push(settings.to_vec());
             Ok(())
         }
 
-        fn create_label(&self, label: &RepoLabel) -> Result<(), RepoSyncError> {
-            self.created_labels.lock().unwrap().push(label.clone());
+        fn apply_label(&self, diff: &LabelDiff) -> Result<(), RepoSyncError> {
+            self.applied_labels.lock().unwrap().push(diff.clone());
             Ok(())
         }
 
-        fn update_label(
-            &self,
-            _current_name: &str,
-            _label: &RepoLabel,
-        ) -> Result<(), RepoSyncError> {
-            Ok(())
-        }
-
-        fn delete_label(&self, name: &str) -> Result<(), RepoSyncError> {
-            self.deleted_labels.lock().unwrap().push(name.to_owned());
-            Ok(())
-        }
-
-        fn create_milestone(&self, _milestone: &RepoMilestoneSpec) -> Result<(), RepoSyncError> {
-            Ok(())
-        }
-
-        fn update_milestone(
-            &self,
-            _number: u64,
-            _milestone: &RepoMilestoneSpec,
-        ) -> Result<(), RepoSyncError> {
-            Ok(())
-        }
-
-        fn delete_milestone(&self, _number: u64) -> Result<(), RepoSyncError> {
+        fn apply_milestone(&self, diff: &MilestoneDiff) -> Result<(), RepoSyncError> {
+            self.applied_milestones.lock().unwrap().push(diff.clone());
             Ok(())
         }
     }
@@ -313,27 +229,39 @@ mod tests {
         let unmanaged_label = LabelDiff::Unmanaged {
             name: "random-tag".into(),
         };
-        let plan = RepoPlan::new(SettingsDiff::default(), vec![unmanaged_label], Vec::new());
+        let plan = RepoPlan::new(Vec::new(), vec![unmanaged_label], Vec::new());
         let outcome = RepoSyncOutcome::new(plan.clone(), RepoSyncMode::Check);
         assert!(outcome.plan().has_diffs());
         assert!(!outcome.plan().has_actionable_drift());
         assert!(outcome.to_string().contains("unmanaged items detected"));
 
         let apply_unmanaged = RepoSyncOutcome::new(plan, RepoSyncMode::Apply);
-        assert!(apply_unmanaged.to_string().contains("no changes applied (unmanaged items ignored)"));
+        assert!(
+            apply_unmanaged
+                .to_string()
+                .contains("no changes applied (unmanaged items ignored)")
+        );
 
         let setting_diff = SettingDiff::AllowMergeCommit {
             current: false,
             desired: true,
         };
-        let drift_plan = RepoPlan::new(SettingsDiff::new(vec![setting_diff]), Vec::new(), Vec::new());
+        let drift_plan = RepoPlan::new(vec![setting_diff], Vec::new(), Vec::new());
         let drift_outcome = RepoSyncOutcome::new(drift_plan.clone(), RepoSyncMode::Check);
         assert!(drift_outcome.plan().has_diffs());
         assert!(drift_outcome.plan().has_actionable_drift());
-        assert!(drift_outcome.to_string().contains("drift detected (check failed)"));
+        assert!(
+            drift_outcome
+                .to_string()
+                .contains("drift detected (check failed)")
+        );
 
         let apply_drift = RepoSyncOutcome::new(drift_plan, RepoSyncMode::Apply);
-        assert!(apply_drift.to_string().contains("repository successfully updated"));
+        assert!(
+            apply_drift
+                .to_string()
+                .contains("repository successfully updated")
+        );
     }
 
     #[test]
@@ -372,14 +300,11 @@ mod tests {
             prune_unmanaged: false,
             items: vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
         };
-        let sync = RepoSync::new(
-            port,
-            RepoSpec::new(None, Some(desired_labels), None),
-        );
+        let sync = RepoSync::new(port, RepoSpec::new(None, Some(desired_labels), None));
 
         let outcome = sync.run(RepoSyncMode::Apply).unwrap();
         assert!(outcome.plan().has_diffs());
         assert_eq!(outcome.mode(), RepoSyncMode::Apply);
-        assert_eq!(sync.port.created_labels.lock().unwrap().len(), 1);
+        assert_eq!(sync.port.applied_labels.lock().unwrap().len(), 1);
     }
 }

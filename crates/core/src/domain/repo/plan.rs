@@ -2,7 +2,7 @@
 
 use crate::domain::repo::{
     LabelDiff, MilestoneDiff, RepoLabel, RepoLabelsSpec, RepoMilestone, RepoMilestonesSpec,
-    RepoSettings, SettingsDiff,
+    RepoSettings, SettingDiff,
 };
 
 /// Reason why a label or milestone is marked for deletion.
@@ -27,13 +27,19 @@ impl std::fmt::Display for DeleteReason {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RepoPlanError {
     /// Settings requested in desired specification but absent from repository state snapshot.
-    #[error("missing repository settings state: settings requested in desired specification but absent from snapshot")]
+    #[error(
+        "missing repository settings state: settings requested in desired specification but absent from snapshot"
+    )]
     MissingSettings,
     /// Labels requested in desired specification but absent from repository state snapshot.
-    #[error("missing repository labels state: labels requested in desired specification but absent from snapshot")]
+    #[error(
+        "missing repository labels state: labels requested in desired specification but absent from snapshot"
+    )]
     MissingLabels,
     /// Milestones requested in desired specification but absent from repository state snapshot.
-    #[error("missing repository milestones state: milestones requested in desired specification but absent from snapshot")]
+    #[error(
+        "missing repository milestones state: milestones requested in desired specification but absent from snapshot"
+    )]
     MissingMilestones,
 }
 
@@ -73,7 +79,7 @@ impl RepoSpec {
 /// Complete reconciliation plan for repository settings, labels, and milestones.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RepoPlan {
-    setting_diffs: SettingsDiff,
+    setting_diffs: Vec<SettingDiff>,
     label_diffs: Vec<LabelDiff>,
     milestone_diffs: Vec<MilestoneDiff>,
 }
@@ -82,7 +88,7 @@ impl RepoPlan {
     /// Creates a new plan from diffs.
     #[must_use]
     pub const fn new(
-        setting_diffs: SettingsDiff,
+        setting_diffs: Vec<SettingDiff>,
         label_diffs: Vec<LabelDiff>,
         milestone_diffs: Vec<MilestoneDiff>,
     ) -> Self {
@@ -106,12 +112,15 @@ impl RepoPlan {
     pub fn has_actionable_drift(&self) -> bool {
         !self.setting_diffs.is_empty()
             || self.label_diffs.iter().any(LabelDiff::is_actionable)
-            || self.milestone_diffs.iter().any(MilestoneDiff::is_actionable)
+            || self
+                .milestone_diffs
+                .iter()
+                .any(MilestoneDiff::is_actionable)
     }
 
     /// Setting differences detected.
     #[must_use]
-    pub fn setting_diffs(&self) -> &SettingsDiff {
+    pub fn setting_diffs(&self) -> &[SettingDiff] {
         &self.setting_diffs
     }
 
@@ -189,10 +198,13 @@ impl RepoState {
     pub fn plan(&self, desired: &RepoSpec) -> Result<RepoPlan, RepoPlanError> {
         let setting_diffs = match desired.settings.as_ref() {
             Some(desired_settings) => {
-                let current_settings = self.settings.as_ref().ok_or(RepoPlanError::MissingSettings)?;
+                let current_settings = self
+                    .settings
+                    .as_ref()
+                    .ok_or(RepoPlanError::MissingSettings)?;
                 current_settings.diff(desired_settings)
             }
-            None => SettingsDiff::default(),
+            None => Vec::new(),
         };
 
         let label_diffs = match desired.labels.as_ref() {
@@ -210,7 +222,10 @@ impl RepoState {
 
         let milestone_diffs = match desired.milestones.as_ref() {
             Some(desired_milestones) => {
-                let current_milestones = self.milestones.as_ref().ok_or(RepoPlanError::MissingMilestones)?;
+                let current_milestones = self
+                    .milestones
+                    .as_ref()
+                    .ok_or(RepoPlanError::MissingMilestones)?;
                 RepoMilestone::diff(
                     current_milestones,
                     &desired_milestones.items,

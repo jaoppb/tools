@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::adapters::github::target::Target;
 use crate::application::repo::RepoSyncMode;
-use crate::config::load_or_find;
+use crate::config::{ConfigError, load_or_find};
 use crate::domain::repo::RepoSpec;
 
 const PROGRAM: &str = "repo-sync";
@@ -24,6 +24,27 @@ struct EntityFilter {
     settings: bool,
     labels: bool,
     milestones: bool,
+}
+
+/// An error resolving repository configuration from tools.toml and CLI arguments.
+#[derive(Debug, thiserror::Error)]
+pub enum RepoResolveError {
+    /// Failed to find or read configuration.
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    /// No repository settings, labels, or milestones configured in tools.toml.
+    #[error("no repository settings, labels, or milestones configured in tools.toml")]
+    EmptyConfig,
+    /// Requested entity not configured in tools.toml.
+    #[error(
+        "repository {entity} requested via --{entity}, but not configured in tools.toml under {section}"
+    )]
+    MissingEntity {
+        /// The entity name (e.g. `settings`, `labels`, `milestones`).
+        entity: &'static str,
+        /// The tools.toml section (e.g. `[github.labels]`).
+        section: &'static str,
+    },
 }
 
 /// A command line that was not run: an argument clap rejected, or `--help`.
@@ -74,9 +95,8 @@ impl RepoArguments {
             RepoSyncMode::Apply
         };
 
-        let has_filter = matches.get_flag(SETTINGS)
-            || matches.get_flag(LABELS)
-            || matches.get_flag(MILESTONES);
+        let has_filter =
+            matches.get_flag(SETTINGS) || matches.get_flag(LABELS) || matches.get_flag(MILESTONES);
 
         let explicit_entities = if has_filter {
             Some(EntityFilter {
@@ -108,46 +128,54 @@ impl RepoArguments {
     /// # Errors
     ///
     /// Fails when configuration cannot be found or read, or when a requested entity is not configured.
-    pub fn resolve(&self) -> Result<ResolvedRepo, String> {
-        let cfg = load_or_find(self.config_path.as_deref()).map_err(|err| err.to_string())?;
+    pub fn resolve(&self) -> Result<ResolvedRepo, RepoResolveError> {
+        let cfg = load_or_find(self.config_path.as_deref())?;
         let all_settings = cfg.repo_settings().cloned();
         let all_labels = cfg.labels().cloned();
         let all_milestones = cfg.milestones().cloned();
 
         let (settings, labels, milestones) = if let Some(entities) = self.explicit_entities {
-            if entities.settings && all_settings.is_none() {
-                return Err("repository settings requested via --settings, but not configured in tools.toml under [github.repository.settings]".into());
-            }
-            if entities.labels && all_labels.is_none() {
-                return Err("repository labels requested via --labels, but not configured in tools.toml under [github.labels]".into());
-            }
-            if entities.milestones && all_milestones.is_none() {
-                return Err("repository milestones requested via --milestones, but not configured in tools.toml under [github.milestones]".into());
-            }
             (
-                if entities.settings { all_settings } else { None },
-                if entities.labels { all_labels } else { None },
-                if entities.milestones { all_milestones } else { None },
+                select_entity(
+                    entities.settings,
+                    all_settings,
+                    "settings",
+                    "[github.repository.settings]",
+                )?,
+                select_entity(entities.labels, all_labels, "labels", "[github.labels]")?,
+                select_entity(
+                    entities.milestones,
+                    all_milestones,
+                    "milestones",
+                    "[github.milestones]",
+                )?,
             )
         } else {
             if all_settings.is_none() && all_labels.is_none() && all_milestones.is_none() {
-                return Err("no repository settings, labels, or milestones configured in tools.toml".into());
+                return Err(RepoResolveError::EmptyConfig);
             }
             (all_settings, all_labels, all_milestones)
         };
 
-        let owner = self
-            .owner
-            .clone()
-            .unwrap_or(cfg.github.repository.owner);
-        let repo = self
-            .repo
-            .clone()
-            .unwrap_or(cfg.github.repository.name);
+        let owner = self.owner.clone().unwrap_or(cfg.github.repository.owner);
+        let repo = self.repo.clone().unwrap_or(cfg.github.repository.name);
 
         let target = Target::new(owner, repo, None);
         let spec = RepoSpec::new(settings, labels, milestones);
         Ok(ResolvedRepo { target, spec })
+    }
+}
+
+fn select_entity<T>(
+    flag: bool,
+    opt: Option<T>,
+    entity: &'static str,
+    section: &'static str,
+) -> Result<Option<T>, RepoResolveError> {
+    match (flag, opt) {
+        (true, None) => Err(RepoResolveError::MissingEntity { entity, section }),
+        (true, Some(val)) => Ok(Some(val)),
+        (false, _) => Ok(None),
     }
 }
 
@@ -230,7 +258,10 @@ mod tests {
         ])
         .unwrap();
         let err = args.resolve().unwrap_err();
-        assert!(err.contains("failed to read config file") || err.contains("not found"));
+        assert!(matches!(
+            err,
+            RepoResolveError::Config(ConfigError::Io { .. })
+        ));
     }
 
     #[test]
@@ -257,7 +288,13 @@ mod tests {
         .unwrap();
 
         let err = args.resolve().unwrap_err();
-        assert!(err.contains("repository labels requested via --labels, but not configured"));
+        assert!(matches!(
+            err,
+            RepoResolveError::MissingEntity {
+                entity: "labels",
+                section: "[github.labels]"
+            }
+        ));
 
         let args_all_flags = RepoArguments::parse([
             "repo-sync".into(),
@@ -270,7 +307,13 @@ mod tests {
         .unwrap();
 
         let err_all_flags = args_all_flags.resolve().unwrap_err();
-        assert!(err_all_flags.contains("requested via --settings, but not configured"));
+        assert!(matches!(
+            err_all_flags,
+            RepoResolveError::MissingEntity {
+                entity: "settings",
+                section: "[github.repository.settings]"
+            }
+        ));
 
         let args_all = RepoArguments::parse([
             "repo-sync".into(),
@@ -280,7 +323,7 @@ mod tests {
         .unwrap();
 
         let err_all = args_all.resolve().unwrap_err();
-        assert!(err_all.contains("no repository settings, labels, or milestones configured"));
+        assert!(matches!(err_all, RepoResolveError::EmptyConfig));
 
         let _ = std::fs::remove_file(path);
     }

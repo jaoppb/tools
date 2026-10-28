@@ -30,20 +30,23 @@ fn run() -> Result<String, Exit> {
         text: usage.to_string(),
         code: usage.exit_code(),
     })?;
-    let resolved = arguments
-        .resolve()
-        .map_err(|err| Exit { text: err, code: 2 })?;
-    let repo_sync = RepoSync::new(GhRepo::new(resolved.target), resolved.spec);
-    let outcome = repo_sync.run(arguments.mode()).map_err(|error| match error {
-        RepoSyncError::Drift(outcome) => Exit {
-            text: outcome.to_string(),
-            code: 1,
-        },
-        RepoSyncError::Read(reason) | RepoSyncError::Write(reason) => Exit {
-            text: reason,
-            code: 2,
-        },
+    let resolved = arguments.resolve().map_err(|err| Exit {
+        text: err.to_string(),
+        code: 2,
     })?;
+    let repo_sync = RepoSync::new(GhRepo::new(resolved.target), resolved.spec);
+    let outcome = repo_sync
+        .run(arguments.mode())
+        .map_err(|error| match error {
+            RepoSyncError::Drift(outcome) => Exit {
+                text: outcome.to_string(),
+                code: 1,
+            },
+            RepoSyncError::Read(reason) | RepoSyncError::Write(reason) => Exit {
+                text: reason,
+                code: 2,
+            },
+        })?;
     Ok(outcome.to_string())
 }
 

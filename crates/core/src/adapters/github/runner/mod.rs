@@ -121,10 +121,19 @@ fn run_with_input(command: &mut Command, input: &str) -> Result<String, GhError>
         },
     })?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(input.as_bytes()).map_err(|error| GhError::Failed {
-            reason: format!("failed to write payload to standard input: {error}"),
-        })?;
+    if let Some(mut stdin) = child.stdin.take()
+        && let Err(write_err) = stdin.write_all(input.as_bytes())
+    {
+        drop(stdin);
+        if let Ok(output) = child.wait_with_output() {
+            let said = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            if !said.is_empty() {
+                return Err(GhError::Failed { reason: said });
+            }
+        }
+        return Err(GhError::Failed {
+            reason: format!("failed to write payload to standard input: {write_err}"),
+        });
     }
 
     let output = child.wait_with_output().map_err(|error| GhError::Failed {
