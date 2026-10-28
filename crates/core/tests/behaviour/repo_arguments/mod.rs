@@ -48,3 +48,17 @@ fn help_is_not_an_error_and_exits_with_zero() {
     assert_eq!(help.exit_code(), 0);
     assert!(help.to_string().contains("repo-sync"));
 }
+
+#[test]
+fn accepts_entity_filtering_flags() {
+    assert!(parse(&["--settings"]).is_ok());
+    assert!(parse(&["--labels"]).is_ok());
+    assert!(parse(&["--milestones"]).is_ok());
+    assert!(parse(&["--settings", "--labels", "--milestones"]).is_ok());
+}
+
+#[test]
+fn accepts_repository_target_and_config_overrides() {
+    assert!(parse(&["--owner", "my-org", "--repo", "my-repo"]).is_ok());
+    assert!(parse(&["--config", "custom-tools.toml"]).is_ok());
+}

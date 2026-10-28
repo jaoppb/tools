@@ -3,7 +3,7 @@
 use crate::adapters::github::target::Target;
 pub use crate::domain::repo::{
     MergeCommitMessage, MergeCommitTitle, MilestoneState, RepoLabel, RepoLabelsSpec,
-    RepoMilestoneSpec, RepoMilestonesSpec, RepoSettings,
+    RepoMilestoneSpec, RepoMilestonesSpec, RepoSettings, RepoSpec,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -48,6 +48,16 @@ impl Config {
     #[must_use]
     pub const fn milestones(&self) -> Option<&MilestonesConfig> {
         self.github.milestones.as_ref()
+    }
+
+    /// Converts this configuration into a desired repository specification.
+    #[must_use]
+    pub fn into_repo_spec(self) -> RepoSpec {
+        RepoSpec::new(
+            self.github.repository.settings,
+            self.github.labels,
+            self.github.milestones,
+        )
     }
 }
 

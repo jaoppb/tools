@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use tools_core::adapters::github::GhRepo;
 use tools_core::application::{RepoSync, RepoSyncError};
-use tools_core::cli::{RepoArguments, RepoUsageError};
+use tools_core::cli::RepoArguments;
 
 /// What to print and how to exit.
 struct Exit {
@@ -26,7 +26,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<String, Exit> {
     let command_line = std::env::args_os().map(|argument| argument.to_string_lossy().into_owned());
-    let arguments = RepoArguments::parse(command_line).map_err(|usage: RepoUsageError| Exit {
+    let arguments = RepoArguments::parse(command_line).map_err(|usage| Exit {
         text: usage.to_string(),
         code: usage.exit_code(),
     })?;

@@ -51,6 +51,15 @@ impl GhRepo {
         }
     }
 
+    fn label_endpoint(&self, name: &str) -> String {
+        let encoded_name = percent_encode_path_segment(name);
+        self.repo_endpoint(&format!("labels/{encoded_name}"))
+    }
+
+    fn milestone_endpoint(&self, number: u64) -> String {
+        self.repo_endpoint(&format!("milestones/{number}"))
+    }
+
     fn get_settings(&self) -> Result<RepoSettings, GhError> {
         let endpoint = self.repo_endpoint("");
         let output = self.runner.rest_get(&endpoint)?;
@@ -61,7 +70,7 @@ impl GhRepo {
         let request = query::repo_labels(&self.target);
         paginate(&self.runner, &request, |reply| {
             let page = parse_repo_labels(reply)?;
-            Ok((page.next().map(str::to_owned), page.into_labels()))
+            Ok(page.into_parts())
         })
     }
 
@@ -69,39 +78,33 @@ impl GhRepo {
         let request = query::repo_milestones(&self.target);
         paginate(&self.runner, &request, |reply| {
             let page = parse_repo_milestones(reply)?;
-            Ok((page.next().map(str::to_owned), page.into_milestones()))
+            Ok(page.into_parts())
         })
     }
 }
 
 impl RepoPort for GhRepo {
     fn get_state(&self, spec: &RepoSpec) -> Result<RepoState, RepoSyncError> {
-        let settings = if spec.settings.is_some() {
-            Some(
-                self.get_settings()
-                    .map_err(|err| RepoSyncError::Read(err.to_string()))?,
-            )
-        } else {
-            None
-        };
+        let settings = spec
+            .settings
+            .as_ref()
+            .map(|_| self.get_settings())
+            .transpose()
+            .map_err(|err| RepoSyncError::Read(err.to_string()))?;
 
-        let labels = if spec.labels.is_some() {
-            Some(
-                self.get_labels()
-                    .map_err(|err| RepoSyncError::Read(err.to_string()))?,
-            )
-        } else {
-            None
-        };
+        let labels = spec
+            .labels
+            .as_ref()
+            .map(|_| self.get_labels())
+            .transpose()
+            .map_err(|err| RepoSyncError::Read(err.to_string()))?;
 
-        let milestones = if spec.milestones.is_some() {
-            Some(
-                self.get_milestones()
-                    .map_err(|err| RepoSyncError::Read(err.to_string()))?,
-            )
-        } else {
-            None
-        };
+        let milestones = spec
+            .milestones
+            .as_ref()
+            .map(|_| self.get_milestones())
+            .transpose()
+            .map_err(|err| RepoSyncError::Read(err.to_string()))?;
 
         Ok(RepoState {
             settings,
@@ -156,8 +159,7 @@ impl GhRepo {
     }
 
     fn update_label(&self, current_name: &str, label: &RepoLabel) -> Result<(), RepoSyncError> {
-        let encoded_name = percent_encode_path_segment(current_name);
-        let endpoint = self.repo_endpoint(&format!("labels/{encoded_name}"));
+        let endpoint = self.label_endpoint(current_name);
         let payload = serde_json::json!({
             "new_name": label.name,
             "color": label.color,
@@ -172,8 +174,7 @@ impl GhRepo {
     }
 
     fn delete_label(&self, name: &str) -> Result<(), RepoSyncError> {
-        let encoded_name = percent_encode_path_segment(name);
-        let endpoint = self.repo_endpoint(&format!("labels/{encoded_name}"));
+        let endpoint = self.label_endpoint(name);
         self.runner.rest_delete(&endpoint).map_err(|err| {
             RepoSyncError::Write(format!("failed to delete label '{name}': {err}"))
         })?;
@@ -182,7 +183,12 @@ impl GhRepo {
 
     fn create_milestone(&self, milestone: &RepoMilestoneSpec) -> Result<(), RepoSyncError> {
         let endpoint = self.repo_endpoint("milestones");
-        let payload = milestone_payload(milestone);
+        let payload = serde_json::to_string(milestone).map_err(|error| {
+            RepoSyncError::Write(format!(
+                "failed to serialize milestone '{}': {error}",
+                milestone.title
+            ))
+        })?;
         self.runner.rest_post(&endpoint, &payload).map_err(|err| {
             RepoSyncError::Write(format!(
                 "failed to create milestone '{}': {err}",
@@ -197,8 +203,13 @@ impl GhRepo {
         number: u64,
         milestone: &RepoMilestoneSpec,
     ) -> Result<(), RepoSyncError> {
-        let endpoint = self.repo_endpoint(&format!("milestones/{number}"));
-        let payload = milestone_payload(milestone);
+        let endpoint = self.milestone_endpoint(number);
+        let payload = serde_json::to_string(milestone).map_err(|error| {
+            RepoSyncError::Write(format!(
+                "failed to serialize milestone '{}': {error}",
+                milestone.title
+            ))
+        })?;
         self.runner.rest_patch(&endpoint, &payload).map_err(|err| {
             RepoSyncError::Write(format!(
                 "failed to update milestone '{}': {err}",
@@ -209,7 +220,7 @@ impl GhRepo {
     }
 
     fn delete_milestone(&self, number: u64) -> Result<(), RepoSyncError> {
-        let endpoint = self.repo_endpoint(&format!("milestones/{number}"));
+        let endpoint = self.milestone_endpoint(number);
         self.runner.rest_delete(&endpoint).map_err(|err| {
             RepoSyncError::Write(format!("failed to delete milestone {number}: {err}"))
         })?;
@@ -242,15 +253,6 @@ fn settings_patch_payload(diffs: &[SettingDiff]) -> String {
         }
     }
     serde_json::Value::Object(map).to_string()
-}
-
-fn milestone_payload(milestone: &RepoMilestoneSpec) -> String {
-    serde_json::json!({
-        "title": milestone.title,
-        "description": milestone.description,
-        "state": milestone.state.to_string(),
-    })
-    .to_string()
 }
 
 fn percent_encode_path_segment(input: &str) -> String {

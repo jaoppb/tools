@@ -41,9 +41,9 @@ where
         .iter()
         .map(|item| (handler.key_current(item).to_ascii_lowercase(), item))
         .collect();
-    let desired_by_key: HashMap<String, &D> = desired
+    let desired_keys: HashSet<String> = desired
         .iter()
-        .map(|item| (handler.key_desired(item).to_ascii_lowercase(), item))
+        .map(|item| handler.key_desired(item).to_ascii_lowercase())
         .collect();
     let deprecated_keys: HashSet<String> = deprecated
         .iter()
@@ -65,7 +65,7 @@ where
     // 2. Reconcile current items for deprecated or unmanaged (O(N))
     for item in current {
         let key = handler.key_current(item).to_ascii_lowercase();
-        if desired_by_key.contains_key(&key) {
+        if desired_keys.contains(&key) {
             // Already reconciled in Step 1. Desired takes precedence.
             continue;
         }

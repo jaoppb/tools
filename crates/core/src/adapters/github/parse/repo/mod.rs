@@ -27,6 +27,12 @@ impl RepoLabelsPage {
     pub fn next(&self) -> Option<&str> {
         self.next.as_deref()
     }
+
+    /// Takes the next cursor and labels of this page.
+    #[must_use]
+    pub fn into_parts(self) -> (Option<String>, Vec<RepoLabel>) {
+        (self.next, self.labels)
+    }
 }
 
 /// One page of repository milestones, with the cursor of the next page.
@@ -47,6 +53,12 @@ impl RepoMilestonesPage {
     #[must_use]
     pub fn next(&self) -> Option<&str> {
         self.next.as_deref()
+    }
+
+    /// Takes the next cursor and milestones of this page.
+    #[must_use]
+    pub fn into_parts(self) -> (Option<String>, Vec<RepoMilestone>) {
+        (self.next, self.milestones)
     }
 }
 

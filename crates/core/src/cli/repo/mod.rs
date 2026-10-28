@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::adapters::github::target::Target;
 use crate::application::repo::RepoSyncMode;
-use crate::config::{ConfigError, load_or_find};
+use crate::config::{Config, ConfigError, load_or_find};
 use crate::domain::repo::RepoSpec;
 
 const PROGRAM: &str = "repo-sync";
@@ -24,6 +24,26 @@ struct EntityFilter {
     settings: bool,
     labels: bool,
     milestones: bool,
+}
+
+impl EntityFilter {
+    fn apply(self, spec: RepoSpec) -> Result<RepoSpec, RepoResolveError> {
+        Ok(RepoSpec {
+            settings: select_entity(
+                self.settings,
+                spec.settings,
+                "settings",
+                "[github.repository.settings]",
+            )?,
+            labels: select_entity(self.labels, spec.labels, "labels", "[github.labels]")?,
+            milestones: select_entity(
+                self.milestones,
+                spec.milestones,
+                "milestones",
+                "[github.milestones]",
+            )?,
+        })
+    }
 }
 
 /// An error resolving repository configuration from tools.toml and CLI arguments.
@@ -130,38 +150,30 @@ impl RepoArguments {
     /// Fails when configuration cannot be found or read, or when a requested entity is not configured.
     pub fn resolve(&self) -> Result<ResolvedRepo, RepoResolveError> {
         let cfg = load_or_find(self.config_path.as_deref())?;
-        let all_settings = cfg.repo_settings().cloned();
-        let all_labels = cfg.labels().cloned();
-        let all_milestones = cfg.milestones().cloned();
+        self.resolve_with_config(cfg)
+    }
 
-        let (settings, labels, milestones) = if let Some(entities) = self.explicit_entities {
-            (
-                select_entity(
-                    entities.settings,
-                    all_settings,
-                    "settings",
-                    "[github.repository.settings]",
-                )?,
-                select_entity(entities.labels, all_labels, "labels", "[github.labels]")?,
-                select_entity(
-                    entities.milestones,
-                    all_milestones,
-                    "milestones",
-                    "[github.milestones]",
-                )?,
-            )
-        } else {
-            if all_settings.is_none() && all_labels.is_none() && all_milestones.is_none() {
-                return Err(RepoResolveError::EmptyConfig);
-            }
-            (all_settings, all_labels, all_milestones)
-        };
-
+    /// Resolves target and configuration specification from an already loaded [`Config`] and CLI flags.
+    ///
+    /// # Errors
+    ///
+    /// Fails when a requested entity is not configured or when tools.toml has no repository configuration.
+    pub fn resolve_with_config(&self, cfg: Config) -> Result<ResolvedRepo, RepoResolveError> {
         let owner = self.owner.clone().unwrap_or(cfg.github.repository.owner);
         let repo = self.repo.clone().unwrap_or(cfg.github.repository.name);
-
         let target = Target::new(owner, repo, None);
-        let spec = RepoSpec::new(settings, labels, milestones);
+
+        let spec = RepoSpec::new(
+            cfg.github.repository.settings,
+            cfg.github.labels,
+            cfg.github.milestones,
+        );
+        let spec = match self.explicit_entities {
+            Some(filter) => filter.apply(spec)?,
+            None if spec.is_empty() => return Err(RepoResolveError::EmptyConfig),
+            None => spec,
+        };
+
         Ok(ResolvedRepo { target, spec })
     }
 }
@@ -266,28 +278,15 @@ mod tests {
 
     #[test]
     fn resolve_fails_loud_when_requested_entity_is_missing() {
-        use std::io::Write;
-        let dir = std::env::temp_dir();
-        let path = dir.join("test-tools-no-labels.toml");
-        let content = r#"
+        let toml_str = r#"
             [github.repository]
             owner = "jaoppb"
             name = "tools"
         "#;
-        std::fs::File::create(&path)
-            .unwrap()
-            .write_all(content.as_bytes())
-            .unwrap();
+        let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = RepoArguments::parse([
-            "repo-sync".into(),
-            "--labels".into(),
-            "--config".into(),
-            path.to_str().unwrap().into(),
-        ])
-        .unwrap();
-
-        let err = args.resolve().unwrap_err();
+        let args = RepoArguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let err = args.resolve_with_config(config.clone()).unwrap_err();
         assert!(matches!(
             err,
             RepoResolveError::MissingEntity {
@@ -301,12 +300,9 @@ mod tests {
             "--settings".into(),
             "--labels".into(),
             "--milestones".into(),
-            "--config".into(),
-            path.to_str().unwrap().into(),
         ])
         .unwrap();
-
-        let err_all_flags = args_all_flags.resolve().unwrap_err();
+        let err_all_flags = args_all_flags.resolve_with_config(config.clone()).unwrap_err();
         assert!(matches!(
             err_all_flags,
             RepoResolveError::MissingEntity {
@@ -315,25 +311,14 @@ mod tests {
             }
         ));
 
-        let args_all = RepoArguments::parse([
-            "repo-sync".into(),
-            "--config".into(),
-            path.to_str().unwrap().into(),
-        ])
-        .unwrap();
-
-        let err_all = args_all.resolve().unwrap_err();
+        let args_all = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let err_all = args_all.resolve_with_config(config).unwrap_err();
         assert!(matches!(err_all, RepoResolveError::EmptyConfig));
-
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn resolve_filters_selected_entities() {
-        use std::io::Write;
-        let dir = std::env::temp_dir();
-        let path = dir.join("test-tools-filter.toml");
-        let content = r#"
+        let toml_str = r#"
             [github.repository]
             owner = "jaoppb"
             name = "tools"
@@ -351,36 +336,20 @@ mod tests {
                 { name = "type:feat", color = "1d76db", description = "Feature" }
             ]
         "#;
-        std::fs::File::create(&path)
-            .unwrap()
-            .write_all(content.as_bytes())
-            .unwrap();
+        let config: Config = toml::from_str(toml_str).unwrap();
 
         // When --labels is passed, settings should be None
-        let args = RepoArguments::parse([
-            "repo-sync".into(),
-            "--labels".into(),
-            "--config".into(),
-            path.to_str().unwrap().into(),
-        ])
-        .unwrap();
-        let resolved = args.resolve().unwrap();
+        let args = RepoArguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let resolved = args.resolve_with_config(config.clone()).unwrap();
         assert!(resolved.spec.settings.is_none());
         assert!(resolved.spec.labels.is_some());
         assert!(resolved.spec.milestones.is_none());
 
         // When no filter is passed, configured entities should be Some
-        let args_all = RepoArguments::parse([
-            "repo-sync".into(),
-            "--config".into(),
-            path.to_str().unwrap().into(),
-        ])
-        .unwrap();
-        let resolved_all = args_all.resolve().unwrap();
+        let args_all = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let resolved_all = args_all.resolve_with_config(config).unwrap();
         assert!(resolved_all.spec.settings.is_some());
         assert!(resolved_all.spec.labels.is_some());
         assert!(resolved_all.spec.milestones.is_none());
-
-        let _ = std::fs::remove_file(path);
     }
 }
