@@ -1,8 +1,9 @@
 //! Repository milestone representation and diffing.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-use crate::domain::repo::{DeleteReason, ReconcileHandler, reconcile_by_key};
+use crate::domain::repo::{DeleteReason, ReconcileHandler, RepoPlanError, reconcile_by_key};
 
 /// Repository milestone state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -43,6 +44,9 @@ pub struct RepoMilestonesSpec {
     /// Deprecated milestone titles to close/prune.
     #[serde(default)]
     pub deprecated: Vec<String>,
+    /// Rename mappings from old milestone title to new milestone title.
+    #[serde(default)]
+    pub renames: BTreeMap<String, String>,
     /// Whether to prune unmanaged milestones.
     #[serde(default)]
     pub prune_unmanaged: bool,
@@ -68,17 +72,23 @@ pub struct RepoMilestone {
 
 impl RepoMilestone {
     /// Computes differences between current milestones and desired milestone configuration.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoPlanError::Validation`] on configuration errors or [`RepoPlanError::Collision`]
+    /// on remote collisions.
     pub fn diff(
         current: &[Self],
         desired: &[RepoMilestoneSpec],
         deprecated: &[String],
+        renames: &BTreeMap<String, String>,
         prune_unmanaged: bool,
-    ) -> Vec<MilestoneDiff> {
+    ) -> Result<Vec<MilestoneDiff>, RepoPlanError> {
         reconcile_by_key(
             current,
             desired,
             deprecated,
+            renames,
             prune_unmanaged,
             MilestoneReconciler,
         )
@@ -253,8 +263,10 @@ mod tests {
             },
         ];
         let deprecated = vec!["v0.9".into()];
+        let renames = BTreeMap::new();
 
-        let diffs = RepoMilestone::diff(&current, &desired_items, &deprecated, false);
+        let diffs =
+            RepoMilestone::diff(&current, &desired_items, &deprecated, &renames, false).unwrap();
         assert_eq!(diffs.len(), 4);
 
         // 1. v0 updated description
@@ -299,8 +311,9 @@ mod tests {
             description: "Bootstrap".into(),
             state: MilestoneState::Open,
         }];
+        let renames = BTreeMap::new();
 
-        let diffs = RepoMilestone::diff(&current, &desired_items, &[], false);
+        let diffs = RepoMilestone::diff(&current, &desired_items, &[], &renames, false).unwrap();
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
             MilestoneDiff::Update { current, desired } => {
@@ -320,13 +333,43 @@ mod tests {
             description: String::new(),
             state: MilestoneState::Open,
         }];
+        let renames = BTreeMap::new();
 
-        let diffs = RepoMilestone::diff(&current, &[], &[], true);
+        let diffs = RepoMilestone::diff(&current, &[], &[], &renames, true).unwrap();
         assert_eq!(diffs.len(), 1);
         assert!(matches!(
             &diffs[0],
             MilestoneDiff::Delete { number: 4, title, reason: DeleteReason::Unmanaged } if title == "unmanaged-m"
         ));
+    }
+
+    #[test]
+    fn milestone_diff_reconciles_renames_in_place() {
+        let current = vec![RepoMilestone {
+            number: 10,
+            title: "v0.9".into(),
+            description: "Release candidate".into(),
+            state: MilestoneState::Open,
+        }];
+        let desired = vec![RepoMilestoneSpec {
+            title: "v1.0".into(),
+            description: "General availability".into(),
+            state: MilestoneState::Open,
+        }];
+        let mut renames = BTreeMap::new();
+        renames.insert("v0.9".into(), "v1.0".into());
+
+        let diffs = RepoMilestone::diff(&current, &desired, &[], &renames, false).unwrap();
+        assert_eq!(diffs.len(), 1);
+        match &diffs[0] {
+            MilestoneDiff::Update { current, desired } => {
+                assert_eq!(current.number, 10);
+                assert_eq!(current.title, "v0.9");
+                assert_eq!(desired.title, "v1.0");
+                assert_eq!(desired.description, "General availability");
+            }
+            other => panic!("expected MilestoneDiff::Update, got {:?}", other),
+        }
     }
 
     #[test]
@@ -343,8 +386,9 @@ mod tests {
             description: "New updated text".into(),
             state: MilestoneState::Closed,
         }];
+        let renames = BTreeMap::new();
 
-        let diffs = RepoMilestone::diff(&current, &desired_items, &[], false);
+        let diffs = RepoMilestone::diff(&current, &desired_items, &[], &renames, false).unwrap();
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
             MilestoneDiff::Update { current, desired } => {
@@ -372,9 +416,40 @@ mod tests {
         }];
         // "v0" mistakenly also in deprecated (with differing casing)
         let deprecated = vec!["V0".into()];
+        let renames = BTreeMap::new();
 
-        let diffs = RepoMilestone::diff(&current, &desired, &deprecated, false);
+        let diffs = RepoMilestone::diff(&current, &desired, &deprecated, &renames, false).unwrap();
         // Should NOT emit a Delete; desired takes precedence and it is in sync
         assert!(diffs.is_empty());
+    }
+
+    #[test]
+    fn milestone_diff_detects_collision_when_both_source_and_target_exist() {
+        let current = vec![
+            RepoMilestone {
+                number: 1,
+                title: "v0.9".into(),
+                description: String::new(),
+                state: MilestoneState::Open,
+            },
+            RepoMilestone {
+                number: 2,
+                title: "v1.0".into(),
+                description: String::new(),
+                state: MilestoneState::Open,
+            },
+        ];
+        let desired = vec![RepoMilestoneSpec {
+            title: "v1.0".into(),
+            description: String::new(),
+            state: MilestoneState::Open,
+        }];
+        let mut renames = BTreeMap::new();
+        renames.insert("v0.9".into(), "v1.0".into());
+
+        let err = RepoMilestone::diff(&current, &desired, &[], &renames, false).unwrap_err();
+        assert!(matches!(err, RepoPlanError::Collision(_)));
+        assert!(err.to_string().contains("v0.9"));
+        assert!(err.to_string().contains("v1.0"));
     }
 }

@@ -2,7 +2,9 @@
 
 use std::fmt;
 
-use crate::domain::repo::{LabelDiff, MilestoneDiff, RepoPlan, RepoSpec, RepoState, SettingDiff};
+use crate::domain::repo::{
+    LabelDiff, MilestoneDiff, ProjectDiff, RepoPlan, RepoSpec, RepoState, SettingDiff,
+};
 
 /// Port for querying and modifying repository configuration on GitHub.
 pub trait RepoPort {
@@ -33,6 +35,13 @@ pub trait RepoPort {
     ///
     /// Returns [`RepoSyncError::Write`] if applying the difference fails.
     fn apply_milestone(&self, diff: &MilestoneDiff) -> Result<(), RepoSyncError>;
+
+    /// Applies a repository Project V2 difference (e.g. title update).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoSyncError::Write`] if applying the difference fails.
+    fn apply_project(&self, diff: &ProjectDiff) -> Result<(), RepoSyncError>;
 }
 
 /// Execution mode for repository synchronization.
@@ -171,6 +180,9 @@ impl<P: RepoPort> RepoSync<P> {
         for diff in plan.milestone_diffs().iter().filter(|d| d.is_actionable()) {
             self.port.apply_milestone(diff)?;
         }
+        for diff in plan.project_diffs().iter().filter(|d| d.is_actionable()) {
+            self.port.apply_project(diff)?;
+        }
         Ok(())
     }
 }
@@ -178,7 +190,9 @@ impl<P: RepoPort> RepoSync<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::repo::{RepoLabel, RepoLabelsSpec, RepoSettings, SettingDiff};
+    use crate::domain::repo::{
+        RepoLabel, RepoLabelsSpec, RepoProject, RepoProjectSpec, RepoSettings, SettingDiff,
+    };
     use std::sync::Mutex;
 
     #[derive(Default)]
@@ -187,6 +201,7 @@ mod tests {
         applied_settings: Mutex<Vec<Vec<SettingDiff>>>,
         applied_labels: Mutex<Vec<LabelDiff>>,
         applied_milestones: Mutex<Vec<MilestoneDiff>>,
+        applied_projects: Mutex<Vec<ProjectDiff>>,
     }
 
     impl MockRepoPort {
@@ -196,6 +211,7 @@ mod tests {
                 applied_settings: Mutex::new(Vec::new()),
                 applied_labels: Mutex::new(Vec::new()),
                 applied_milestones: Mutex::new(Vec::new()),
+                applied_projects: Mutex::new(Vec::new()),
             }
         }
     }
@@ -222,6 +238,11 @@ mod tests {
             self.applied_milestones.lock().unwrap().push(diff.clone());
             Ok(())
         }
+
+        fn apply_project(&self, diff: &ProjectDiff) -> Result<(), RepoSyncError> {
+            self.applied_projects.lock().unwrap().push(diff.clone());
+            Ok(())
+        }
     }
 
     #[test]
@@ -229,7 +250,7 @@ mod tests {
         let unmanaged_label = LabelDiff::Unmanaged {
             name: "random-tag".into(),
         };
-        let plan = RepoPlan::new(Vec::new(), vec![unmanaged_label], Vec::new());
+        let plan = RepoPlan::new(Vec::new(), vec![unmanaged_label], Vec::new(), Vec::new());
         let outcome = RepoSyncOutcome::new(plan.clone(), RepoSyncMode::Check);
         assert!(outcome.plan().has_diffs());
         assert!(!outcome.plan().has_actionable_drift());
@@ -246,7 +267,7 @@ mod tests {
             current: false,
             desired: true,
         };
-        let drift_plan = RepoPlan::new(vec![setting_diff], Vec::new(), Vec::new());
+        let drift_plan = RepoPlan::new(vec![setting_diff], Vec::new(), Vec::new(), Vec::new());
         let drift_outcome = RepoSyncOutcome::new(drift_plan.clone(), RepoSyncMode::Check);
         assert!(drift_outcome.plan().has_diffs());
         assert!(drift_outcome.plan().has_actionable_drift());
@@ -277,6 +298,7 @@ mod tests {
             }),
             Some(Vec::new()),
             Some(Vec::new()),
+            None,
         ));
         let desired = RepoSettings {
             allow_merge_commit: true,
@@ -286,7 +308,7 @@ mod tests {
             merge_commit_title: Default::default(),
             merge_commit_message: Default::default(),
         };
-        let sync = RepoSync::new(port, RepoSpec::new(Some(desired), None, None));
+        let sync = RepoSync::new(port, RepoSpec::new(Some(desired), None, None, None));
 
         let err = sync.run(RepoSyncMode::Check).unwrap_err();
         assert!(matches!(err, RepoSyncError::Drift(_)));
@@ -294,17 +316,29 @@ mod tests {
 
     #[test]
     fn sync_applies_changes_to_port() {
-        let port = MockRepoPort::new(RepoState::new(None, Some(Vec::new()), None));
+        let current_project = RepoProject::new("PVT_1", 4, "Old Roadmap");
+        let port = MockRepoPort::new(RepoState::new(
+            None,
+            Some(Vec::new()),
+            None,
+            Some(current_project),
+        ));
         let desired_labels = RepoLabelsSpec {
             deprecated: vec!["old-label".into()],
+            renames: Default::default(),
             prune_unmanaged: false,
             items: vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
         };
-        let sync = RepoSync::new(port, RepoSpec::new(None, Some(desired_labels), None));
+        let desired_project = RepoProjectSpec::new(4, "Roadmap");
+        let sync = RepoSync::new(
+            port,
+            RepoSpec::new(None, Some(desired_labels), None, Some(desired_project)),
+        );
 
         let outcome = sync.run(RepoSyncMode::Apply).unwrap();
         assert!(outcome.plan().has_diffs());
         assert_eq!(outcome.mode(), RepoSyncMode::Apply);
         assert_eq!(sync.port.applied_labels.lock().unwrap().len(), 1);
+        assert_eq!(sync.port.applied_projects.lock().unwrap().len(), 1);
     }
 }

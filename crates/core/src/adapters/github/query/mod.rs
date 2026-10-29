@@ -14,6 +14,11 @@ const ITEM_OF_ISSUE: &str = include_str!("item_of_issue.graphql");
 const STATUS_FIELD: &str = include_str!("status_field.graphql");
 const REPO_LABELS: &str = include_str!("repo_labels.graphql");
 const REPO_MILESTONES: &str = include_str!("repo_milestones.graphql");
+const REPO_PROJECT: &str = include_str!("repo_project.graphql");
+
+/// The mutation that updates the Project V2 title. It takes two variables:
+/// `project` and `title`.
+pub const UPDATE_PROJECT_TITLE: &str = include_str!("update_project_title.graphql");
 
 /// The mutation that sets one single-select field. It takes four variables:
 /// `project`, `item`, `field` and `option`.
@@ -82,4 +87,10 @@ pub fn repo_labels(target: &Target) -> String {
 #[must_use]
 pub fn repo_milestones(target: &Target) -> String {
     fill(REPO_MILESTONES, target)
+}
+
+/// The Project id, number, and title.
+#[must_use]
+pub fn repo_project(target: &Target) -> String {
+    fill(REPO_PROJECT, target)
 }

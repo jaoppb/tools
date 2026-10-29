@@ -1,8 +1,9 @@
 //! Repository label representation and diffing.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-use crate::domain::repo::{DeleteReason, ReconcileHandler, reconcile_by_key};
+use crate::domain::repo::{DeleteReason, ReconcileHandler, RepoPlanError, reconcile_by_key};
 
 /// Repository label representation on GitHub and in configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,6 +24,9 @@ pub struct RepoLabelsSpec {
     /// List of label names to prune.
     #[serde(default)]
     pub deprecated: Vec<String>,
+    /// Rename mappings from old label name to new label name.
+    #[serde(default)]
+    pub renames: BTreeMap<String, String>,
     /// Whether to prune unmanaged labels.
     #[serde(default)]
     pub prune_unmanaged: bool,
@@ -55,17 +59,23 @@ impl RepoLabel {
     }
 
     /// Computes differences between current labels and desired label configuration.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoPlanError::Validation`] on configuration errors or [`RepoPlanError::Collision`]
+    /// on remote collisions.
     pub fn diff(
         current: &[Self],
         desired: &[Self],
         deprecated: &[String],
+        renames: &BTreeMap<String, String>,
         prune_unmanaged: bool,
-    ) -> Vec<LabelDiff> {
+    ) -> Result<Vec<LabelDiff>, RepoPlanError> {
         reconcile_by_key(
             current,
             desired,
             deprecated,
+            renames,
             prune_unmanaged,
             LabelReconciler,
         )
@@ -230,8 +240,10 @@ mod tests {
             },
         ];
         let deprecated = vec!["deprecated-label".into()];
+        let renames = BTreeMap::new();
 
-        let diffs = RepoLabel::diff(&current, &desired_items, &deprecated, false);
+        let diffs =
+            RepoLabel::diff(&current, &desired_items, &deprecated, &renames, false).unwrap();
         assert_eq!(diffs.len(), 4);
 
         // 1. type:feat updated description
@@ -275,8 +287,9 @@ mod tests {
             color: "1d76db".into(),
             description: "Feature".into(),
         }];
+        let renames = BTreeMap::new();
 
-        let diffs = RepoLabel::diff(&current, &desired_items, &[], false);
+        let diffs = RepoLabel::diff(&current, &desired_items, &[], &renames, false).unwrap();
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
             LabelDiff::Update { current, desired } => {
@@ -301,9 +314,85 @@ mod tests {
         }];
         // "type:feat" mistakenly also in deprecated
         let deprecated = vec!["type:feat".into()];
+        let renames = BTreeMap::new();
 
-        let diffs = RepoLabel::diff(&current, &desired, &deprecated, false);
+        let diffs = RepoLabel::diff(&current, &desired, &deprecated, &renames, false).unwrap();
         // Should NOT emit a Delete; desired takes precedence and it is in sync
         assert!(diffs.is_empty());
+    }
+
+    #[test]
+    fn label_diff_reconciles_renames_in_place() {
+        let current = vec![RepoLabel {
+            name: "enhancement".into(),
+            color: "a2eeef".into(),
+            description: "Old feature description".into(),
+        }];
+        let desired = vec![RepoLabel {
+            name: "type:feat".into(),
+            color: "1d76db".into(),
+            description: "New behaviour or capability".into(),
+        }];
+        let mut renames = BTreeMap::new();
+        renames.insert("enhancement".into(), "type:feat".into());
+
+        let diffs = RepoLabel::diff(&current, &desired, &[], &renames, false).unwrap();
+        assert_eq!(diffs.len(), 1);
+        match &diffs[0] {
+            LabelDiff::Update { current, desired } => {
+                assert_eq!(current.name, "enhancement");
+                assert_eq!(desired.name, "type:feat");
+                assert_eq!(desired.color, "1d76db");
+            }
+            other => panic!("expected LabelDiff::Update, got {:?}", other),
+        }
+        assert_eq!(
+            diffs[0].to_string(),
+            "label 'type:feat': update name 'enhancement' -> 'type:feat', color 'a2eeef' -> '1d76db', description 'Old feature description' -> 'New behaviour or capability'"
+        );
+    }
+
+    #[test]
+    fn label_diff_detects_collision_when_both_source_and_target_exist() {
+        let current = vec![
+            RepoLabel {
+                name: "enhancement".into(),
+                color: "a2eeef".into(),
+                description: String::new(),
+            },
+            RepoLabel {
+                name: "type:feat".into(),
+                color: "1d76db".into(),
+                description: String::new(),
+            },
+        ];
+        let desired = vec![RepoLabel {
+            name: "type:feat".into(),
+            color: "1d76db".into(),
+            description: String::new(),
+        }];
+        let mut renames = BTreeMap::new();
+        renames.insert("enhancement".into(), "type:feat".into());
+
+        let err = RepoLabel::diff(&current, &desired, &[], &renames, false).unwrap_err();
+        assert!(matches!(err, RepoPlanError::Collision(_)));
+        assert!(err.to_string().contains("enhancement"));
+        assert!(err.to_string().contains("type:feat"));
+    }
+
+    #[test]
+    fn label_diff_rejects_cycle_or_chain() {
+        let desired = vec![RepoLabel {
+            name: "c".into(),
+            color: "111111".into(),
+            description: String::new(),
+        }];
+        let mut renames = BTreeMap::new();
+        renames.insert("a".into(), "b".into());
+        renames.insert("b".into(), "c".into());
+
+        let err = RepoLabel::diff(&[], &desired, &[], &renames, false).unwrap_err();
+        assert!(matches!(err, RepoPlanError::Validation(_)));
+        assert!(err.to_string().contains("cycle or chain"));
     }
 }
