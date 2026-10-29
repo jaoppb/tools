@@ -30,9 +30,9 @@ fn reports_an_open_issue_with_a_milestone_that_is_not_a_release() {
     let broken = survey(vec![epic(1), in_milestone(story(10, 1), "backlog")]);
     assert_eq!(
         lines(&broken),
-        ["#10 unreadable-milestone: milestone is not a release such as v1 or v1.1"]
+        ["#10 unreadable-milestone: milestone is not a release such as v0.1.0 or v0.2.0"]
     );
-    let repaired = survey(vec![epic(1), in_milestone(story(10, 1), "v1")]);
+    let repaired = survey(vec![epic(1), in_milestone(story(10, 1), "v0.1.0")]);
     assert!(lines(&repaired).is_empty());
 }
 

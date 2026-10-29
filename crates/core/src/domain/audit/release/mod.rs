@@ -2,32 +2,36 @@
 
 use crate::domain::facts::Milestone;
 
-/// The major number of a release, such as the 1 of `v1.1`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Major(u32);
-
-/// The minor number of a release, such as the 1 of `v1.1`. `v1` has minor 0.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Minor(u32);
-
-/// A release: `v1` is 1.0 and `v1.1` is 1.1. Releases order by major, then minor.
+/// A release: `v1` is 1.0.0 and `v0.1.0` is 0.1.0. Releases order by major, minor, then patch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Release {
-    major: Major,
-    minor: Minor,
+    major: u32,
+    minor: u32,
+    patch: u32,
 }
 
 impl Release {
-    /// The release a milestone names: `v` and a whole number, optionally a dot
-    /// and another whole number. Any other title is not a release.
+    /// The release a milestone names: `v` and up to three dot-separated whole numbers.
+    /// Missing minor and patch components default to 0. Any other title is not a release.
     #[must_use]
     pub fn of(milestone: &Milestone) -> Option<Self> {
         let title = milestone.to_string();
         let numbers = title.strip_prefix('v')?;
-        let (major, minor) = numbers.split_once('.').unwrap_or((numbers, "0"));
+        let mut parts = numbers.split('.');
+        let major = whole(parts.next()?)?;
+        let parse_part = |part: Option<&str>| match part {
+            Some(s) => whole(s),
+            None => Some(0),
+        };
+        let minor = parse_part(parts.next())?;
+        let patch = parse_part(parts.next())?;
+        if parts.next().is_some() {
+            return None;
+        }
         Some(Self {
-            major: Major(whole(major)?),
-            minor: Minor(whole(minor)?),
+            major,
+            minor,
+            patch,
         })
     }
 

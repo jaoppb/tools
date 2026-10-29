@@ -6,16 +6,16 @@ This repository is a monorepo for developer tools, repository management utiliti
 
 - **Hierarchy.** Standalone issues under release milestones. Native GitHub sub-issues are supported when breaking down a task into constituent steps.
 - **Milestones.** Every open issue must belong to a release milestone:
-  - `v0`: Bootstrap (initial monorepo setup, extraction from cosmo, tooling, Nix flake).
-  - `v1`: Initial stable release (distribution, packaging, cross-repo adoption).
-  - `v1.1`+: Post-release iterations and enhancements.
+  - `v0.1.0`: Bootstrap (initial monorepo setup, extraction from cosmo, tooling, Nix flake).
+  - `v0.2.0`: Initial stable release (distribution, packaging, cross-repo adoption).
+  - `v0.3.0`+: Post-release iterations and enhancements.
 - **Labels.**
   - Exactly one `type:` label on every issue: `type:feat`, `type:fix`, `type:chore`, `type:docs`, `type:refactor`, or `type:spike`.
   - At least one `area:` label: `area:core`, `area:project-sync`, `area:issues-check`, `area:tooling`, or `area:docs`.
 - **Creation and Triage.** File issues using the corresponding template from `.github/ISSUE_TEMPLATE/`. Upon creation or triage:
   - Select the template matching the issue type (which applies the `type:` label).
   - Set the appropriate `area:` label.
-  - Assign the target milestone (`v0`, `v1`, etc.).
+  - Assign the target milestone (`v0.1.0`, `v0.2.0`, etc.).
   - Link dependencies using native GitHub blocked-by links and list them under `Dependencies` if needed.
 - **Branches, Commits, and Pull Requests.**
   - Branch naming: `<type>/<issue>` or `<type>/<issue>-<slug>` (e.g., `feat/7`, `chore/1-bootstrap-issue-workflow`, `feat/12-github-graphql-client`).

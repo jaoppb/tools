@@ -34,7 +34,7 @@ pub enum Rule {
     NoArea,
     /// The open issue has no milestone.
     NoMilestone,
-    /// The open issue's milestone title is not a release such as `v1`.
+    /// The open issue's milestone title is not a release such as `v0.1.0`.
     UnreadableMilestone,
     /// The open issue is not an epic and has no parent.
     NoParent,
@@ -87,7 +87,7 @@ fn describe(rule: &Rule, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         Rule::NoArea => formatter.write_str("no area label"),
         Rule::NoMilestone => formatter.write_str("no milestone"),
         Rule::UnreadableMilestone => {
-            formatter.write_str("milestone is not a release such as v1 or v1.1")
+            formatter.write_str("milestone is not a release such as v0.1.0 or v0.2.0")
         }
         Rule::NoParent => formatter.write_str("no parent and not an epic"),
         Rule::ClosedParent(parent) => {

@@ -5,7 +5,7 @@ labels: ["type:refactor"]
 body:
   - type: markdown
     attributes:
-      value: "After filing, set the appropriate `area:` label and milestone (`v0`, `v1`, etc.). See [AGENTS.md](../../AGENTS.md)."
+      value: "After filing, set the appropriate `area:` label and milestone (`v0.1.0`, `v0.2.0`, etc.). See [AGENTS.md](../../AGENTS.md)."
   - type: textarea
     id: description
     attributes:

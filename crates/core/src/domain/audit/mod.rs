@@ -10,7 +10,7 @@ pub mod survey;
 pub mod text;
 pub mod violation;
 
-pub use crate::domain::audit::release::{Major, Minor, Release};
+pub use crate::domain::audit::release::Release;
 pub use crate::domain::audit::survey::issue::{BlockedBy, Placement, TreeIssue};
 pub use crate::domain::audit::survey::{IssueTree, Members, Survey};
 pub use crate::domain::audit::text::{Reference, Surface, Text, TextItem, Texts};
