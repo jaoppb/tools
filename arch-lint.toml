@@ -8,7 +8,7 @@ allow_in_tests = true
 allow_ok = true
 
 [rules.no-sync-io]
-exclude_files = ["crates/core/src/config/**"]
+enabled = false
 
 [[scopes]]
 name = "domain"

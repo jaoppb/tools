@@ -7,7 +7,7 @@
 use std::io::Write;
 use std::process::ExitCode;
 
-use issues_check::cli::AuditArguments;
+use issues_check::cli::Arguments;
 use tools_core::adapters::github::{GhIssues, GhProject, GhText};
 use tools_core::application::Audit;
 
@@ -25,7 +25,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<Exit, Exit> {
     let command_line = std::env::args_os().map(|argument| argument.to_string_lossy().into_owned());
-    let arguments = AuditArguments::parse(command_line).map_err(|usage| Exit {
+    let arguments = Arguments::parse(command_line).map_err(|usage| Exit {
         text: usage.to_string(),
         code: usage.exit_code(),
     })?;

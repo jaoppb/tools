@@ -1,13 +1,13 @@
 //! The command line tests for `repo-sync`.
 
-use repo_sync::cli::{RepoArguments, RepoUsageError};
+use repo_sync::cli::{Arguments, UsageError};
 use tools_core::application::RepoSyncMode;
 
-fn parse(words: &[&str]) -> Result<RepoArguments, RepoUsageError> {
+fn parse(words: &[&str]) -> Result<Arguments, UsageError> {
     let command_line = std::iter::once("repo-sync")
         .chain(words.iter().copied())
         .map(str::to_owned);
-    RepoArguments::parse(command_line)
+    Arguments::parse(command_line)
 }
 
 #[test]

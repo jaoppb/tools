@@ -76,9 +76,12 @@ pub enum RepoResolveError {
 /// A command line that was not run: an argument clap rejected, or `--help`.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct RepoUsageError(#[from] clap::Error);
+pub struct UsageError(#[from] clap::Error);
 
-impl RepoUsageError {
+/// Backward compatibility alias.
+pub type RepoUsageError = UsageError;
+
+impl UsageError {
     /// The exit code clap gives it: 0 for `--help` and 2 for a rejected argument.
     #[must_use]
     pub fn exit_code(&self) -> u8 {
@@ -88,13 +91,16 @@ impl RepoUsageError {
 
 /// The parsed command line for `repo-sync`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepoArguments {
+pub struct Arguments {
     mode: RepoSyncMode,
     explicit_entities: Option<EntityFilter>,
     config_path: Option<PathBuf>,
     owner: Option<String>,
     repo: Option<String>,
 }
+
+/// Backward compatibility alias.
+pub type RepoArguments = Arguments;
 
 /// Resolved repository target and desired configuration specification.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,13 +111,13 @@ pub struct ResolvedRepo {
     pub spec: RepoSpec,
 }
 
-impl RepoArguments {
+impl Arguments {
     /// Parses the arguments.
     ///
     /// # Errors
     ///
-    /// Returns [`RepoUsageError`] on invalid syntax or `--help`.
-    pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, RepoUsageError> {
+    /// Returns [`UsageError`] on invalid syntax or `--help`.
+    pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, UsageError> {
         let matches = command().try_get_matches_from(arguments)?;
         let mode = if matches.get_flag(CHECK) {
             RepoSyncMode::Check

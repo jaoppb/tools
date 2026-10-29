@@ -6,8 +6,9 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-[lib]
-path = "src/lib.rs"
+[[test]]
+name = "architecture"
+path = "tests/architecture.rs"
 
 [dev-dependencies]
 arch-lint = "0.11"

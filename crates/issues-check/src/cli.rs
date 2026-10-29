@@ -29,7 +29,7 @@ impl UsageError {
 
 /// The parsed arguments for `issues-check`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuditArguments {
+pub struct Arguments {
     config_path: Option<PathBuf>,
     owner: Option<String>,
     repo: Option<String>,
@@ -38,7 +38,10 @@ pub struct AuditArguments {
     no_membership: bool,
 }
 
-impl AuditArguments {
+/// Backward compatibility alias.
+pub type AuditArguments = Arguments;
+
+impl Arguments {
     /// Reads the whole command line, program name first.
     ///
     /// # Errors
