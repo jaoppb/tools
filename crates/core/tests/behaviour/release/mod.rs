@@ -17,6 +17,16 @@ fn later(title: &str, other: &str) -> bool {
 fn reads_v1_as_release_one_zero() {
     assert!(release("v1").is_some());
     assert_eq!(release("v1"), release("v1.0"));
+    assert_eq!(release("v1"), release("v1.0.0"));
+}
+
+#[test]
+fn reads_a_title_with_three_numbers() {
+    assert!(release("v0.1.0").is_some());
+    assert_eq!(release("v0.1.0"), release("v0.1"));
+    assert!(later("v0.2.0", "v0.1.0"));
+    assert!(later("v0.1.1", "v0.1.0"));
+    assert!(!later("v0.1.0", "v0.1.1"));
 }
 
 #[test]
@@ -47,8 +57,8 @@ fn rejects_a_title_without_a_v() {
 }
 
 #[test]
-fn rejects_a_title_with_three_numbers() {
-    assert_eq!(release("v1.1.2"), None);
+fn rejects_a_title_with_four_numbers() {
+    assert_eq!(release("v1.1.2.3"), None);
 }
 
 #[test]
@@ -57,5 +67,8 @@ fn rejects_a_title_with_text_or_a_sign() {
     assert_eq!(release("v1.x"), None);
     assert_eq!(release("v+1"), None);
     assert_eq!(release("v1."), None);
+    assert_eq!(release("v0.1."), None);
+    assert_eq!(release("v0..1"), None);
+    assert_eq!(release("v.1.0"), None);
     assert_eq!(release("v"), None);
 }

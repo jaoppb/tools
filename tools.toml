@@ -39,9 +39,10 @@ items = [
 ]
 
 [github.milestones]
+renames = { "v0" = "v0.1.0", "v1" = "v0.2.0" }
 items = [
-    { title = "v0", description = "Bootstrap: issue workflow, repository setup, and tooling extraction", state = "open" },
-    { title = "v1", description = "Initial release: stable CLI distribution and packaging", state = "open" },
+    { title = "v0.1.0", description = "Bootstrap: issue workflow, repository setup, and tooling extraction", state = "open" },
+    { title = "v0.2.0", description = "Initial release: stable CLI distribution and packaging", state = "open" },
 ]
 
 [github.issues.rules]

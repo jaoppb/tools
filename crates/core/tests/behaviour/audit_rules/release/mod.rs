@@ -76,6 +76,6 @@ fn does_not_compare_an_issue_with_an_unreadable_milestone() {
     ]);
     assert_eq!(
         lines(&tree),
-        ["#10 unreadable-milestone: milestone is not a release such as v1 or v1.1"]
+        ["#10 unreadable-milestone: milestone is not a release such as v0.1.0 or v0.2.0"]
     );
 }
