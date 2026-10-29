@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::adapters::github::target::Target;
 use crate::application::repo::RepoSyncMode;
 use crate::config::{Config, ConfigError, load_or_find};
-use crate::domain::repo::RepoSpec;
+use crate::domain::repo::{RepoPlanError, RepoSpec};
 
 const PROGRAM: &str = "repo-sync";
 const CHECK: &str = "check";
@@ -14,6 +14,7 @@ const DRY_RUN: &str = "dry-run";
 const SETTINGS: &str = "settings";
 const LABELS: &str = "labels";
 const MILESTONES: &str = "milestones";
+const PROJECT: &str = "project";
 const CONFIG: &str = "config";
 const OWNER: &str = "owner";
 const REPO: &str = "repo";
@@ -24,6 +25,7 @@ struct EntityFilter {
     settings: bool,
     labels: bool,
     milestones: bool,
+    project: bool,
 }
 
 impl EntityFilter {
@@ -42,6 +44,7 @@ impl EntityFilter {
                 "milestones",
                 "[github.milestones]",
             )?,
+            project: select_entity(self.project, spec.project, "project", "[github.project]")?,
         })
     }
 }
@@ -52,15 +55,18 @@ pub enum RepoResolveError {
     /// Failed to find or read configuration.
     #[error(transparent)]
     Config(#[from] ConfigError),
-    /// No repository settings, labels, or milestones configured in tools.toml.
-    #[error("no repository settings, labels, or milestones configured in tools.toml")]
+    /// Configuration or reconciliation planning validation error.
+    #[error(transparent)]
+    Plan(#[from] RepoPlanError),
+    /// No repository settings, labels, milestones, or project configured in tools.toml.
+    #[error("no repository settings, labels, milestones, or project configured in tools.toml")]
     EmptyConfig,
     /// Requested entity not configured in tools.toml.
     #[error(
         "repository {entity} requested via --{entity}, but not configured in tools.toml under {section}"
     )]
     MissingEntity {
-        /// The entity name (e.g. `settings`, `labels`, `milestones`).
+        /// The entity name (e.g. `settings`, `labels`, `milestones`, `project`).
         entity: &'static str,
         /// The tools.toml section (e.g. `[github.labels]`).
         section: &'static str,
@@ -115,14 +121,17 @@ impl RepoArguments {
             RepoSyncMode::Apply
         };
 
-        let has_filter =
-            matches.get_flag(SETTINGS) || matches.get_flag(LABELS) || matches.get_flag(MILESTONES);
+        let has_filter = matches.get_flag(SETTINGS)
+            || matches.get_flag(LABELS)
+            || matches.get_flag(MILESTONES)
+            || matches.get_flag(PROJECT);
 
         let explicit_entities = if has_filter {
             Some(EntityFilter {
                 settings: matches.get_flag(SETTINGS),
                 labels: matches.get_flag(LABELS),
                 milestones: matches.get_flag(MILESTONES),
+                project: matches.get_flag(PROJECT),
             })
         } else {
             None
@@ -159,20 +168,24 @@ impl RepoArguments {
     ///
     /// Fails when a requested entity is not configured or when tools.toml has no repository configuration.
     pub fn resolve_with_config(&self, cfg: Config) -> Result<ResolvedRepo, RepoResolveError> {
-        let owner = self.owner.clone().unwrap_or(cfg.github.repository.owner);
-        let repo = self.repo.clone().unwrap_or(cfg.github.repository.name);
-        let target = Target::new(owner, repo, None);
+        let owner = self
+            .owner
+            .clone()
+            .unwrap_or_else(|| cfg.github.repository.owner.clone());
+        let repo = self
+            .repo
+            .clone()
+            .unwrap_or_else(|| cfg.github.repository.name.clone());
+        let project_number = cfg.github.project.as_ref().and_then(|p| p.number);
+        let target = Target::new(owner, repo, project_number);
 
-        let spec = RepoSpec::new(
-            cfg.github.repository.settings,
-            cfg.github.labels,
-            cfg.github.milestones,
-        );
+        let spec = cfg.try_into_repo_spec()?;
         let spec = match self.explicit_entities {
             Some(filter) => filter.apply(spec)?,
             None if spec.is_empty() => return Err(RepoResolveError::EmptyConfig),
             None => spec,
         };
+        spec.validate()?;
 
         Ok(ResolvedRepo { target, spec })
     }
@@ -193,7 +206,7 @@ fn select_entity<T>(
 
 fn command() -> Command {
     Command::new(PROGRAM)
-        .about("Synchronizes and audits GitHub repository settings, labels, and milestones against tools.toml")
+        .about("Synchronizes and audits GitHub repository settings, labels, milestones, and project against tools.toml")
         .arg(
             Arg::new(CHECK)
                 .long(CHECK)
@@ -226,6 +239,12 @@ fn command() -> Command {
                 .help("Reconcile repository milestones"),
         )
         .arg(
+            Arg::new(PROJECT)
+                .long(PROJECT)
+                .action(ArgAction::SetTrue)
+                .help("Reconcile repository Project V2 title"),
+        )
+        .arg(
             Arg::new(CONFIG)
                 .long(CONFIG)
                 .value_name("FILE")
@@ -248,6 +267,7 @@ fn command() -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::repo::RepoProjectSpec;
 
     #[test]
     fn parses_flags_correctly() {
@@ -353,5 +373,51 @@ mod tests {
         assert!(resolved_all.spec.settings.is_some());
         assert!(resolved_all.spec.labels.is_some());
         assert!(resolved_all.spec.milestones.is_none());
+        assert!(resolved_all.spec.project.is_none());
+    }
+
+    #[test]
+    fn resolve_filters_project_entity() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.project]
+            number = 4
+            title = "Tools Roadmap"
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args = RepoArguments::parse(["repo-sync".into(), "--project".into()]).unwrap();
+        let resolved = args.resolve_with_config(config.clone()).unwrap();
+        assert!(resolved.spec.settings.is_none());
+        assert!(resolved.spec.labels.is_none());
+        assert!(resolved.spec.milestones.is_none());
+        assert_eq!(
+            resolved.spec.project,
+            Some(RepoProjectSpec::new(4, "Tools Roadmap"))
+        );
+    }
+
+    #[test]
+    fn resolve_fails_when_project_title_missing_number() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.project]
+            title = "Tools Roadmap"
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let err = args.resolve_with_config(config).unwrap_err();
+        assert!(matches!(
+            err,
+            RepoResolveError::Plan(RepoPlanError::Validation(_))
+        ));
+        assert!(err.to_string().contains("project number is required"));
     }
 }

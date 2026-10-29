@@ -3,15 +3,15 @@
 use crate::adapters::github::cursor_fields;
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{
-    parse_repo_labels, parse_repo_milestones, parse_repo_settings,
+    parse_repo_labels, parse_repo_milestones, parse_repo_project, parse_repo_settings,
 };
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
 use crate::application::repo::{RepoPort, RepoSyncError};
 use crate::domain::repo::{
-    LabelDiff, MilestoneDiff, RepoLabel, RepoMilestone, RepoMilestoneSpec, RepoSettings, RepoSpec,
-    RepoState, SettingDiff,
+    LabelDiff, MilestoneDiff, ProjectDiff, RepoLabel, RepoMilestone, RepoMilestoneSpec,
+    RepoProject, RepoSettings, RepoSpec, RepoState, SettingDiff,
 };
 
 /// Communicates with GitHub GraphQL and REST APIs for repository management.
@@ -81,6 +81,13 @@ impl GhRepo {
             Ok(page.into_parts())
         })
     }
+
+    fn get_project(&self) -> Result<RepoProject, GhError> {
+        self.target.required_project()?;
+        let request = query::repo_project(&self.target);
+        let reply = self.runner.graphql(&request, &[])?;
+        parse_repo_project(&reply)
+    }
 }
 
 impl RepoPort for GhRepo {
@@ -106,10 +113,18 @@ impl RepoPort for GhRepo {
             .transpose()
             .map_err(|err| RepoSyncError::Read(err.to_string()))?;
 
+        let project = spec
+            .project
+            .as_ref()
+            .map(|_| self.get_project())
+            .transpose()
+            .map_err(|err| RepoSyncError::Read(err.to_string()))?;
+
         Ok(RepoState {
             settings,
             labels,
             milestones,
+            project,
         })
     }
 
@@ -139,6 +154,14 @@ impl RepoPort for GhRepo {
             }
             MilestoneDiff::Delete { number, .. } => self.delete_milestone(*number),
             MilestoneDiff::Unmanaged { .. } => Ok(()),
+        }
+    }
+
+    fn apply_project(&self, diff: &ProjectDiff) -> Result<(), RepoSyncError> {
+        match diff {
+            ProjectDiff::Update { current, desired } => {
+                self.update_project(&current.id, &desired.title)
+            }
         }
     }
 }
@@ -224,6 +247,18 @@ impl GhRepo {
         self.runner.rest_delete(&endpoint).map_err(|err| {
             RepoSyncError::Write(format!("failed to delete milestone {number}: {err}"))
         })?;
+        Ok(())
+    }
+
+    fn update_project(&self, id: &str, title: &str) -> Result<(), RepoSyncError> {
+        let fields = vec![format!("project={id}"), format!("title={title}")];
+        self.runner
+            .graphql(query::UPDATE_PROJECT_TITLE, &fields)
+            .map_err(|err| {
+                RepoSyncError::Write(format!(
+                    "failed to update project title to '{title}': {err}"
+                ))
+            })?;
         Ok(())
     }
 }

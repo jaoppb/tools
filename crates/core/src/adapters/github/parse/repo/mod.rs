@@ -5,7 +5,8 @@ use serde::Deserialize;
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{PageCursor, bad_reply};
 use crate::domain::repo::{
-    MergeCommitMessage, MergeCommitTitle, MilestoneState, RepoLabel, RepoMilestone, RepoSettings,
+    MergeCommitMessage, MergeCommitTitle, MilestoneState, RepoLabel, RepoMilestone, RepoProject,
+    RepoSettings,
 };
 
 /// One page of repository labels, with the cursor of the next page.
@@ -190,6 +191,47 @@ pub fn parse_repo_settings(json: &str) -> Result<RepoSettings, GhError> {
     })
 }
 
+#[derive(Debug, Deserialize)]
+struct ProjectGraphqlReply {
+    data: ProjectUserField,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProjectUserField {
+    user: ProjectV2Field,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectV2Field {
+    project_v2: Option<ProjectV2Data>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProjectV2Data {
+    id: String,
+    number: u32,
+    title: String,
+}
+
+/// Reads the Project V2 id, number, and title.
+///
+/// # Errors
+///
+/// Returns [`GhError::BadReply`] when the reply cannot be parsed or the project is missing.
+pub fn parse_repo_project(json: &str) -> Result<RepoProject, GhError> {
+    let reply: ProjectGraphqlReply =
+        serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
+    let node = reply
+        .data
+        .user
+        .project_v2
+        .ok_or_else(|| GhError::BadReply {
+            reason: "projectV2 not found for owner".into(),
+        })?;
+    Ok(RepoProject::new(node.id, node.number, node.title))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,5 +359,25 @@ mod tests {
 
         let err = parse_repo_milestones(json).unwrap_err();
         assert!(matches!(err, GhError::BadReply { .. }));
+    }
+
+    #[test]
+    fn parses_repo_project_graphql_response() {
+        let json = r#"{
+            "data": {
+                "user": {
+                    "projectV2": {
+                        "id": "PVT_kwDOA123",
+                        "number": 4,
+                        "title": "Cosmo"
+                    }
+                }
+            }
+        }"#;
+
+        let project = parse_repo_project(json).unwrap();
+        assert_eq!(project.id, "PVT_kwDOA123");
+        assert_eq!(project.number, 4);
+        assert_eq!(project.title, "Cosmo");
     }
 }

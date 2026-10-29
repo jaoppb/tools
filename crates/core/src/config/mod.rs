@@ -2,8 +2,9 @@
 
 use crate::adapters::github::target::Target;
 pub use crate::domain::repo::{
-    MergeCommitMessage, MergeCommitTitle, MilestoneState, RepoLabel, RepoLabelsSpec,
-    RepoMilestoneSpec, RepoMilestonesSpec, RepoSettings, RepoSpec,
+    MergeCommitMessage, MergeCommitTitle, MilestoneState, ProjectDiff, RepoLabel, RepoLabelsSpec,
+    RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec, RepoPlanError, RepoProject,
+    RepoProjectSpec, RepoSettings, RepoSpec,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -50,14 +51,37 @@ impl Config {
         self.github.milestones.as_ref()
     }
 
-    /// Converts this configuration into a desired repository specification.
+    /// The repository project configuration, if specified.
     #[must_use]
-    pub fn into_repo_spec(self) -> RepoSpec {
-        RepoSpec::new(
+    pub const fn project(&self) -> Option<&ProjectConfig> {
+        self.github.project.as_ref()
+    }
+
+    /// Converts this configuration into a desired repository specification.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoPlanError::Validation`] if project title is configured without a project number.
+    pub fn try_into_repo_spec(self) -> Result<RepoSpec, RepoPlanError> {
+        let project = match self.github.project {
+            Some(p) => match (p.number, p.title) {
+                (Some(number), Some(title)) => Some(RepoProjectSpec::new(number, title)),
+                (None, Some(_)) => {
+                    return Err(RepoPlanError::Validation(
+                        "project number is required in [github.project] when title is configured"
+                            .into(),
+                    ));
+                }
+                _ => None,
+            },
+            None => None,
+        };
+        Ok(RepoSpec::new(
             self.github.repository.settings,
             self.github.labels,
             self.github.milestones,
-        )
+            project,
+        ))
     }
 }
 
@@ -99,6 +123,9 @@ pub struct ProjectConfig {
     /// Project number, if used.
     #[serde(default)]
     pub number: Option<u32>,
+    /// Project title, if specified.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 /// Settings for issues rules.
@@ -325,5 +352,48 @@ mod tests {
         assert_eq!(milestones.items[1].title, "v1");
         assert_eq!(milestones.items[1].description, "Stable");
         assert_eq!(milestones.items[1].state, MilestoneState::Closed);
+    }
+
+    #[test]
+    fn parses_renames_and_project_title_config() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.project]
+            number = 4
+            title = "Tools Roadmap"
+
+            [github.labels]
+            renames = { "enhancement" = "type:feat" }
+            items = [
+                { name = "type:feat", color = "1d76db", description = "Feature" }
+            ]
+
+            [github.milestones]
+            renames = { "v0.9" = "v1" }
+            items = [
+                { title = "v1", description = "Release" }
+            ]
+        "#;
+        let config: Config = toml::from_str(toml_str).expect("should parse");
+        let project = config.project().expect("project should exist");
+        assert_eq!(project.number, Some(4));
+        assert_eq!(project.title.as_deref(), Some("Tools Roadmap"));
+
+        let labels = config.labels().expect("labels should exist");
+        assert_eq!(
+            labels.renames.get("enhancement"),
+            Some(&"type:feat".to_string())
+        );
+
+        let milestones = config.milestones().expect("milestones should exist");
+        assert_eq!(milestones.renames.get("v0.9"), Some(&"v1".to_string()));
+
+        let repo_spec = config.try_into_repo_spec().unwrap();
+        let proj_spec = repo_spec.project.expect("project spec should exist");
+        assert_eq!(proj_spec.number, 4);
+        assert_eq!(proj_spec.title, "Tools Roadmap");
     }
 }

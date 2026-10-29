@@ -1,8 +1,9 @@
 //! Reconciliation planning and state snapshots for repository configuration.
 
 use crate::domain::repo::{
-    LabelDiff, MilestoneDiff, RepoLabel, RepoLabelsSpec, RepoMilestone, RepoMilestonesSpec,
-    RepoSettings, SettingDiff,
+    LabelDiff, MilestoneDiff, ProjectDiff, RepoLabel, RepoLabelsSpec, RepoMilestone,
+    RepoMilestonesSpec, RepoProject, RepoProjectSpec, RepoSettings, SettingDiff,
+    validate_collection_spec,
 };
 
 /// Reason why a label or milestone is marked for deletion.
@@ -41,6 +42,17 @@ pub enum RepoPlanError {
         "missing repository milestones state: milestones requested in desired specification but absent from snapshot"
     )]
     MissingMilestones,
+    /// Project requested in desired specification but absent from repository state snapshot.
+    #[error(
+        "missing repository project state: project requested in desired specification but absent from snapshot"
+    )]
+    MissingProject,
+    /// Invalid repository configuration (e.g. cycle, duplicate, or missing reference).
+    #[error("invalid repository configuration: {0}")]
+    Validation(String),
+    /// Reconciliation collision between entities.
+    #[error("reconciliation collision: {0}")]
+    Collision(String),
 }
 
 /// Desired configuration specification for repository entities.
@@ -52,6 +64,8 @@ pub struct RepoSpec {
     pub labels: Option<RepoLabelsSpec>,
     /// Desired repository milestones, if configured.
     pub milestones: Option<RepoMilestonesSpec>,
+    /// Desired repository Project V2, if configured.
+    pub project: Option<RepoProjectSpec>,
 }
 
 impl RepoSpec {
@@ -61,27 +75,63 @@ impl RepoSpec {
         settings: Option<RepoSettings>,
         labels: Option<RepoLabelsSpec>,
         milestones: Option<RepoMilestonesSpec>,
+        project: Option<RepoProjectSpec>,
     ) -> Self {
         Self {
             settings,
             labels,
             milestones,
+            project,
         }
     }
 
     /// Whether any entity is configured.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.settings.is_none() && self.labels.is_none() && self.milestones.is_none()
+        self.settings.is_none()
+            && self.labels.is_none()
+            && self.milestones.is_none()
+            && self.project.is_none()
+    }
+
+    /// Validates static configuration consistency across configured entities.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoPlanError::Validation`] if any configured entity contains invalid configuration.
+    pub fn validate(&self) -> Result<(), RepoPlanError> {
+        if let Some(labels) = self.labels.as_ref() {
+            validate_collection_spec(
+                labels.items.iter().map(|item| item.name.as_str()),
+                &labels.deprecated,
+                &labels.renames,
+            )?;
+        }
+        if let Some(milestones) = self.milestones.as_ref() {
+            validate_collection_spec(
+                milestones.items.iter().map(|item| item.title.as_str()),
+                &milestones.deprecated,
+                &milestones.renames,
+            )?;
+        }
+        if let Some(project) = self.project.as_ref()
+            && project.title.trim().is_empty()
+        {
+            return Err(RepoPlanError::Validation(
+                "project title cannot be empty".into(),
+            ));
+        }
+        Ok(())
     }
 }
 
-/// Complete reconciliation plan for repository settings, labels, and milestones.
+/// Complete reconciliation plan for repository settings, labels, milestones, and project.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RepoPlan {
     setting_diffs: Vec<SettingDiff>,
     label_diffs: Vec<LabelDiff>,
     milestone_diffs: Vec<MilestoneDiff>,
+    project_diffs: Vec<ProjectDiff>,
 }
 
 impl RepoPlan {
@@ -91,11 +141,13 @@ impl RepoPlan {
         setting_diffs: Vec<SettingDiff>,
         label_diffs: Vec<LabelDiff>,
         milestone_diffs: Vec<MilestoneDiff>,
+        project_diffs: Vec<ProjectDiff>,
     ) -> Self {
         Self {
             setting_diffs,
             label_diffs,
             milestone_diffs,
+            project_diffs,
         }
     }
 
@@ -105,6 +157,7 @@ impl RepoPlan {
         !self.setting_diffs.is_empty()
             || !self.label_diffs.is_empty()
             || !self.milestone_diffs.is_empty()
+            || !self.project_diffs.is_empty()
     }
 
     /// Whether actionable drift was detected (settings drift or items to create, update, or delete).
@@ -116,6 +169,7 @@ impl RepoPlan {
                 .milestone_diffs
                 .iter()
                 .any(MilestoneDiff::is_actionable)
+            || self.project_diffs.iter().any(ProjectDiff::is_actionable)
     }
 
     /// Setting differences detected.
@@ -134,6 +188,12 @@ impl RepoPlan {
     #[must_use]
     pub fn milestone_diffs(&self) -> &[MilestoneDiff] {
         &self.milestone_diffs
+    }
+
+    /// Project differences detected.
+    #[must_use]
+    pub fn project_diffs(&self) -> &[ProjectDiff] {
+        &self.project_diffs
     }
 }
 
@@ -160,6 +220,13 @@ impl std::fmt::Display for RepoPlan {
             }
         }
 
+        if !self.project_diffs.is_empty() {
+            writeln!(formatter, "Project:")?;
+            for diff in &self.project_diffs {
+                writeln!(formatter, "  • {diff}")?;
+            }
+        }
+
         Ok(())
     }
 }
@@ -173,6 +240,8 @@ pub struct RepoState {
     pub labels: Option<Vec<RepoLabel>>,
     /// Current repository milestones, if queried.
     pub milestones: Option<Vec<RepoMilestone>>,
+    /// Current repository Project V2, if queried.
+    pub project: Option<RepoProject>,
 }
 
 impl RepoState {
@@ -182,11 +251,13 @@ impl RepoState {
         settings: Option<RepoSettings>,
         labels: Option<Vec<RepoLabel>>,
         milestones: Option<Vec<RepoMilestone>>,
+        project: Option<RepoProject>,
     ) -> Self {
         Self {
             settings,
             labels,
             milestones,
+            project,
         }
     }
 
@@ -194,8 +265,11 @@ impl RepoState {
     ///
     /// # Errors
     ///
-    /// Returns [`RepoPlanError`] when an entity is requested in `desired` but its snapshot is missing (`None`) in `self`.
+    /// Returns [`RepoPlanError`] when an entity is requested in `desired` but its snapshot is missing (`None`) in `self`,
+    /// or if validation/collision errors are encountered.
     pub fn plan(&self, desired: &RepoSpec) -> Result<RepoPlan, RepoPlanError> {
+        desired.validate()?;
+
         let setting_diffs = match desired.settings.as_ref() {
             Some(desired_settings) => {
                 let current_settings = self
@@ -214,8 +288,9 @@ impl RepoState {
                     current_labels,
                     &desired_labels.items,
                     &desired_labels.deprecated,
+                    &desired_labels.renames,
                     desired_labels.prune_unmanaged,
-                )
+                )?
             }
             None => Vec::new(),
         };
@@ -230,13 +305,27 @@ impl RepoState {
                     current_milestones,
                     &desired_milestones.items,
                     &desired_milestones.deprecated,
+                    &desired_milestones.renames,
                     desired_milestones.prune_unmanaged,
-                )
+                )?
             }
             None => Vec::new(),
         };
 
-        Ok(RepoPlan::new(setting_diffs, label_diffs, milestone_diffs))
+        let project_diffs = match desired.project.as_ref() {
+            Some(desired_project) => {
+                let current_project = self.project.as_ref().ok_or(RepoPlanError::MissingProject)?;
+                current_project.diff(desired_project).into_iter().collect()
+            }
+            None => Vec::new(),
+        };
+
+        Ok(RepoPlan::new(
+            setting_diffs,
+            label_diffs,
+            milestone_diffs,
+            project_diffs,
+        ))
     }
 }
 
@@ -244,6 +333,7 @@ impl RepoState {
 mod tests {
     use super::*;
     use crate::domain::repo::{MergeCommitMessage, MergeCommitTitle, MilestoneState};
+    use std::collections::BTreeMap;
 
     #[test]
     fn repo_state_plan_gathers_selected_entity_diffs() {
@@ -263,6 +353,7 @@ mod tests {
                 description: String::new(),
                 state: MilestoneState::Open,
             }]),
+            Some(RepoProject::new("PVT_1", 4, "Old Project Title")),
         );
 
         let desired_settings = RepoSettings {
@@ -276,6 +367,7 @@ mod tests {
 
         let desired_labels = RepoLabelsSpec {
             deprecated: Vec::new(),
+            renames: BTreeMap::new(),
             prune_unmanaged: false,
             items: vec![
                 RepoLabel::new("type:feat", "1d76db", "Feature"),
@@ -283,20 +375,33 @@ mod tests {
             ],
         };
 
+        let desired_project = RepoProjectSpec::new(4, "New Project Title");
+
         // When only settings selected
-        let spec_settings = RepoSpec::new(Some(desired_settings.clone()), None, None);
+        let spec_settings = RepoSpec::new(Some(desired_settings.clone()), None, None, None);
         let plan_settings = current_state.plan(&spec_settings).unwrap();
         assert_eq!(plan_settings.setting_diffs().len(), 1);
         assert!(plan_settings.label_diffs().is_empty());
         assert!(plan_settings.milestone_diffs().is_empty());
+        assert!(plan_settings.project_diffs().is_empty());
         assert!(plan_settings.has_actionable_drift());
 
-        // When settings and labels selected
-        let spec_all = RepoSpec::new(Some(desired_settings), Some(desired_labels), None);
+        // When settings, labels, and project selected
+        let spec_all = RepoSpec::new(
+            Some(desired_settings),
+            Some(desired_labels),
+            None,
+            Some(desired_project),
+        );
         let plan_all = current_state.plan(&spec_all).unwrap();
         assert_eq!(plan_all.setting_diffs().len(), 1);
         assert_eq!(plan_all.label_diffs().len(), 1);
+        assert_eq!(plan_all.project_diffs().len(), 1);
         assert!(plan_all.has_actionable_drift());
+        assert_eq!(
+            plan_all.project_diffs()[0].to_string(),
+            "project #4: update title 'Old Project Title' -> 'New Project Title'"
+        );
     }
 
     #[test]
@@ -314,6 +419,7 @@ mod tests {
             }),
             None,
             None,
+            None,
         );
         assert_eq!(
             current_empty.plan(&desired_settings).unwrap_err(),
@@ -324,9 +430,11 @@ mod tests {
             None,
             Some(RepoLabelsSpec {
                 deprecated: Vec::new(),
+                renames: BTreeMap::new(),
                 prune_unmanaged: false,
                 items: vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
             }),
+            None,
             None,
         );
         assert_eq!(
@@ -339,13 +447,22 @@ mod tests {
             None,
             Some(RepoMilestonesSpec {
                 deprecated: Vec::new(),
+                renames: BTreeMap::new(),
                 prune_unmanaged: false,
                 items: Vec::new(),
             }),
+            None,
         );
         assert_eq!(
             current_empty.plan(&desired_milestones).unwrap_err(),
             RepoPlanError::MissingMilestones
+        );
+
+        let desired_project =
+            RepoSpec::new(None, None, None, Some(RepoProjectSpec::new(4, "Title")));
+        assert_eq!(
+            current_empty.plan(&desired_project).unwrap_err(),
+            RepoPlanError::MissingProject
         );
     }
 }

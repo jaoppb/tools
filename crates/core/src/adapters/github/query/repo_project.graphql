@@ -1,0 +1,10 @@
+# The Project id, number, and title.
+query {
+  user(login: "@OWNER@") {
+    projectV2(number: @PROJECT@) {
+      id
+      number
+      title
+    }
+  }
+}
