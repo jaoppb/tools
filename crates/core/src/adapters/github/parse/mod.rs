@@ -15,7 +15,7 @@ pub use crate::adapters::github::parse::items::{ItemsPage, parse_items};
 pub use crate::adapters::github::parse::pulls::{PullsPage, parse_pulls};
 pub use crate::adapters::github::parse::repo::{
     RepoLabelsPage, RepoMilestonesPage, parse_repo_labels, parse_repo_milestones,
-    parse_repo_settings,
+    parse_repo_project, parse_repo_settings,
 };
 pub use crate::adapters::github::parse::texts::{TextsPage, parse_issue_texts, parse_pull_texts};
 pub use crate::adapters::github::parse::write::{StatusField, parse_item_id, parse_status_field};

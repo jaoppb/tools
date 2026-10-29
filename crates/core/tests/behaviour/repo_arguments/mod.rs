@@ -54,7 +54,8 @@ fn accepts_entity_filtering_flags() {
     assert!(parse(&["--settings"]).is_ok());
     assert!(parse(&["--labels"]).is_ok());
     assert!(parse(&["--milestones"]).is_ok());
-    assert!(parse(&["--settings", "--labels", "--milestones"]).is_ok());
+    assert!(parse(&["--project"]).is_ok());
+    assert!(parse(&["--settings", "--labels", "--milestones", "--project"]).is_ok());
 }
 
 #[test]

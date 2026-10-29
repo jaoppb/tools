@@ -1,0 +1,11 @@
+# Updates the title of one Project V2.
+mutation($project: ID!, $title: String!) {
+  updateProjectV2(
+    input: {
+      projectId: $project
+      title: $title
+    }
+  ) {
+    clientMutationId
+  }
+}
