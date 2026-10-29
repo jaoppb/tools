@@ -7,9 +7,9 @@
 use std::io::Write;
 use std::process::ExitCode;
 
+use issues_check::cli::AuditArguments;
 use tools_core::adapters::github::{GhIssues, GhProject, GhText};
 use tools_core::application::Audit;
-use tools_core::cli::audit::AuditArguments;
 
 /// What to print and how to exit.
 struct Exit {

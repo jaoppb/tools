@@ -7,9 +7,9 @@
 use std::io::Write;
 use std::process::ExitCode;
 
+use repo_sync::cli::RepoArguments;
 use tools_core::adapters::github::GhRepo;
 use tools_core::application::{RepoSync, RepoSyncError};
-use tools_core::cli::RepoArguments;
 
 /// What to print and how to exit.
 struct Exit {

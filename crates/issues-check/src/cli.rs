@@ -3,9 +3,8 @@
 use clap::{Arg, ArgAction, Command};
 use std::path::PathBuf;
 
-use crate::adapters::github::target::Target;
-use crate::cli::UsageError;
-use crate::config::{ConfigError, RulesConfig, load_or_find};
+use tools_core::adapters::github::Target;
+use tools_core::config::{ConfigError, RulesConfig, load_or_find};
 
 const PROGRAM: &str = "issues-check";
 const CONFIG: &str = "config";
@@ -14,6 +13,19 @@ const REPO: &str = "repo";
 const PROJECT: &str = "project";
 const NO_PARENT: &str = "no-parent";
 const NO_MEMBERSHIP: &str = "no-membership";
+
+/// A command line that was not run: an argument clap rejected, or `--help`.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct UsageError(#[from] clap::Error);
+
+impl UsageError {
+    /// The exit code clap gives it: 0 for `--help` and 2 for a rejected argument.
+    #[must_use]
+    pub fn exit_code(&self) -> u8 {
+        u8::try_from(self.0.exit_code()).unwrap_or(2)
+    }
+}
 
 /// The parsed arguments for `issues-check`.
 #[derive(Debug, Clone, PartialEq, Eq)]

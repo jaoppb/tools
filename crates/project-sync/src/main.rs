@@ -7,9 +7,9 @@
 use std::io::Write;
 use std::process::ExitCode;
 
+use project_sync::cli::Arguments;
 use tools_core::adapters::github::GhProject;
 use tools_core::application::Sync;
-use tools_core::cli::Arguments;
 
 /// What to print and how to exit when the run stops early.
 struct Exit {

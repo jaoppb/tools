@@ -1,7 +1,7 @@
-//! The command line.
+//! The command line tests for `project-sync`.
 
+use project_sync::cli::{Arguments, UsageError};
 use tools_core::application::Mode;
-use tools_core::cli::{Arguments, UsageError};
 
 fn parse(words: &[&str]) -> Result<Arguments, UsageError> {
     let command_line = std::iter::once("project-sync")

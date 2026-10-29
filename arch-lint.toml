@@ -1,0 +1,65 @@
+preset = "recommended"
+
+[rules.no-unwrap-expect]
+allow_in_tests = true
+
+[rules.no-silent-result-drop]
+allow_in_tests = true
+allow_ok = true
+
+[rules.no-sync-io]
+exclude_files = ["crates/core/src/config/**"]
+
+[[scopes]]
+name = "domain"
+paths = ["crates/core/src/domain/**"]
+
+[[scopes]]
+name = "application"
+paths = ["crates/core/src/application/**"]
+
+[[scopes]]
+name = "adapters"
+paths = ["crates/core/src/adapters/**"]
+
+[[deny-scope-dep]]
+name = "domain-is-innermost"
+from = "domain"
+to = ["application", "adapters"]
+message = "domain must not depend on application or adapters"
+severity = "error"
+
+[[deny-scope-dep]]
+name = "application-before-adapters"
+from = "application"
+to = ["adapters"]
+message = "application must not depend on adapters"
+severity = "error"
+
+[[restrict-use]]
+name = "core-is-foundational"
+files = ["crates/core/**"]
+deny = ["project_sync::**", "issues_check::**", "repo_sync::**", "clap::**"]
+message = "crates/core must not depend on CLI crates or clap"
+severity = "error"
+
+[[restrict-use]]
+name = "project-sync-isolation"
+files = ["crates/project-sync/**"]
+deny = ["issues_check::**", "repo_sync::**"]
+message = "project-sync must not depend on other CLI crates"
+severity = "error"
+
+[[restrict-use]]
+name = "issues-check-isolation"
+files = ["crates/issues-check/**"]
+deny = ["project_sync::**", "repo_sync::**"]
+message = "issues-check must not depend on other CLI crates"
+severity = "error"
+
+[[restrict-use]]
+name = "repo-sync-isolation"
+files = ["crates/repo-sync/**"]
+deny = ["project_sync::**", "issues_check::**"]
+message = "repo-sync must not depend on other CLI crates"
+severity = "error"

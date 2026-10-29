@@ -1,0 +1,13 @@
+[package]
+name = "tools-architecture-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+arch-lint = "0.11"

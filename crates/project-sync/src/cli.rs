@@ -1,16 +1,11 @@
 //! The command line: `project-sync [--dry-run]`, parsed with clap.
 
-pub mod audit;
-pub mod repo;
-
-pub use crate::cli::repo::{RepoArguments, RepoResolveError, RepoUsageError};
-
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::path::PathBuf;
 
-use crate::adapters::github::target::Target;
-use crate::application::Mode;
-use crate::config::{ConfigError, load_or_find};
+use tools_core::adapters::github::Target;
+use tools_core::application::Mode;
+use tools_core::config::{ConfigError, load_or_find};
 
 const PROGRAM: &str = "project-sync";
 const DRY_RUN: &str = "dry-run";

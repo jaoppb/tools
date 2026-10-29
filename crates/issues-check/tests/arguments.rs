@@ -1,6 +1,6 @@
-//! The command line of `issues-check`.
+//! The command line tests for `issues-check`.
 
-use tools_core::cli::audit::AuditArguments;
+use issues_check::cli::AuditArguments;
 
 fn arguments(words: &[&str]) -> Vec<String> {
     words.iter().map(|word| (*word).to_owned()).collect()

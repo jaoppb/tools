@@ -3,10 +3,10 @@
 use clap::{Arg, ArgAction, Command};
 use std::path::PathBuf;
 
-use crate::adapters::github::target::Target;
-use crate::application::repo::RepoSyncMode;
-use crate::config::{Config, ConfigError, load_or_find};
-use crate::domain::repo::{RepoPlanError, RepoSpec};
+use tools_core::adapters::github::Target;
+use tools_core::application::RepoSyncMode;
+use tools_core::config::{Config, ConfigError, load_or_find};
+use tools_core::domain::repo::{RepoPlanError, RepoSpec};
 
 const PROGRAM: &str = "repo-sync";
 const CHECK: &str = "check";
@@ -198,51 +198,52 @@ fn select_entity<T>(
     section: &'static str,
 ) -> Result<Option<T>, RepoResolveError> {
     match (flag, opt) {
-        (true, None) => Err(RepoResolveError::MissingEntity { entity, section }),
         (true, Some(val)) => Ok(Some(val)),
+        (true, None) => Err(RepoResolveError::MissingEntity { entity, section }),
         (false, _) => Ok(None),
     }
 }
 
 fn command() -> Command {
     Command::new(PROGRAM)
-        .about("Synchronizes and audits GitHub repository settings, labels, milestones, and project against tools.toml")
+        .about("Synchronizes repository settings, labels, and milestones with tools.toml")
         .arg(
             Arg::new(CHECK)
                 .long(CHECK)
                 .action(ArgAction::SetTrue)
-                .help("Audit repository state and exit with non-zero code if drift is detected"),
+                .conflicts_with(DRY_RUN)
+                .help("Audit GitHub configuration drift without modifying state"),
         )
         .arg(
             Arg::new(DRY_RUN)
                 .long(DRY_RUN)
                 .action(ArgAction::SetTrue)
                 .conflicts_with(CHECK)
-                .help("Print differences without applying changes to GitHub"),
+                .help("Preview reconciliation actions without modifying GitHub state"),
         )
         .arg(
             Arg::new(SETTINGS)
                 .long(SETTINGS)
                 .action(ArgAction::SetTrue)
-                .help("Reconcile repository merge and branch settings"),
+                .help("Synchronize repository settings only"),
         )
         .arg(
             Arg::new(LABELS)
                 .long(LABELS)
                 .action(ArgAction::SetTrue)
-                .help("Reconcile repository labels"),
+                .help("Synchronize repository labels only"),
         )
         .arg(
             Arg::new(MILESTONES)
                 .long(MILESTONES)
                 .action(ArgAction::SetTrue)
-                .help("Reconcile repository milestones"),
+                .help("Synchronize repository milestones only"),
         )
         .arg(
             Arg::new(PROJECT)
                 .long(PROJECT)
                 .action(ArgAction::SetTrue)
-                .help("Reconcile repository Project V2 title"),
+                .help("Synchronize repository project title only"),
         )
         .arg(
             Arg::new(CONFIG)
@@ -267,7 +268,7 @@ fn command() -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::repo::RepoProjectSpec;
+    use tools_core::domain::repo::RepoProjectSpec;
 
     #[test]
     fn parses_flags_correctly() {

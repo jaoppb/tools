@@ -1,7 +1,7 @@
-//! The command line of `repo-sync`.
+//! The command line tests for `repo-sync`.
 
+use repo_sync::cli::{RepoArguments, RepoUsageError};
 use tools_core::application::RepoSyncMode;
-use tools_core::cli::{RepoArguments, RepoUsageError};
 
 fn parse(words: &[&str]) -> Result<RepoArguments, RepoUsageError> {
     let command_line = std::iter::once("repo-sync")
