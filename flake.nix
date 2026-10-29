@@ -33,6 +33,7 @@
             clippy
             rustfmt
             gh
+            jq
             just
             lefthook
           ];
