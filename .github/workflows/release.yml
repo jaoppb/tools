@@ -3,18 +3,42 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
   contents: write
 
 jobs:
-  create-release:
-    name: Create GitHub Release
+  validate-version:
+    name: Validate Release Version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Validate tag matches Cargo.toml version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '${TAG}' does not match required format 'v<major>.<minor>.<patch>' (e.g. v0.1.0)"
+            exit 1
+          fi
+          cargo_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          expected_tag="v${cargo_version}"
+          if [ "${TAG}" != "${expected_tag}" ]; then
+            echo "::error::Tag '${TAG}' does not match Cargo.toml workspace version '${cargo_version}' (expected '${expected_tag}')"
+            exit 1
+          fi
+          echo "Release tag ${TAG} matches Cargo.toml workspace version ${cargo_version}"
+
+  create-release:
+    name: Create GitHub Release
+    needs: validate-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
       - name: Create GitHub Release
         uses: taiki-e/create-gh-release-action@v1
@@ -41,7 +65,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build & Upload project-sync
         uses: taiki-e/upload-rust-binary-action@v1

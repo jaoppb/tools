@@ -40,3 +40,7 @@ milestones-sync:
 
 # Bootstrap and reconcile all repository configuration (settings, labels, milestones)
 repo-bootstrap: repo-sync
+
+# Bump workspace package version (major, minor, patch, or X.Y.Z), refresh Cargo.lock, commit, tag, and push
+bump-version target:
+    ./scripts/bump-version.sh {{target}}
