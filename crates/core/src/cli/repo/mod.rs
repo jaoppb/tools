@@ -302,7 +302,9 @@ mod tests {
             "--milestones".into(),
         ])
         .unwrap();
-        let err_all_flags = args_all_flags.resolve_with_config(config.clone()).unwrap_err();
+        let err_all_flags = args_all_flags
+            .resolve_with_config(config.clone())
+            .unwrap_err();
         assert!(matches!(
             err_all_flags,
             RepoResolveError::MissingEntity {

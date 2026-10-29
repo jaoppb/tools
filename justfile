@@ -3,8 +3,13 @@
 default:
     @just --list
 
+# Set up development environment and Git hooks
+setup:
+    lefthook install
+
 # Run workspace checks, lints, and test suite
 check:
+    cargo fmt --all -- --check
     cargo check --workspace
     cargo clippy --workspace -- -D warnings
     cargo test --workspace

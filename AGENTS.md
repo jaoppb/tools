@@ -18,7 +18,7 @@ This repository is a monorepo for developer tools, repository management utiliti
   - Assign the target milestone (`v0`, `v1`, etc.).
   - Link dependencies using native GitHub blocked-by links and list them under `Dependencies` if needed.
 - **Branches, Commits, and Pull Requests.**
-  - Branch naming: `<type>/<issue>-<slug>` (e.g., `chore/1-bootstrap-issue-workflow`, `feat/12-github-graphql-client`).
+  - Branch naming: `<type>/<issue>` or `<type>/<issue>-<slug>` (e.g., `feat/7`, `chore/1-bootstrap-issue-workflow`, `feat/12-github-graphql-client`).
   - Commit title: `type: subject (#issue)`.
   - Pull request title: `type: subject (#issue)`.
   - Closing keywords: Use `Closes #issue` in the PR body and the branch's final commit. Use `Refs #issue` for intermediate commits.
@@ -26,7 +26,17 @@ This repository is a monorepo for developer tools, repository management utiliti
 
 | Issue workflow rule | Enforcer | Status |
 |---------------------|----------|--------|
-| Labels (`type:*`, `area:*`) and milestones on open issues | `just issues-check` | Enforced |
+| Labels (`type:*`, `area:*`) and milestones on open issues | `just issues-check` (also via Lefthook `pre-push`) | Enforced |
 | Form structure | `.github/ISSUE_TEMPLATE/*.yml` with `blank_issues_enabled: false` | Enforced |
 | Repository configuration (settings, labels, milestones) | `just repo-check` & PR review | Enforced |
-| Workspace compilation, lints, tests | `just check` | Enforced |
+| Workspace compilation, lints, tests | `just check` (also via Lefthook `pre-push`) | Enforced |
+| Pre-commit formatting & lint validation | Lefthook `pre-commit` (`just setup`) | Enforced |
+
+## 2. Developer setup & Git hooks
+
+- **Lefthook.** Local Git hooks are managed by Lefthook to automate formatting, linting, and quality checks.
+- **Setup.** Run `just setup` to configure Git hooks in your local clone.
+- **Hooks:**
+  - `pre-commit`: Validates Rust code formatting (`cargo fmt --all -- --check`) and workspace lints (`cargo clippy --workspace -- -D warnings`) when Rust or Cargo manifest files change.
+  - `pre-push`: Runs full workspace validation (`just check`) and issue workflow audit (`just issues-check`).
+  - Local custom overrides can be placed in `lefthook-local.yml` (ignored by git).
