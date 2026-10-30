@@ -3,10 +3,10 @@
 use clap::{Arg, ArgAction, Command};
 use std::path::PathBuf;
 
-use crate::adapters::github::target::Target;
-use crate::application::repo::RepoSyncMode;
-use crate::config::{Config, ConfigError, load_or_find};
-use crate::domain::repo::{RepoPlanError, RepoSpec};
+use tools_core::adapters::github::Target;
+use tools_core::application::RepoSyncMode;
+use tools_core::config::{Config, ConfigError, load_or_find};
+use tools_core::domain::repo::{RepoPlanError, RepoSpec};
 
 const PROGRAM: &str = "repo-sync";
 const CHECK: &str = "check";
@@ -76,9 +76,9 @@ pub enum RepoResolveError {
 /// A command line that was not run: an argument clap rejected, or `--help`.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct RepoUsageError(#[from] clap::Error);
+pub struct UsageError(#[from] clap::Error);
 
-impl RepoUsageError {
+impl UsageError {
     /// The exit code clap gives it: 0 for `--help` and 2 for a rejected argument.
     #[must_use]
     pub fn exit_code(&self) -> u8 {
@@ -88,7 +88,7 @@ impl RepoUsageError {
 
 /// The parsed command line for `repo-sync`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepoArguments {
+pub struct Arguments {
     mode: RepoSyncMode,
     explicit_entities: Option<EntityFilter>,
     config_path: Option<PathBuf>,
@@ -105,13 +105,13 @@ pub struct ResolvedRepo {
     pub spec: RepoSpec,
 }
 
-impl RepoArguments {
+impl Arguments {
     /// Parses the arguments.
     ///
     /// # Errors
     ///
-    /// Returns [`RepoUsageError`] on invalid syntax or `--help`.
-    pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, RepoUsageError> {
+    /// Returns [`UsageError`] on invalid syntax or `--help`.
+    pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, UsageError> {
         let matches = command().try_get_matches_from(arguments)?;
         let mode = if matches.get_flag(CHECK) {
             RepoSyncMode::Check
@@ -198,51 +198,52 @@ fn select_entity<T>(
     section: &'static str,
 ) -> Result<Option<T>, RepoResolveError> {
     match (flag, opt) {
-        (true, None) => Err(RepoResolveError::MissingEntity { entity, section }),
         (true, Some(val)) => Ok(Some(val)),
+        (true, None) => Err(RepoResolveError::MissingEntity { entity, section }),
         (false, _) => Ok(None),
     }
 }
 
 fn command() -> Command {
     Command::new(PROGRAM)
-        .about("Synchronizes and audits GitHub repository settings, labels, milestones, and project against tools.toml")
+        .about("Synchronizes repository settings, labels, and milestones with tools.toml")
         .arg(
             Arg::new(CHECK)
                 .long(CHECK)
                 .action(ArgAction::SetTrue)
-                .help("Audit repository state and exit with non-zero code if drift is detected"),
+                .conflicts_with(DRY_RUN)
+                .help("Audit GitHub configuration drift without modifying state"),
         )
         .arg(
             Arg::new(DRY_RUN)
                 .long(DRY_RUN)
                 .action(ArgAction::SetTrue)
                 .conflicts_with(CHECK)
-                .help("Print differences without applying changes to GitHub"),
+                .help("Preview reconciliation actions without modifying GitHub state"),
         )
         .arg(
             Arg::new(SETTINGS)
                 .long(SETTINGS)
                 .action(ArgAction::SetTrue)
-                .help("Reconcile repository merge and branch settings"),
+                .help("Synchronize repository settings only"),
         )
         .arg(
             Arg::new(LABELS)
                 .long(LABELS)
                 .action(ArgAction::SetTrue)
-                .help("Reconcile repository labels"),
+                .help("Synchronize repository labels only"),
         )
         .arg(
             Arg::new(MILESTONES)
                 .long(MILESTONES)
                 .action(ArgAction::SetTrue)
-                .help("Reconcile repository milestones"),
+                .help("Synchronize repository milestones only"),
         )
         .arg(
             Arg::new(PROJECT)
                 .long(PROJECT)
                 .action(ArgAction::SetTrue)
-                .help("Reconcile repository Project V2 title"),
+                .help("Synchronize repository project title only"),
         )
         .arg(
             Arg::new(CONFIG)
@@ -267,23 +268,23 @@ fn command() -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::repo::RepoProjectSpec;
+    use tools_core::domain::repo::RepoProjectSpec;
 
     #[test]
     fn parses_flags_correctly() {
-        let args = RepoArguments::parse(["repo-sync".into(), "--check".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--check".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Check);
 
-        let args = RepoArguments::parse(["repo-sync".into(), "--dry-run".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--dry-run".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Preview);
 
-        let args = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Apply);
     }
 
     #[test]
     fn resolve_fails_loud_when_config_is_missing() {
-        let args = RepoArguments::parse([
+        let args = Arguments::parse([
             "repo-sync".into(),
             "--config".into(),
             "non-existent-tools.toml".into(),
@@ -305,7 +306,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = RepoArguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
         let err = args.resolve_with_config(config.clone()).unwrap_err();
         assert!(matches!(
             err,
@@ -315,7 +316,7 @@ mod tests {
             }
         ));
 
-        let args_all_flags = RepoArguments::parse([
+        let args_all_flags = Arguments::parse([
             "repo-sync".into(),
             "--settings".into(),
             "--labels".into(),
@@ -333,7 +334,7 @@ mod tests {
             }
         ));
 
-        let args_all = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let args_all = Arguments::parse(["repo-sync".into()]).unwrap();
         let err_all = args_all.resolve_with_config(config).unwrap_err();
         assert!(matches!(err_all, RepoResolveError::EmptyConfig));
     }
@@ -361,14 +362,14 @@ mod tests {
         let config: Config = toml::from_str(toml_str).unwrap();
 
         // When --labels is passed, settings should be None
-        let args = RepoArguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
         assert!(resolved.spec.settings.is_none());
         assert!(resolved.spec.labels.is_some());
         assert!(resolved.spec.milestones.is_none());
 
         // When no filter is passed, configured entities should be Some
-        let args_all = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let args_all = Arguments::parse(["repo-sync".into()]).unwrap();
         let resolved_all = args_all.resolve_with_config(config).unwrap();
         assert!(resolved_all.spec.settings.is_some());
         assert!(resolved_all.spec.labels.is_some());
@@ -389,7 +390,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = RepoArguments::parse(["repo-sync".into(), "--project".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--project".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
         assert!(resolved.spec.settings.is_none());
         assert!(resolved.spec.labels.is_none());
@@ -412,7 +413,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into()]).unwrap();
         let err = args.resolve_with_config(config).unwrap_err();
         assert!(matches!(
             err,

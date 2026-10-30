@@ -7,9 +7,9 @@
 use std::io::Write;
 use std::process::ExitCode;
 
+use issues_check::cli::Arguments;
 use tools_core::adapters::github::{GhIssues, GhProject, GhText};
 use tools_core::application::Audit;
-use tools_core::cli::audit::AuditArguments;
 
 /// What to print and how to exit.
 struct Exit {
@@ -25,13 +25,14 @@ fn main() -> ExitCode {
 
 fn run() -> Result<Exit, Exit> {
     let command_line = std::env::args_os().map(|argument| argument.to_string_lossy().into_owned());
-    let arguments = AuditArguments::parse(command_line).map_err(|usage| Exit {
+    let arguments = Arguments::parse(command_line).map_err(|usage| Exit {
         text: usage.to_string(),
         code: usage.exit_code(),
     })?;
-    let (target, rules) = arguments
-        .resolve()
-        .map_err(|err| Exit { text: err, code: 2 })?;
+    let (target, rules) = arguments.resolve().map_err(|err| Exit {
+        text: err.to_string(),
+        code: 2,
+    })?;
     let project = target.project().map(|_| GhProject::new(target.clone()));
     let report = Audit::new(
         GhIssues::new(target.clone()),

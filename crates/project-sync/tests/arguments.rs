@@ -1,7 +1,7 @@
-//! The command line.
+//! The command line tests for `project-sync`.
 
+use project_sync::cli::{Arguments, UsageError};
 use tools_core::application::Mode;
-use tools_core::cli::{Arguments, UsageError};
 
 fn parse(words: &[&str]) -> Result<Arguments, UsageError> {
     let command_line = std::iter::once("project-sync")
@@ -36,4 +36,10 @@ fn help_is_not_an_error_and_exits_with_zero() {
     let help = parse(&["--help"]).expect_err("--help stops the run");
     assert_eq!(help.exit_code(), 0);
     assert!(help.to_string().contains("--dry-run"));
+}
+
+#[test]
+fn accepts_target_overrides_and_config() {
+    assert!(parse(&["--owner", "jaoppb", "--repo", "tools", "--project", "1"]).is_ok());
+    assert!(parse(&["--config", "tools.toml", "--dry-run"]).is_ok());
 }

@@ -14,6 +14,10 @@ check:
     cargo clippy --workspace -- -D warnings
     cargo test --workspace
 
+# Run workspace architecture rules validation via arch-lint
+arch-check:
+    cargo test -p tools-architecture-tests
+
 # Audit open GitHub issues against repository workflow rules
 issues-check:
     cargo run -q -p issues-check

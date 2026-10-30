@@ -3,9 +3,8 @@
 use clap::{Arg, ArgAction, Command};
 use std::path::PathBuf;
 
-use crate::adapters::github::target::Target;
-use crate::cli::UsageError;
-use crate::config::{ConfigError, RulesConfig, load_or_find};
+use tools_core::adapters::github::Target;
+use tools_core::config::{ConfigError, RulesConfig, load_or_find};
 
 const PROGRAM: &str = "issues-check";
 const CONFIG: &str = "config";
@@ -15,9 +14,33 @@ const PROJECT: &str = "project";
 const NO_PARENT: &str = "no-parent";
 const NO_MEMBERSHIP: &str = "no-membership";
 
+/// A command line that was not run: an argument clap rejected, or `--help`.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct UsageError(#[from] clap::Error);
+
+impl UsageError {
+    /// The exit code clap gives it: 0 for `--help` and 2 for a rejected argument.
+    #[must_use]
+    pub fn exit_code(&self) -> u8 {
+        u8::try_from(self.0.exit_code()).unwrap_or(2)
+    }
+}
+
+/// An error resolving issue audit configuration.
+#[derive(Debug, thiserror::Error)]
+pub enum ResolveError {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error("owner is required (specify via --owner or in tools.toml)")]
+    MissingOwner,
+    #[error("repository is required (specify via --repo or in tools.toml)")]
+    MissingRepository,
+}
+
 /// The parsed arguments for `issues-check`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuditArguments {
+pub struct Arguments {
     config_path: Option<PathBuf>,
     owner: Option<String>,
     repo: Option<String>,
@@ -26,7 +49,7 @@ pub struct AuditArguments {
     no_membership: bool,
 }
 
-impl AuditArguments {
+impl Arguments {
     /// Reads the whole command line, program name first.
     ///
     /// # Errors
@@ -52,7 +75,7 @@ impl AuditArguments {
     /// # Errors
     ///
     /// Fails when configuration cannot be read or target lacks owner/repo.
-    pub fn resolve(&self) -> Result<(Target, RulesConfig), String> {
+    pub fn resolve(&self) -> Result<(Target, RulesConfig), ResolveError> {
         let loaded = load_or_find(self.config_path.as_deref());
         let (cfg_owner, cfg_repo, cfg_proj, mut rules) = match loaded {
             Ok(cfg) => (
@@ -62,15 +85,19 @@ impl AuditArguments {
                 cfg.github.issues.rules,
             ),
             Err(ConfigError::NotFound) => (None, None, None, RulesConfig::default()),
-            Err(err) => return Err(err.to_string()),
+            Err(err) => return Err(ResolveError::Config(err)),
         };
 
-        let owner = self.owner.clone().or(cfg_owner).ok_or_else(|| {
-            "owner is required (specify via --owner or in tools.toml)".to_string()
-        })?;
-        let repo = self.repo.clone().or(cfg_repo).ok_or_else(|| {
-            "repository is required (specify via --repo or in tools.toml)".to_string()
-        })?;
+        let owner = self
+            .owner
+            .clone()
+            .or(cfg_owner)
+            .ok_or(ResolveError::MissingOwner)?;
+        let repo = self
+            .repo
+            .clone()
+            .or(cfg_repo)
+            .ok_or(ResolveError::MissingRepository)?;
         let project = self.project.or(cfg_proj);
 
         if self.no_parent {
