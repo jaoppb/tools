@@ -37,3 +37,9 @@ fn help_is_not_an_error_and_exits_with_zero() {
     assert_eq!(help.exit_code(), 0);
     assert!(help.to_string().contains("--dry-run"));
 }
+
+#[test]
+fn accepts_target_overrides_and_config() {
+    assert!(parse(&["--owner", "jaoppb", "--repo", "tools", "--project", "1"]).is_ok());
+    assert!(parse(&["--config", "tools.toml", "--dry-run"]).is_ok());
+}

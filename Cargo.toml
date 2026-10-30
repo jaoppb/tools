@@ -16,6 +16,7 @@ repository = "https://github.com/jaoppb/tools"
 publish = false
 
 [workspace.dependencies]
+arch-lint = "0.11"
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

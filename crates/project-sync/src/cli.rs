@@ -27,6 +27,19 @@ impl UsageError {
     }
 }
 
+/// An error resolving project synchronization configuration.
+#[derive(Debug, thiserror::Error)]
+pub enum ResolveError {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error("owner is required (specify via --owner or in tools.toml)")]
+    MissingOwner,
+    #[error("repository is required (specify via --repo or in tools.toml)")]
+    MissingRepository,
+    #[error("project number is required (specify via --project or in tools.toml)")]
+    MissingProject,
+}
+
 /// The parsed command line for `project-sync`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
@@ -67,7 +80,7 @@ impl Arguments {
     /// # Errors
     ///
     /// Fails when configuration cannot be found or read, or target lacks owner/repo/project.
-    pub fn resolve_target(&self) -> Result<Target, String> {
+    pub fn resolve(&self) -> Result<Target, ResolveError> {
         let loaded = load_or_find(self.config_path.as_deref());
         let (cfg_owner, cfg_repo, cfg_proj) = match loaded {
             Ok(cfg) => (
@@ -76,18 +89,23 @@ impl Arguments {
                 cfg.github.project.and_then(|p| p.number),
             ),
             Err(ConfigError::NotFound) => (None, None, None),
-            Err(err) => return Err(err.to_string()),
+            Err(err) => return Err(ResolveError::Config(err)),
         };
 
-        let owner = self.owner.clone().or(cfg_owner).ok_or_else(|| {
-            "owner is required (specify via --owner or in tools.toml)".to_string()
-        })?;
-        let repo = self.repo.clone().or(cfg_repo).ok_or_else(|| {
-            "repository is required (specify via --repo or in tools.toml)".to_string()
-        })?;
-        let project = self.project.or(cfg_proj).ok_or_else(|| {
-            "project number is required (specify via --project or in tools.toml)".to_string()
-        })?;
+        let owner = self
+            .owner
+            .clone()
+            .or(cfg_owner)
+            .ok_or(ResolveError::MissingOwner)?;
+        let repo = self
+            .repo
+            .clone()
+            .or(cfg_repo)
+            .ok_or(ResolveError::MissingRepository)?;
+        let project = self
+            .project
+            .or(cfg_proj)
+            .ok_or(ResolveError::MissingProject)?;
 
         Ok(Target::new(owner, repo, Some(project)))
     }

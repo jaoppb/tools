@@ -78,9 +78,6 @@ pub enum RepoResolveError {
 #[error(transparent)]
 pub struct UsageError(#[from] clap::Error);
 
-/// Backward compatibility alias.
-pub type RepoUsageError = UsageError;
-
 impl UsageError {
     /// The exit code clap gives it: 0 for `--help` and 2 for a rejected argument.
     #[must_use]
@@ -98,9 +95,6 @@ pub struct Arguments {
     owner: Option<String>,
     repo: Option<String>,
 }
-
-/// Backward compatibility alias.
-pub type RepoArguments = Arguments;
 
 /// Resolved repository target and desired configuration specification.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -278,19 +272,19 @@ mod tests {
 
     #[test]
     fn parses_flags_correctly() {
-        let args = RepoArguments::parse(["repo-sync".into(), "--check".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--check".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Check);
 
-        let args = RepoArguments::parse(["repo-sync".into(), "--dry-run".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--dry-run".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Preview);
 
-        let args = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Apply);
     }
 
     #[test]
     fn resolve_fails_loud_when_config_is_missing() {
-        let args = RepoArguments::parse([
+        let args = Arguments::parse([
             "repo-sync".into(),
             "--config".into(),
             "non-existent-tools.toml".into(),
@@ -312,7 +306,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = RepoArguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
         let err = args.resolve_with_config(config.clone()).unwrap_err();
         assert!(matches!(
             err,
@@ -322,7 +316,7 @@ mod tests {
             }
         ));
 
-        let args_all_flags = RepoArguments::parse([
+        let args_all_flags = Arguments::parse([
             "repo-sync".into(),
             "--settings".into(),
             "--labels".into(),
@@ -340,7 +334,7 @@ mod tests {
             }
         ));
 
-        let args_all = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let args_all = Arguments::parse(["repo-sync".into()]).unwrap();
         let err_all = args_all.resolve_with_config(config).unwrap_err();
         assert!(matches!(err_all, RepoResolveError::EmptyConfig));
     }
@@ -368,14 +362,14 @@ mod tests {
         let config: Config = toml::from_str(toml_str).unwrap();
 
         // When --labels is passed, settings should be None
-        let args = RepoArguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
         assert!(resolved.spec.settings.is_none());
         assert!(resolved.spec.labels.is_some());
         assert!(resolved.spec.milestones.is_none());
 
         // When no filter is passed, configured entities should be Some
-        let args_all = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let args_all = Arguments::parse(["repo-sync".into()]).unwrap();
         let resolved_all = args_all.resolve_with_config(config).unwrap();
         assert!(resolved_all.spec.settings.is_some());
         assert!(resolved_all.spec.labels.is_some());
@@ -396,7 +390,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = RepoArguments::parse(["repo-sync".into(), "--project".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--project".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
         assert!(resolved.spec.settings.is_none());
         assert!(resolved.spec.labels.is_none());
@@ -419,7 +413,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = RepoArguments::parse(["repo-sync".into()]).unwrap();
+        let args = Arguments::parse(["repo-sync".into()]).unwrap();
         let err = args.resolve_with_config(config).unwrap_err();
         assert!(matches!(
             err,

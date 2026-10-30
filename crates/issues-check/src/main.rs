@@ -29,9 +29,10 @@ fn run() -> Result<Exit, Exit> {
         text: usage.to_string(),
         code: usage.exit_code(),
     })?;
-    let (target, rules) = arguments
-        .resolve()
-        .map_err(|err| Exit { text: err, code: 2 })?;
+    let (target, rules) = arguments.resolve().map_err(|err| Exit {
+        text: err.to_string(),
+        code: 2,
+    })?;
     let project = target.project().map(|_| GhProject::new(target.clone()));
     let report = Audit::new(
         GhIssues::new(target.clone()),

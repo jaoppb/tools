@@ -11,4 +11,4 @@ name = "architecture"
 path = "tests/architecture.rs"
 
 [dev-dependencies]
-arch-lint = "0.11"
+arch-lint.workspace = true

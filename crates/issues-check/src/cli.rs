@@ -27,6 +27,17 @@ impl UsageError {
     }
 }
 
+/// An error resolving issue audit configuration.
+#[derive(Debug, thiserror::Error)]
+pub enum ResolveError {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error("owner is required (specify via --owner or in tools.toml)")]
+    MissingOwner,
+    #[error("repository is required (specify via --repo or in tools.toml)")]
+    MissingRepository,
+}
+
 /// The parsed arguments for `issues-check`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
@@ -37,9 +48,6 @@ pub struct Arguments {
     no_parent: bool,
     no_membership: bool,
 }
-
-/// Backward compatibility alias.
-pub type AuditArguments = Arguments;
 
 impl Arguments {
     /// Reads the whole command line, program name first.
@@ -67,7 +75,7 @@ impl Arguments {
     /// # Errors
     ///
     /// Fails when configuration cannot be read or target lacks owner/repo.
-    pub fn resolve(&self) -> Result<(Target, RulesConfig), String> {
+    pub fn resolve(&self) -> Result<(Target, RulesConfig), ResolveError> {
         let loaded = load_or_find(self.config_path.as_deref());
         let (cfg_owner, cfg_repo, cfg_proj, mut rules) = match loaded {
             Ok(cfg) => (
@@ -77,15 +85,19 @@ impl Arguments {
                 cfg.github.issues.rules,
             ),
             Err(ConfigError::NotFound) => (None, None, None, RulesConfig::default()),
-            Err(err) => return Err(err.to_string()),
+            Err(err) => return Err(ResolveError::Config(err)),
         };
 
-        let owner = self.owner.clone().or(cfg_owner).ok_or_else(|| {
-            "owner is required (specify via --owner or in tools.toml)".to_string()
-        })?;
-        let repo = self.repo.clone().or(cfg_repo).ok_or_else(|| {
-            "repository is required (specify via --repo or in tools.toml)".to_string()
-        })?;
+        let owner = self
+            .owner
+            .clone()
+            .or(cfg_owner)
+            .ok_or(ResolveError::MissingOwner)?;
+        let repo = self
+            .repo
+            .clone()
+            .or(cfg_repo)
+            .ok_or(ResolveError::MissingRepository)?;
         let project = self.project.or(cfg_proj);
 
         if self.no_parent {
