@@ -77,7 +77,7 @@ fn card_of(item: &Item, target: &Target) -> Result<Option<Card>, GhError> {
         standing_of(item, content)?,
     )
     .with_facts(facts_of(&item.field_values, &content.detail))
-    .with_links(links_of(&content.detail, &repo, target));
+    .with_links(links_of(&content.detail, &repo));
     Ok(Some(card))
 }
 
@@ -139,12 +139,12 @@ fn with_effort(facts: Facts, values: &FieldValues) -> Facts {
     }
 }
 
-fn links_of(detail: &Detail, repo: &Repo, target: &Target) -> Links {
+fn links_of(detail: &Detail, repo: &Repo) -> Links {
     let blockers = detail
         .blocked_by
         .iter()
         .flat_map(|blocked| &blocked.nodes)
-        .filter_map(|blocking| blocker_of(blocking, target))
+        .filter_map(|blocking| blocker_of(blocking, repo))
         .collect();
     let links = Links::new(Blockers::new(blockers));
     match &detail.parent {
@@ -153,12 +153,12 @@ fn links_of(detail: &Detail, repo: &Repo, target: &Target) -> Links {
     }
 }
 
-/// A blocker from another repository, or one whose state is not closed, is
-/// read as open, so nothing is promoted by mistake.
-fn blocker_of(blocking: &Blocking, target: &Target) -> Option<Blocker> {
-    let repo = blocking.head.repo()?;
-    let number = IssueNumber::new(repo, blocking.head.number?);
-    let closed = blocking.head.is_in(target) && blocking.head.state.as_deref() == Some("CLOSED");
+/// A blocker whose state is closed is read as closed, regardless of
+/// repository.
+fn blocker_of(blocking: &Blocking, repo: &Repo) -> Option<Blocker> {
+    let blocker_repo = blocking.head.repo().unwrap_or_else(|| repo.clone());
+    let number = IssueNumber::new(blocker_repo, blocking.head.number?);
+    let closed = blocking.head.state.as_deref() == Some("CLOSED");
     let lifecycle = if closed {
         Lifecycle::Closed
     } else {

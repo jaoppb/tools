@@ -89,7 +89,7 @@ impl GhIssues {
     ) -> Result<Gathered, GhError> {
         let query_str = query::issues_for_repo(&self.target, repo);
         let reply = self.runner.graphql(&query_str, &cursor_fields(cursor))?;
-        let page = parse_issues_for(&reply, &self.target, repo)?;
+        let page = parse_issues_for(&reply, repo)?;
         let gathered = gathered.with(&page);
         match page.next() {
             Some(next) => self.gather_for_repo(repo, Some(next), gathered),

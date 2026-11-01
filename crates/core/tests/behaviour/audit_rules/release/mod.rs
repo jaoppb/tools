@@ -79,3 +79,34 @@ fn does_not_compare_an_issue_with_an_unreadable_milestone() {
         ["#10 unreadable-milestone: milestone is not a release such as v0.1.0 or v0.2.0"]
     );
 }
+
+#[test]
+fn reports_a_cross_repository_blocker_in_a_later_release() {
+    use crate::support::audit::labels;
+    use crate::support::repo_number;
+    use tools_core::domain::{BlockedBy, Lifecycle, Milestone, TreeIssue};
+
+    let app_epic = TreeIssue::new(repo_number("app", 1), Lifecycle::Open)
+        .with_labels(labels(&["epic", "type:chore", "area:tooling"]))
+        .with_milestone(Milestone::new("v1"));
+    let web_epic = TreeIssue::new(repo_number("web", 2), Lifecycle::Open)
+        .with_labels(labels(&["epic", "type:chore", "area:tooling"]))
+        .with_milestone(Milestone::new("v1.1"));
+
+    let app_story = TreeIssue::new(repo_number("app", 10), Lifecycle::Open)
+        .with_labels(labels(&["type:chore", "area:tooling"]))
+        .with_milestone(Milestone::new("v1"))
+        .with_parent(repo_number("app", 1))
+        .with_blocked_by(BlockedBy::new(vec![repo_number("web", 11)]));
+
+    let web_story = TreeIssue::new(repo_number("web", 11), Lifecycle::Open)
+        .with_labels(labels(&["type:chore", "area:tooling"]))
+        .with_milestone(Milestone::new("v1.1"))
+        .with_parent(repo_number("web", 2));
+
+    let broken = survey(vec![app_epic, web_epic, app_story, web_story]);
+    assert_eq!(
+        lines(&broken),
+        ["web#11 blocks-earlier-release: blocks app#10, which is in an earlier release"]
+    );
+}

@@ -3,7 +3,7 @@
 use serde::Deserialize;
 
 use crate::adapters::github::error::GhError;
-use crate::adapters::github::parse::{PageCursor, bad_reply};
+use crate::adapters::github::parse::{PageCursor, RepositoryRef, bad_reply};
 use crate::domain::{IssueNumber, Repo};
 
 /// The issues closed by the pull requests of one page, and the next cursor.
@@ -62,8 +62,10 @@ struct Issues {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Issue {
     number: u64,
+    repository: Option<RepositoryRef>,
 }
 
 /// Reads one page of open pull requests.
@@ -78,7 +80,13 @@ pub fn parse_pulls(json: &str, repo: &Repo) -> Result<PullsPage, GhError> {
         .nodes
         .iter()
         .flat_map(|pull| &pull.closing_issues_references.nodes)
-        .map(|issue| IssueNumber::new(repo.clone(), issue.number))
+        .map(|issue| {
+            let issue_repo = issue
+                .repository
+                .as_ref()
+                .map_or_else(|| repo.clone(), |r| r.resolve_or(repo));
+            IssueNumber::new(issue_repo, issue.number)
+        })
         .collect();
     Ok(PullsPage {
         closing,

@@ -5,7 +5,7 @@
 
 use serde::Deserialize;
 
-use crate::adapters::github::parse::PageCursor;
+use crate::adapters::github::parse::{PageCursor, RepositoryRef};
 use crate::adapters::github::target::Target;
 use crate::domain::Repo;
 
@@ -81,13 +81,7 @@ pub(super) struct Content {
 pub(super) struct Head {
     pub(super) number: Option<u64>,
     pub(super) state: Option<String>,
-    pub(super) repository: Option<Repository>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct Repository {
-    pub(super) name_with_owner: String,
+    pub(super) repository: Option<RepositoryRef>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,12 +125,6 @@ pub(super) struct Blocking {
     pub(super) head: Head,
 }
 
-impl Repository {
-    pub(super) fn to_repo(&self) -> Option<Repo> {
-        Repo::parse(&self.name_with_owner)
-    }
-}
-
 impl Head {
     pub(super) fn is_in(&self, target: &Target) -> bool {
         self.repository
@@ -145,7 +133,7 @@ impl Head {
     }
 
     pub(super) fn repo(&self) -> Option<Repo> {
-        self.repository.as_ref().and_then(Repository::to_repo)
+        self.repository.as_ref().and_then(RepositoryRef::to_repo)
     }
 }
 

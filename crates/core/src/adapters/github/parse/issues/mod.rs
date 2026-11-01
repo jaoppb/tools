@@ -37,8 +37,8 @@ impl IssuesPage {
     }
 }
 
-/// Reads one page of the repository's issues. A blocker of another repository
-/// is dropped.
+/// Reads one page of the repository's issues. Cross-repository blockers are
+/// retained.
 ///
 /// # Errors
 ///
@@ -47,7 +47,7 @@ impl IssuesPage {
 /// when an issue has more blockers than the page returned.
 pub fn parse_issues(json: &str, target: &Target) -> Result<IssuesPage, GhError> {
     let repo = Repo::new(target.owner(), target.primary_repo());
-    parse_issues_for(json, target, &repo)
+    parse_issues_for(json, &repo)
 }
 
 /// Reads one page of issues for an explicit repository.
@@ -57,14 +57,14 @@ pub fn parse_issues(json: &str, target: &Target) -> Result<IssuesPage, GhError> 
 /// Returns [`GhError::BadReply`] when the answer is not the expected JSON or an
 /// issue has a state other than open or closed, and [`GhError::Incomplete`]
 /// when an issue has more blockers than the page returned.
-pub fn parse_issues_for(json: &str, target: &Target, repo: &Repo) -> Result<IssuesPage, GhError> {
+pub fn parse_issues_for(json: &str, repo: &Repo) -> Result<IssuesPage, GhError> {
     let reply: Reply = serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
     let issues = reply.data.repository.issues;
     let next = issues.page_info.next();
     let read = issues
         .nodes
         .iter()
-        .map(|node| issue_of(node, target, repo))
+        .map(|node| issue_of(node, repo))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(IssuesPage {
         issues: read,
@@ -73,11 +73,11 @@ pub fn parse_issues_for(json: &str, target: &Target, repo: &Repo) -> Result<Issu
     })
 }
 
-fn issue_of(node: &Node, target: &Target, repo: &Repo) -> Result<TreeIssue, GhError> {
+fn issue_of(node: &Node, repo: &Repo) -> Result<TreeIssue, GhError> {
     let number = IssueNumber::new(repo.clone(), node.head.number);
     let issue = TreeIssue::new(number, lifecycle_of(&node.head.state)?)
         .with_labels(labels_of(node))
-        .with_blocked_by(blockers_of(node, target, repo)?);
+        .with_blocked_by(blockers_of(node, repo)?);
     Ok(with_placement(issue, node, repo))
 }
 
@@ -113,7 +113,7 @@ fn labels_of(node: &Node) -> Labels {
     )
 }
 
-fn blockers_of(node: &Node, target: &Target, repo: &Repo) -> Result<BlockedBy, GhError> {
+fn blockers_of(node: &Node, repo: &Repo) -> Result<BlockedBy, GhError> {
     let blocked_by = &node.blocked_by;
     let returned = u64::try_from(blocked_by.nodes.len()).unwrap_or(u64::MAX);
     if returned < blocked_by.total_count {
@@ -128,7 +128,6 @@ fn blockers_of(node: &Node, target: &Target, repo: &Repo) -> Result<BlockedBy, G
     let numbers = blocked_by
         .nodes
         .iter()
-        .filter(|blocking| blocking.is_in(target))
         .map(|blocking| IssueNumber::new(blocking.repo(repo), blocking.number))
         .collect();
     Ok(BlockedBy::new(numbers))
