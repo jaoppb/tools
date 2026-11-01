@@ -13,6 +13,7 @@ fn every_filled_query_has_no_placeholder_left() {
         query::status_field(&target),
         query::repo_labels(&target),
         query::repo_milestones(&target),
+        query::repo_project(&target),
     ];
     assert!(queries.iter().all(|text| !text.contains('@')));
 }

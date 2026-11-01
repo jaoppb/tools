@@ -1,0 +1,34 @@
+{
+  "data": {
+    "repositoryOwner": {
+      "projectV2": {
+        "id": "PVT_kwDOEHF8jM4BVBtl",
+        "field": {
+          "id": "PVTSSF_lADOEHF8jM4BVBtlzhkzOrg",
+          "options": [
+            {
+              "id": "opt_backlog",
+              "name": "Backlog"
+            },
+            {
+              "id": "opt_ready",
+              "name": "Ready"
+            },
+            {
+              "id": "opt_progress",
+              "name": "In progress"
+            },
+            {
+              "id": "opt_review",
+              "name": "In review"
+            },
+            {
+              "id": "opt_done",
+              "name": "Done"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

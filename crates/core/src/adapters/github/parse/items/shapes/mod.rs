@@ -14,14 +14,22 @@ pub(super) struct Reply {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct Answer {
-    pub(super) user: User,
+    #[serde(alias = "user", alias = "organization")]
+    pub(super) repository_owner: Option<Owner>,
+}
+
+impl Answer {
+    pub(super) fn project_v2(self) -> Option<Project> {
+        self.repository_owner.and_then(|owner| owner.project_v2)
+    }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct User {
-    pub(super) project_v2: Project,
+pub(super) struct Owner {
+    pub(super) project_v2: Option<Project>,
 }
 
 #[derive(Debug, Deserialize)]

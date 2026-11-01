@@ -1,0 +1,84 @@
+{
+  "data": {
+    "repositoryOwner": {
+      "projectV2": {
+        "items": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "cursor-org-end"
+          },
+          "nodes": [
+            {
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "name": "In progress",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "number": 3.0,
+                    "field": {
+                      "name": "Effort"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 10,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "gatuno-manga/web"
+                },
+                "labels": {
+                  "nodes": [
+                    { "name": "type:feat" },
+                    { "name": "area:core" }
+                  ]
+                },
+                "milestone": {
+                  "title": "v0.2.0"
+                },
+                "parent": null,
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            },
+            {
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "name": "Ready",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "number": 11,
+                "state": "OPEN",
+                "repository": {
+                  "nameWithOwner": "gatuno-manga/web"
+                },
+                "labels": {
+                  "nodes": [
+                    { "name": "type:fix" },
+                    { "name": "area:web" }
+                  ]
+                },
+                "milestone": null,
+                "parent": null,
+                "blockedBy": {
+                  "nodes": []
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

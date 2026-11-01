@@ -104,14 +104,16 @@ struct FieldReply {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct FieldAnswer {
-    user: FieldUser,
+    #[serde(alias = "user", alias = "organization")]
+    repository_owner: Option<FieldOwner>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct FieldUser {
-    project_v2: FieldProject,
+struct FieldOwner {
+    project_v2: Option<FieldProject>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -136,7 +138,13 @@ struct FieldNode {
 /// the Project has no Status field.
 pub fn parse_status_field(json: &str) -> Result<StatusField, GhError> {
     let reply: FieldReply = serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
-    let project = reply.data.user.project_v2;
+    let project = reply
+        .data
+        .repository_owner
+        .and_then(|owner| owner.project_v2)
+        .ok_or_else(|| GhError::BadReply {
+            reason: "projectV2 not found for owner".to_owned(),
+        })?;
     let field = project.field.ok_or_else(|| GhError::BadReply {
         reason: "the Project has no Status field".to_owned(),
     })?;
