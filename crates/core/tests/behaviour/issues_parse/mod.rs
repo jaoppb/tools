@@ -3,10 +3,17 @@
 
 use tools_core::adapters::github::parse::{IssuesPage, parse_issues};
 use tools_core::adapters::github::{Gathered, GhError, Target};
-use tools_core::domain::{BlockedBy, Lifecycle, Milestone, TreeIssue};
+use tools_core::domain::{BlockedBy, IssueNumber, Lifecycle, Milestone, Repo, TreeIssue};
 
 use crate::support::audit::labels;
-use crate::support::number;
+
+fn cosmo_repo() -> Repo {
+    Repo::new("jaoppb", "cosmo")
+}
+
+fn number(raw: u64) -> IssueNumber {
+    IssueNumber::new(cosmo_repo(), raw)
+}
 
 const LIVE: &str = include_str!("../../fixtures/issues_live.json");
 const EDGE: &str = include_str!("../../fixtures/issues_edge.json");
@@ -81,7 +88,7 @@ fn refuses_an_issue_whose_blockers_were_cut_off() {
     let failure = page(TRUNCATED).expect_err("the blocker list is cut off");
     assert_eq!(
         failure.to_string(),
-        "gh answered only part of the data: issue #12 has 1 of 61 blockers"
+        "gh answered only part of the data: issue cosmo#12 has 1 of 61 blockers"
     );
 }
 

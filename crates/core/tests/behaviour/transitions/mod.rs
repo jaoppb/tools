@@ -1,9 +1,10 @@
 //! The other transitions: pull requests, closing, reopening and demotion.
 
-use tools_core::domain::{Lifecycle, Status};
+use tools_core::domain::{Cards, Closing, Lifecycle, Snapshot, Status};
 
 use crate::support::{
-    blocked_by, closed_card, epic, gaps_of, moves_of, open_card, snapshot, without_priority,
+    blocked_by, closed_card, complete_facts, epic, gaps_of, moves_of, open_card, repo_card,
+    repo_number, snapshot, without_priority,
 };
 
 #[test]
@@ -101,4 +102,25 @@ fn a_plan_never_moves_a_card_into_in_progress() {
     ];
     let moves = moves_of(&snapshot(cards, &[]).plan());
     assert!(moves.iter().all(|line| !line.contains("-> In progress")));
+}
+
+#[test]
+fn multi_repo_cards_with_same_number_have_independent_lifecycle_and_moves() {
+    let app_1 = repo_card("app", 1, Status::Ready);
+    let web_1 = tools_core::domain::Card::new(
+        repo_number("web", 1),
+        tools_core::domain::Standing::new(Status::Ready, Lifecycle::Closed),
+    )
+    .with_facts(complete_facts());
+    let closing_app_1 = repo_number("app", 1);
+    let cards = Cards::new(vec![app_1, web_1]);
+    let closing = Closing::new(vec![closing_app_1]);
+    let plan = Snapshot::new(cards, closing).plan();
+
+    // app#1 has an open PR -> moves to In review
+    // web#1 is closed -> moves to Done (closed)
+    let moves = moves_of(&plan);
+    assert!(moves.contains(&"app#1 Ready -> In review (pull request open)".to_owned()));
+    assert!(moves.contains(&"web#1 Ready -> Done (closed)".to_owned()));
+    assert_eq!(moves.len(), 2);
 }

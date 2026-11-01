@@ -2,12 +2,12 @@
 
 use crate::adapters::github::cursor_fields;
 use crate::adapters::github::error::GhError;
-use crate::adapters::github::parse::{IssuesPage, parse_issues};
+use crate::adapters::github::parse::{IssuesPage, parse_issues_for};
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
 use crate::application::{AuditError, RepositoryIssues};
-use crate::domain::{IssueTree, TreeIssue};
+use crate::domain::{IssueTree, Repo, TreeIssue};
 
 /// The pages of issues read so far. It accepts them only when together they are
 /// every issue the repository says it has.
@@ -72,17 +72,27 @@ impl GhIssues {
     }
 
     fn read(&self) -> Result<IssueTree, GhError> {
-        self.gather(None, Gathered::default())?.into_tree()
+        let mut all_issues = Vec::new();
+        for repo in self.target.repos() {
+            let gathered = self.gather_for_repo(repo, None, Gathered::default())?;
+            let tree = gathered.into_tree()?;
+            all_issues.extend(tree.into_issues());
+        }
+        Ok(IssueTree::new(all_issues))
     }
 
-    fn gather(&self, cursor: Option<&str>, gathered: Gathered) -> Result<Gathered, GhError> {
-        let reply = self
-            .runner
-            .graphql(&query::issues(&self.target), &cursor_fields(cursor))?;
-        let page = parse_issues(&reply, &self.target)?;
+    fn gather_for_repo(
+        &self,
+        repo: &Repo,
+        cursor: Option<&str>,
+        gathered: Gathered,
+    ) -> Result<Gathered, GhError> {
+        let query_str = query::issues_for_repo(&self.target, repo);
+        let reply = self.runner.graphql(&query_str, &cursor_fields(cursor))?;
+        let page = parse_issues_for(&reply, &self.target, repo)?;
         let gathered = gathered.with(&page);
         match page.next() {
-            Some(next) => self.gather(Some(next), gathered),
+            Some(next) => self.gather_for_repo(repo, Some(next), gathered),
             None => Ok(gathered),
         }
     }

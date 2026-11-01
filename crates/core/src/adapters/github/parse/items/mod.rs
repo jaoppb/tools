@@ -10,7 +10,7 @@ use crate::adapters::github::parse::items::shapes::{
 use crate::adapters::github::target::Target;
 use crate::domain::{
     Blocker, Blockers, Card, Effort, Facts, IssueNumber, Label, Labels, Lifecycle, Links,
-    Milestone, Parent, Priority, Role, Standing, Status,
+    Milestone, Parent, Priority, Repo, Role, Standing, Status,
 };
 
 /// The cards of one page and the cursor of the next page.
@@ -69,9 +69,15 @@ fn card_of(item: &Item, target: &Target) -> Result<Option<Card>, GhError> {
     if !content.head.is_in(target) {
         return Ok(None);
     }
-    let card = Card::new(IssueNumber::new(raw), standing_of(item, content)?)
-        .with_facts(facts_of(&item.field_values, &content.detail))
-        .with_links(links_of(&content.detail, target));
+    let Some(repo) = content.head.repo() else {
+        return Ok(None);
+    };
+    let card = Card::new(
+        IssueNumber::new(repo.clone(), raw),
+        standing_of(item, content)?,
+    )
+    .with_facts(facts_of(&item.field_values, &content.detail))
+    .with_links(links_of(&content.detail, &repo, target));
     Ok(Some(card))
 }
 
@@ -133,7 +139,7 @@ fn with_effort(facts: Facts, values: &FieldValues) -> Facts {
     }
 }
 
-fn links_of(detail: &Detail, target: &Target) -> Links {
+fn links_of(detail: &Detail, repo: &Repo, target: &Target) -> Links {
     let blockers = detail
         .blocked_by
         .iter()
@@ -142,7 +148,7 @@ fn links_of(detail: &Detail, target: &Target) -> Links {
         .collect();
     let links = Links::new(Blockers::new(blockers));
     match &detail.parent {
-        Some(parent) => links.with_parent(parent_of(parent)),
+        Some(parent) => links.with_parent(parent_of(parent, repo)),
         None => links,
     }
 }
@@ -150,7 +156,8 @@ fn links_of(detail: &Detail, target: &Target) -> Links {
 /// A blocker from another repository, or one whose state is not closed, is
 /// read as open, so nothing is promoted by mistake.
 fn blocker_of(blocking: &Blocking, target: &Target) -> Option<Blocker> {
-    let number = IssueNumber::new(blocking.head.number?);
+    let repo = blocking.head.repo()?;
+    let number = IssueNumber::new(repo, blocking.head.number?);
     let closed = blocking.head.is_in(target) && blocking.head.state.as_deref() == Some("CLOSED");
     let lifecycle = if closed {
         Lifecycle::Closed
@@ -160,8 +167,8 @@ fn blocker_of(blocking: &Blocking, target: &Target) -> Option<Blocker> {
     Some(Blocker::new(number, lifecycle))
 }
 
-fn parent_of(parent: &Parented) -> Parent {
+fn parent_of(parent: &Parented, repo: &Repo) -> Parent {
     let epic = parent.labels.nodes.iter().any(|named| named.name == "epic");
     let role = if epic { Role::Epic } else { Role::Story };
-    Parent::new(IssueNumber::new(parent.number), role)
+    Parent::new(IssueNumber::new(repo.clone(), parent.number), role)
 }

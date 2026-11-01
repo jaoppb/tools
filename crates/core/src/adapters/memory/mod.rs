@@ -32,9 +32,9 @@ impl MemoryProject {
         }
     }
 
-    fn refuses(&mut self, number: IssueNumber) -> bool {
+    fn refuses(&mut self, number: &IssueNumber) -> bool {
         let before = self.refusing.len();
-        self.refusing.retain(|refused| *refused != number);
+        self.refusing.retain(|refused| refused != number);
         self.refusing.len() != before
     }
 }
@@ -45,10 +45,10 @@ impl ProjectState for MemoryProject {
     }
 
     fn set_status(&mut self, number: IssueNumber, status: Status) -> Result<(), SyncError> {
-        self.refuses(number)
+        self.refuses(&number)
             .then_some(())
-            .map_or_else(|| Ok(()), |()| Err(refusal(number)))?;
-        self.snapshot = self.snapshot.clone().with_status(number, status);
+            .map_or_else(|| Ok(()), |()| Err(refusal(number.clone())))?;
+        self.snapshot = self.snapshot.clone().with_status(&number, status);
         Ok(())
     }
 }

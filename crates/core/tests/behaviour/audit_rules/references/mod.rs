@@ -117,7 +117,7 @@ fn a_repository_without_texts_has_no_findings() {
 
 #[test]
 fn never_reports_the_text_of_the_log_carrier() {
-    let carrier = LOG_CARRIER.value();
+    let carrier = LOG_CARRIER;
     let survey = survey_of_texts(vec![
         text(carrier, Surface::Body, "ADR-0013"),
         text(
@@ -131,7 +131,7 @@ fn never_reports_the_text_of_the_log_carrier() {
 
 #[test]
 fn still_reports_the_neighbours_of_the_log_carrier() {
-    let carrier = LOG_CARRIER.value();
+    let carrier = LOG_CARRIER;
     let survey = survey_of_texts(vec![
         text(carrier.saturating_sub(1), Surface::Body, "ADR-0013"),
         text(carrier.saturating_add(1), Surface::Body, "ADR-0013"),

@@ -139,11 +139,11 @@ impl Violation {
 
     /// One violation of `number` for each rule that is present.
     #[must_use]
-    pub fn each(number: IssueNumber, rules: impl IntoIterator<Item = Option<Rule>>) -> Vec<Self> {
+    pub fn each(number: &IssueNumber, rules: impl IntoIterator<Item = Option<Rule>>) -> Vec<Self> {
         rules
             .into_iter()
             .flatten()
-            .map(|rule| Self::new(number, rule))
+            .map(|rule| Self::new(number.clone(), rule))
             .collect()
     }
 }

@@ -8,13 +8,14 @@ use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
 use crate::application::{AuditError, RepositoryText};
-use crate::domain::{TextItem, Texts};
+use crate::domain::{Repo, TextItem, Texts};
 
 /// One kind of item to read: its query, its parser and what to call it in a
 /// message.
 struct Feed {
     query: String,
-    parse: fn(&str) -> Result<TextsPage, GhError>,
+    repo: Repo,
+    parse: fn(&str, &Repo) -> Result<TextsPage, GhError>,
     what: &'static str,
 }
 
@@ -78,18 +79,23 @@ impl GhText {
     }
 
     fn read(&self) -> Result<Texts, GhError> {
-        let issues = Feed {
-            query: query::texts_issues(&self.target),
-            parse: parse_issue_texts,
-            what: "issues",
-        };
-        let pulls = Feed {
-            query: query::texts_pulls(&self.target),
-            parse: parse_pull_texts,
-            what: "pull requests",
-        };
-        let mut items = self.feed(&issues)?;
-        items.extend(self.feed(&pulls)?);
+        let mut items = Vec::new();
+        for repo in self.target.repos() {
+            let issues = Feed {
+                query: query::texts_issues_for_repo(&self.target, repo),
+                repo: repo.clone(),
+                parse: parse_issue_texts,
+                what: "issues",
+            };
+            let pulls = Feed {
+                query: query::texts_pulls_for_repo(&self.target, repo),
+                repo: repo.clone(),
+                parse: parse_pull_texts,
+                what: "pull requests",
+            };
+            items.extend(self.feed(&issues)?);
+            items.extend(self.feed(&pulls)?);
+        }
         Ok(Texts::new(items))
     }
 
@@ -101,7 +107,8 @@ impl GhText {
     fn gather(&self, feed: &Feed, gathered: GatheredTexts) -> Result<GatheredTexts, GhError> {
         let cursor = gathered.next.as_deref();
         let reply = self.runner.graphql(&feed.query, &cursor_fields(cursor))?;
-        let gathered = gathered.with(&(feed.parse)(&reply)?);
+        let page = (feed.parse)(&reply, &feed.repo)?;
+        let gathered = gathered.with(&page);
         match gathered.next {
             Some(_) => self.gather(feed, gathered),
             None => Ok(gathered),

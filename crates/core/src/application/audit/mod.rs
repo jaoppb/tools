@@ -127,7 +127,11 @@ impl<I: RepositoryIssues, P: ProjectState, T: RepositoryText> Audit<I, P, T> {
         let issues = self.issues.issues()?;
         let members = if let Some(project) = &self.project {
             let snapshot = project.snapshot().map_err(project_failure)?;
-            let numbers = snapshot.cards().map(crate::domain::Card::number).collect();
+            let numbers = snapshot
+                .cards()
+                .map(crate::domain::Card::number)
+                .cloned()
+                .collect();
             Members::new(numbers)
         } else {
             Members::default()

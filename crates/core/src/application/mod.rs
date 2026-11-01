@@ -144,5 +144,5 @@ impl<S: ProjectState> Sync<S> {
 }
 
 fn write<S: ProjectState>(state: &mut S, planned: &Move) -> Result<(), SyncError> {
-    state.set_status(planned.number(), planned.destination())
+    state.set_status(planned.number().clone(), planned.destination())
 }

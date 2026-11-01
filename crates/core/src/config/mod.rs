@@ -20,11 +20,20 @@ impl Config {
     /// Creates a Target from this configuration.
     #[must_use]
     pub fn target(&self) -> Target {
-        Target::new(
-            &self.github.repository.owner,
-            &self.github.repository.name,
-            self.github.project.as_ref().and_then(|p| p.number),
-        )
+        let project = self.github.project.as_ref().and_then(|p| p.number);
+        if self.github.repositories.is_empty() {
+            Target::single(
+                &self.github.repository.owner,
+                &self.github.repository.name,
+                project,
+            )
+        } else {
+            Target::multi(
+                &self.github.repository.owner,
+                self.github.repositories.clone(),
+                project,
+            )
+        }
     }
 
     /// The issues-check rules configuration.
@@ -90,6 +99,9 @@ impl Config {
 pub struct GithubConfig {
     /// Repository coordinates and settings.
     pub repository: RepositoryConfig,
+    /// Multi-repository targets, if configured.
+    #[serde(default)]
+    pub repositories: Vec<String>,
     /// Project coordinates, if used.
     #[serde(default)]
     pub project: Option<ProjectConfig>,
@@ -233,6 +245,18 @@ pub fn find_config(start_dir: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Loads and parses configuration from a string.
+///
+/// # Errors
+///
+/// Returns [`ConfigError`] if parsing fails.
+pub fn load_from_str(contents: &str) -> Result<Config, ConfigError> {
+    toml::from_str(contents).map_err(|source| ConfigError::Parse {
+        path: PathBuf::from("<memory>"),
+        source,
+    })
+}
+
 /// Loads and parses configuration from the given file path.
 ///
 /// # Errors
@@ -262,8 +286,11 @@ pub fn load_or_find(explicit_path: Option<&Path>) -> Result<Config, ConfigError>
             path: PathBuf::from("."),
             source,
         })?;
-        let found = find_config(&cwd).ok_or(ConfigError::NotFound)?;
-        load_from_path(&found)
+        if let Some(found) = find_config(&cwd) {
+            load_from_path(&found)
+        } else {
+            Err(ConfigError::NotFound)
+        }
     }
 }
 
@@ -395,5 +422,29 @@ mod tests {
         let proj_spec = repo_spec.project.expect("project spec should exist");
         assert_eq!(proj_spec.number, 4);
         assert_eq!(proj_spec.title, "Tools Roadmap");
+    }
+
+    #[test]
+    fn parses_multi_repo_target_config() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github]
+            repositories = ["tools", "web", "api"]
+
+            [github.project]
+            number = 4
+        "#;
+        let config: Config = toml::from_str(toml_str).expect("should parse");
+        let target = config.target();
+        assert_eq!(target.repos().len(), 3);
+        assert_eq!(target.owner(), "jaoppb");
+        assert_eq!(target.project(), Some(4));
+        assert!(target.contains_repo("tools"));
+        assert!(target.contains_repo("web"));
+        assert!(target.contains_repo("api"));
+        assert!(!target.contains_repo("other"));
     }
 }

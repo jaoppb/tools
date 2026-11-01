@@ -4,9 +4,13 @@
 
 use tools_core::adapters::github::parse::{TextsPage, parse_issue_texts, parse_pull_texts};
 use tools_core::adapters::github::{GatheredTexts, GhError};
-use tools_core::domain::{IssueTree, Members, Survey, Texts};
+use tools_core::domain::{IssueTree, Members, Repo, Survey, Texts};
 
 use crate::support::audit::lines;
+
+fn cosmo() -> Repo {
+    Repo::new("jaoppb", "cosmo")
+}
 
 const ISSUES_LIVE: &str = include_str!("../../fixtures/texts_issues_live.json");
 const ISSUES_FIRST: &str = include_str!("../../fixtures/texts_issues_first_of_two.json");
@@ -21,7 +25,7 @@ const RECORDED: &str = "the recorded reply parses";
 
 #[test]
 fn a_page_of_issues_becomes_title_body_and_comment_texts() {
-    let page = parse_issue_texts(ISSUES_LIVE).expect(RECORDED);
+    let page = parse_issue_texts(ISSUES_LIVE, &cosmo()).expect(RECORDED);
     assert_eq!(page.items().len(), 5);
     assert_eq!(page.read(), 2);
     assert_eq!(page.total(), 106);
@@ -30,7 +34,7 @@ fn a_page_of_issues_becomes_title_body_and_comment_texts() {
 
 #[test]
 fn a_page_of_pull_requests_becomes_title_body_comment_review_and_thread_texts() {
-    let page = parse_pull_texts(PULLS_LIVE).expect(RECORDED);
+    let page = parse_pull_texts(PULLS_LIVE, &cosmo()).expect(RECORDED);
     assert_eq!(page.items().len(), 9);
     assert_eq!(page.read(), 2);
     assert_eq!(page.total(), 43);
@@ -38,7 +42,7 @@ fn a_page_of_pull_requests_becomes_title_body_comment_review_and_thread_texts() 
 
 #[test]
 fn keeps_each_text_on_its_own_surface() {
-    let page = parse_pull_texts(PULLS_SURFACES).expect(RECORDED);
+    let page = parse_pull_texts(PULLS_SURFACES, &cosmo()).expect(RECORDED);
     let survey = Survey::new(
         IssueTree::default(),
         Members::default(),
@@ -51,18 +55,18 @@ fn keeps_each_text_on_its_own_surface() {
     assert_eq!(
         surfaces,
         [
-            "#9 old-adr-number: old ADR number in the title",
-            "#9 old-adr-number: old ADR number in the body",
-            "#9 old-adr-number: old ADR number in the comment",
-            "#9 old-adr-number: old ADR number in the review",
-            "#9 old-adr-number: old ADR number in the review comment",
+            "cosmo#9 old-adr-number: old ADR number in the title",
+            "cosmo#9 old-adr-number: old ADR number in the body",
+            "cosmo#9 old-adr-number: old ADR number in the comment",
+            "cosmo#9 old-adr-number: old ADR number in the review",
+            "cosmo#9 old-adr-number: old ADR number in the review comment",
         ]
     );
 }
 
 #[test]
 fn an_empty_review_body_gives_no_text() {
-    let page = parse_pull_texts(PULLS_SURFACES).expect(RECORDED);
+    let page = parse_pull_texts(PULLS_SURFACES, &cosmo()).expect(RECORDED);
     assert_eq!(page.items().len(), 5);
 }
 
@@ -77,37 +81,40 @@ fn refusal(result: Result<TextsPage, GhError>) -> String {
 #[test]
 fn refuses_an_issue_whose_comments_were_cut_off() {
     assert_eq!(
-        refusal(parse_issue_texts(ISSUES_CUT_OFF)),
-        "gh answered only part of the data: #2 has more comments than the page returned"
+        refusal(parse_issue_texts(ISSUES_CUT_OFF, &cosmo())),
+        "gh answered only part of the data: cosmo#2 has more comments than the page returned"
     );
 }
 
 #[test]
 fn refuses_a_pull_request_whose_comments_were_cut_off() {
     assert_eq!(
-        refusal(parse_pull_texts(PULLS_CUT_OFF)),
-        "gh answered only part of the data: #7 has more comments than the page returned"
+        refusal(parse_pull_texts(PULLS_CUT_OFF, &cosmo())),
+        "gh answered only part of the data: cosmo#7 has more comments than the page returned"
     );
 }
 
 #[test]
 fn refuses_a_review_thread_whose_comments_were_cut_off() {
     assert_eq!(
-        refusal(parse_pull_texts(PULLS_THREAD_CUT_OFF)),
-        "gh answered only part of the data: #8 has more comments in a review thread than the page returned"
+        refusal(parse_pull_texts(PULLS_THREAD_CUT_OFF, &cosmo())),
+        "gh answered only part of the data: cosmo#8 has more comments in a review thread than the page returned"
     );
 }
 
 #[test]
 fn refuses_an_unreadable_reply() {
-    assert!(refusal(parse_issue_texts("not json")).starts_with("cannot read the answer of gh: "));
+    assert!(
+        refusal(parse_issue_texts("not json", &cosmo()))
+            .starts_with("cannot read the answer of gh: ")
+    );
 }
 
 #[test]
 fn reads_every_page_of_issues() {
     let items = GatheredTexts::default()
-        .with(&parse_issue_texts(ISSUES_FIRST).expect(RECORDED))
-        .with(&parse_issue_texts(ISSUES_LAST).expect(RECORDED))
+        .with(&parse_issue_texts(ISSUES_FIRST, &cosmo()).expect(RECORDED))
+        .with(&parse_issue_texts(ISSUES_LAST, &cosmo()).expect(RECORDED))
         .into_items("issues")
         .expect("both pages together are every issue");
     assert_eq!(items.len(), 7);
@@ -116,7 +123,7 @@ fn reads_every_page_of_issues() {
 #[test]
 fn refuses_a_read_that_returned_fewer_pull_requests_than_the_repository_has() {
     let failure = GatheredTexts::default()
-        .with(&parse_pull_texts(PULLS_LIVE).expect(RECORDED))
+        .with(&parse_pull_texts(PULLS_LIVE, &cosmo()).expect(RECORDED))
         .into_items("pull requests")
         .expect_err("only the first page was read");
     assert_eq!(

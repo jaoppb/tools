@@ -20,8 +20,8 @@ fn under_earlier(survey: &Survey) -> Vec<Violation> {
         .filter_map(|issue| {
             let parent = survey.find(issue.parent()?)?;
             let later = issue.is_in_later_release_than(parent);
-            let rule = Rule::ParentEarlierRelease(parent.number());
-            later.then_some(Violation::new(issue.number(), rule))
+            let rule = Rule::ParentEarlierRelease(parent.number().clone());
+            later.then_some(Violation::new(issue.number().clone(), rule))
         })
         .collect()
 }
@@ -40,8 +40,8 @@ fn later_blockers(blocked: &TreeIssue, survey: &Survey) -> Vec<Violation> {
         .filter(|blocker| blocker.is_in_later_release_than(blocked))
         .map(|blocker| {
             Violation::new(
-                blocker.number(),
-                Rule::BlocksEarlierRelease(blocked.number()),
+                blocker.number().clone(),
+                Rule::BlocksEarlierRelease(blocked.number().clone()),
             )
         })
         .collect()

@@ -8,7 +8,7 @@ use std::io::Write;
 use std::process::ExitCode;
 
 use repo_sync::cli::Arguments;
-use tools_core::adapters::github::GhRepo;
+use tools_core::adapters::github::{GhRepo, Target};
 use tools_core::application::{RepoSync, RepoSyncError};
 
 /// What to print and how to exit.
@@ -34,20 +34,51 @@ fn run() -> Result<String, Exit> {
         text: err.to_string(),
         code: 2,
     })?;
-    let repo_sync = RepoSync::new(GhRepo::new(resolved.target), resolved.spec);
-    let outcome = repo_sync
-        .run(arguments.mode())
-        .map_err(|error| match error {
-            RepoSyncError::Drift(outcome) => Exit {
-                text: outcome.to_string(),
-                code: 1,
-            },
-            RepoSyncError::Read(reason) | RepoSyncError::Write(reason) => Exit {
-                text: reason,
-                code: 2,
-            },
-        })?;
-    Ok(outcome.to_string())
+    let repo_coords = resolved.target.repo_coords();
+    let is_multi = repo_coords.len() > 1;
+    let mut outputs = Vec::new();
+    let mut drift_outputs = Vec::new();
+
+    for repo in &repo_coords {
+        let single_target = Target::single(repo.owner(), repo.name(), resolved.target.project());
+        let repo_sync = RepoSync::new(GhRepo::new(single_target), resolved.spec.clone());
+        match repo_sync.run(arguments.mode()) {
+            Ok(outcome) => {
+                let text = outcome.to_string();
+                if !text.is_empty() {
+                    if is_multi {
+                        outputs.push(format!("[{}]\n{text}", repo.name()));
+                    } else {
+                        outputs.push(text);
+                    }
+                }
+            }
+            Err(RepoSyncError::Drift(outcome)) => {
+                if is_multi {
+                    drift_outputs.push(format!("[{}]\n{outcome}", repo.name()));
+                } else {
+                    drift_outputs.push(outcome.to_string());
+                }
+            }
+            Err(RepoSyncError::Read(reason) | RepoSyncError::Write(reason)) => {
+                let text = if is_multi {
+                    format!("[{}] {reason}", repo.name())
+                } else {
+                    reason
+                };
+                return Err(Exit { text, code: 2 });
+            }
+        }
+    }
+
+    if !drift_outputs.is_empty() {
+        return Err(Exit {
+            text: drift_outputs.join("\n"),
+            code: 1,
+        });
+    }
+
+    Ok(outputs.join("\n"))
 }
 
 fn emit(text: &str, code: u8) -> ExitCode {

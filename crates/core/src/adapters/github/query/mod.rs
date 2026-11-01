@@ -4,6 +4,7 @@
 //! at build time. The functions here only fill in the placeholders.
 
 use crate::adapters::github::target::Target;
+use crate::domain::Repo;
 
 const ITEMS: &str = include_str!("items.graphql");
 const ISSUES: &str = include_str!("issues.graphql");
@@ -24,14 +25,27 @@ pub const UPDATE_PROJECT_TITLE: &str = include_str!("update_project_title.graphq
 /// `project`, `item`, `field` and `option`.
 pub const SET_STATUS: &str = include_str!("set_status.graphql");
 
-fn fill(template: &str, target: &Target) -> String {
+fn fill_for_repo(template: &str, target: &Target, repo: &Repo) -> String {
+    let owner = if repo.owner().is_empty() {
+        target.owner()
+    } else {
+        repo.owner()
+    };
     let project_str = target
         .project()
         .map_or_else(String::new, |num| num.to_string());
     template
-        .replace("@OWNER@", target.owner())
-        .replace("@REPOSITORY@", target.repository())
+        .replace("@OWNER@", owner)
+        .replace("@REPOSITORY@", repo.name())
         .replace("@PROJECT@", &project_str)
+}
+
+fn fill(template: &str, target: &Target) -> String {
+    let repo = target
+        .primary_repo_coord()
+        .cloned()
+        .unwrap_or_else(|| Repo::new(target.owner(), target.repository()));
+    fill_for_repo(template, target, &repo)
 }
 
 /// One page of the Project's items, with their issues.
@@ -46,16 +60,34 @@ pub fn issues(target: &Target) -> String {
     fill(ISSUES, target)
 }
 
+/// One page of a specific repository's issues, open and closed.
+#[must_use]
+pub fn issues_for_repo(target: &Target, repo: &Repo) -> String {
+    fill_for_repo(ISSUES, target, repo)
+}
+
 /// One page of the open pull requests and the issues they close.
 #[must_use]
 pub fn pulls(target: &Target) -> String {
     fill(PULLS, target)
 }
 
+/// One page of a specific repository's open pull requests and the issues they close.
+#[must_use]
+pub fn pulls_for_repo(target: &Target, repo: &Repo) -> String {
+    fill_for_repo(PULLS, target, repo)
+}
+
 /// One page of the repository's issues with their title, body and comments.
 #[must_use]
 pub fn texts_issues(target: &Target) -> String {
     fill(TEXTS_ISSUES, target)
+}
+
+/// One page of a specific repository's issues with their title, body and comments.
+#[must_use]
+pub fn texts_issues_for_repo(target: &Target, repo: &Repo) -> String {
+    fill_for_repo(TEXTS_ISSUES, target, repo)
 }
 
 /// One page of the repository's pull requests, open, closed and merged, with
@@ -65,10 +97,26 @@ pub fn texts_pulls(target: &Target) -> String {
     fill(TEXTS_PULLS, target)
 }
 
-/// The Project items of one issue.
+/// One page of a specific repository's pull requests.
+#[must_use]
+pub fn texts_pulls_for_repo(target: &Target, repo: &Repo) -> String {
+    fill_for_repo(TEXTS_PULLS, target, repo)
+}
+
+/// The Project items of one issue in a specific repository.
+#[must_use]
+pub fn item_of_issue_for_repo(target: &Target, repo: &Repo, number: u64) -> String {
+    fill_for_repo(ITEM_OF_ISSUE, target, repo).replace("@NUMBER@", &number.to_string())
+}
+
+/// The Project items of one issue in the primary repository.
 #[must_use]
 pub fn item_of_issue(target: &Target, number: u64) -> String {
-    fill(ITEM_OF_ISSUE, target).replace("@NUMBER@", &number.to_string())
+    let repo = target
+        .primary_repo_coord()
+        .cloned()
+        .unwrap_or_else(|| Repo::new(target.owner(), target.repository()));
+    item_of_issue_for_repo(target, &repo, number)
 }
 
 /// The Project id and the Status field with its options.

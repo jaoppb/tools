@@ -3,7 +3,7 @@
 use crate::domain::issue::{IssueNumber, Lifecycle, Role};
 
 /// An issue that must close before another one can be Ready.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Blocker {
     number: IssueNumber,
     lifecycle: Lifecycle,
@@ -13,14 +13,14 @@ impl Blocker {
     /// A blocker with this number and lifecycle. A blocker from another
     /// repository is built as open, so nothing is promoted by mistake.
     #[must_use]
-    pub const fn new(number: IssueNumber, lifecycle: Lifecycle) -> Self {
+    pub fn new(number: IssueNumber, lifecycle: Lifecycle) -> Self {
         Self { number, lifecycle }
     }
 
     /// The number of the blocking issue.
     #[must_use]
-    pub const fn number(self) -> IssueNumber {
-        self.number
+    pub const fn number(&self) -> &IssueNumber {
+        &self.number
     }
 }
 
@@ -43,7 +43,7 @@ impl Blockers {
 }
 
 /// The parent of an issue and what it is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parent {
     number: IssueNumber,
     role: Role,
@@ -52,7 +52,7 @@ pub struct Parent {
 impl Parent {
     /// A parent with this number and role.
     #[must_use]
-    pub const fn new(number: IssueNumber, role: Role) -> Self {
+    pub fn new(number: IssueNumber, role: Role) -> Self {
         Self { number, role }
     }
 }
@@ -91,9 +91,10 @@ impl Links {
 
     /// The story this issue is a task of, if its parent is a story.
     #[must_use]
-    pub fn story(&self) -> Option<IssueNumber> {
+    pub fn story(&self) -> Option<&IssueNumber> {
         self.parent
+            .as_ref()
             .filter(|parent| matches!(parent.role, Role::Story))
-            .map(|parent| parent.number)
+            .map(|parent| &parent.number)
     }
 }

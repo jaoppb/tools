@@ -9,7 +9,7 @@ use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
 use crate::application::{ProjectState, SyncError};
-use crate::domain::{Card, Cards, Closing, IssueNumber, Snapshot, Status};
+use crate::domain::{Card, Cards, Closing, IssueNumber, Repo, Snapshot, Status};
 
 /// Reads and writes one Project through a `gh` runner.
 #[derive(Debug, Clone)]
@@ -34,7 +34,7 @@ impl GhProject {
     fn read(&self) -> Result<Snapshot, GhError> {
         self.target.required_project()?;
         let cards = self.cards_from(None, Vec::new())?;
-        let closing = self.closing_from(None, Vec::new())?;
+        let closing = self.closing()?;
         Ok(Snapshot::new(Cards::new(cards), Closing::new(closing)))
     }
 
@@ -50,24 +50,33 @@ impl GhProject {
         }
     }
 
-    fn closing_from(
+    fn closing(&self) -> Result<Vec<IssueNumber>, GhError> {
+        let mut all_closing = Vec::new();
+        for repo in self.target.repos() {
+            let closing = self.closing_for_repo(repo, None, Vec::new())?;
+            all_closing.extend(closing);
+        }
+        Ok(all_closing)
+    }
+
+    fn closing_for_repo(
         &self,
+        repo: &Repo,
         cursor: Option<&str>,
         mut closing: Vec<IssueNumber>,
     ) -> Result<Vec<IssueNumber>, GhError> {
-        let reply = self
-            .runner
-            .graphql(&query::pulls(&self.target), &cursor_fields(cursor))?;
-        let page = parse_pulls(&reply)?;
+        let request = query::pulls_for_repo(&self.target, repo);
+        let reply = self.runner.graphql(&request, &cursor_fields(cursor))?;
+        let page = parse_pulls(&reply, repo)?;
         closing.extend_from_slice(page.closing());
         match page.next() {
-            Some(next) => self.closing_from(Some(next), closing),
+            Some(next) => self.closing_for_repo(repo, Some(next), closing),
             None => Ok(closing),
         }
     }
 
     fn write(&self, number: IssueNumber, status: Status) -> Result<(), GhError> {
-        let item = self.item_id(number)?;
+        let item = self.item_id(number.clone())?;
         let field = self.status_field()?;
         let option = field
             .option(status.name())
@@ -81,7 +90,7 @@ impl GhProject {
 
     fn item_id(&self, number: IssueNumber) -> Result<String, GhError> {
         let project = self.target.required_project()?;
-        let request = query::item_of_issue(&self.target, number.value());
+        let request = query::item_of_issue_for_repo(&self.target, number.repo(), number.value());
         let reply = self.runner.graphql(&request, &[])?;
         parse_item_id(&reply, project)?.ok_or(GhError::NoItem { number })
     }
@@ -111,7 +120,7 @@ impl ProjectState for GhProject {
     }
 
     fn set_status(&mut self, number: IssueNumber, status: Status) -> Result<(), SyncError> {
-        self.write(number, status)
+        self.write(number.clone(), status)
             .map_err(|error| SyncError::Write {
                 number,
                 reason: error.to_string(),

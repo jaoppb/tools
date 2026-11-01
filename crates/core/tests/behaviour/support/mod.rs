@@ -4,13 +4,19 @@ pub mod audit;
 
 use tools_core::domain::{
     Blocker, Blockers, Card, Cards, Closing, Effort, Facts, IssueNumber, Label, Labels, Lifecycle,
-    Links, Milestone, Parent, Plan, Priority, Role, Snapshot, Standing, Status,
+    Links, Milestone, Parent, Plan, Priority, Repo, Role, Snapshot, Standing, Status,
 };
 
-/// The issue with this number.
+/// The issue with this number in the test repo.
 #[must_use]
-pub const fn number(raw: u64) -> IssueNumber {
-    IssueNumber::new(raw)
+pub fn number(raw: u64) -> IssueNumber {
+    IssueNumber::new(Repo::new("", ""), raw)
+}
+
+/// The issue with this number in the named repository.
+#[must_use]
+pub fn repo_number(repo: &str, raw: u64) -> IssueNumber {
+    IssueNumber::new(Repo::new("", repo), raw)
 }
 
 fn labels(names: &[&str]) -> Labels {
@@ -31,6 +37,16 @@ pub fn complete_facts() -> Facts {
 #[must_use]
 pub fn open_card(raw: u64, status: Status) -> Card {
     Card::new(number(raw), Standing::new(status, Lifecycle::Open)).with_facts(complete_facts())
+}
+
+/// An open card with complete facts in a named repository.
+#[must_use]
+pub fn repo_card(repo: &str, raw: u64, status: Status) -> Card {
+    Card::new(
+        repo_number(repo, raw),
+        Standing::new(status, Lifecycle::Open),
+    )
+    .with_facts(complete_facts())
 }
 
 /// A closed card with complete facts and no links.

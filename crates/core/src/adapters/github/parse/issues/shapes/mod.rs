@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use crate::adapters::github::parse::PageCursor;
 use crate::adapters::github::target::Target;
+use crate::domain::Repo;
 
 #[derive(Debug, Deserialize)]
 pub(super) struct Reply {
@@ -93,10 +94,23 @@ pub(super) struct Home {
     pub(super) name_with_owner: String,
 }
 
+impl Home {
+    pub(super) fn to_repo(&self) -> Option<Repo> {
+        Repo::parse(&self.name_with_owner)
+    }
+}
+
 impl Blocking {
     pub(super) fn is_in(&self, target: &Target) -> bool {
         self.repository
             .as_ref()
-            .is_some_and(|home| home.name_with_owner == target.full_name())
+            .is_some_and(|home| target.contains_repo(&home.name_with_owner))
+    }
+
+    pub(super) fn repo(&self, current_repo: &Repo) -> Repo {
+        self.repository
+            .as_ref()
+            .and_then(Home::to_repo)
+            .unwrap_or_else(|| current_repo.clone())
     }
 }
