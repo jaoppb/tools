@@ -193,12 +193,14 @@ pub fn parse_repo_settings(json: &str) -> Result<RepoSettings, GhError> {
 
 #[derive(Debug, Deserialize)]
 struct ProjectGraphqlReply {
-    data: ProjectUserField,
+    data: ProjectOwnerField,
 }
 
 #[derive(Debug, Deserialize)]
-struct ProjectUserField {
-    user: ProjectV2Field,
+#[serde(rename_all = "camelCase")]
+struct ProjectOwnerField {
+    #[serde(alias = "user", alias = "organization")]
+    repository_owner: Option<ProjectV2Field>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -224,8 +226,8 @@ pub fn parse_repo_project(json: &str) -> Result<RepoProject, GhError> {
         serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
     let node = reply
         .data
-        .user
-        .project_v2
+        .repository_owner
+        .and_then(|owner| owner.project_v2)
         .ok_or_else(|| GhError::BadReply {
             reason: "projectV2 not found for owner".into(),
         })?;
@@ -379,5 +381,45 @@ mod tests {
         assert_eq!(project.id, "PVT_kwDOA123");
         assert_eq!(project.number, 4);
         assert_eq!(project.title, "Cosmo");
+    }
+
+    #[test]
+    fn parses_repo_project_graphql_response_for_repository_owner() {
+        let json = r#"{
+            "data": {
+                "repositoryOwner": {
+                    "projectV2": {
+                        "id": "PVT_kwHOA6x_Is4BAPBs",
+                        "number": 1,
+                        "title": "NF-e"
+                    }
+                }
+            }
+        }"#;
+
+        let project = parse_repo_project(json).unwrap();
+        assert_eq!(project.id, "PVT_kwHOA6x_Is4BAPBs");
+        assert_eq!(project.number, 1);
+        assert_eq!(project.title, "NF-e");
+    }
+
+    #[test]
+    fn parses_repo_project_graphql_response_for_organization() {
+        let json = r#"{
+            "data": {
+                "organization": {
+                    "projectV2": {
+                        "id": "PVT_kwDOEHF8jM4BVBtl",
+                        "number": 1,
+                        "title": "General"
+                    }
+                }
+            }
+        }"#;
+
+        let project = parse_repo_project(json).unwrap();
+        assert_eq!(project.id, "PVT_kwDOEHF8jM4BVBtl");
+        assert_eq!(project.number, 1);
+        assert_eq!(project.title, "General");
     }
 }

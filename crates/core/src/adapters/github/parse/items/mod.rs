@@ -43,7 +43,10 @@ impl ItemsPage {
 /// [`GhError::UnknownStatus`] when an item has a Status this tool does not know.
 pub fn parse_items(json: &str, target: &Target) -> Result<ItemsPage, GhError> {
     let reply: Reply = serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
-    let items = reply.data.user.project_v2.items;
+    let project = reply.data.project_v2().ok_or_else(|| GhError::BadReply {
+        reason: "projectV2 not found for owner".into(),
+    })?;
+    let items = project.items;
     let next = items.page_info.next();
     let cards = items
         .nodes

@@ -1,13 +1,24 @@
 # The Project id and the Status field with its options.
-query {
-  user(login: "@OWNER@") {
-    projectV2(number: @PROJECT@) {
+fragment StatusField on ProjectV2 {
+  id
+  field(name: "Status") {
+    ... on ProjectV2SingleSelectField {
       id
-      field(name: "Status") {
-        ... on ProjectV2SingleSelectField {
-          id
-          options { id name }
-        }
+      options { id name }
+    }
+  }
+}
+
+query {
+  repositoryOwner(login: "@OWNER@") {
+    ... on User {
+      projectV2(number: @PROJECT@) {
+        ...StatusField
+      }
+    }
+    ... on Organization {
+      projectV2(number: @PROJECT@) {
+        ...StatusField
       }
     }
   }

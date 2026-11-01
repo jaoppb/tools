@@ -16,6 +16,8 @@ const PULLS_LIVE: &str = include_str!("../../fixtures/pulls_live.json");
 const PULLS_MANY: &str = include_str!("../../fixtures/pulls_many.json");
 const ITEM_OF_ISSUE: &str = include_str!("../../fixtures/item_of_issue.json");
 const STATUS_FIELD: &str = include_str!("../../fixtures/status_field.json");
+const ITEMS_ORG: &str = include_str!("../../fixtures/items_org.json");
+const STATUS_FIELD_ORG: &str = include_str!("../../fixtures/status_field_org.json");
 
 fn plan_of(json: &str, closing: &[u64]) -> Result<Plan, GhError> {
     let page = parse_items(json, &Target::cosmo())?;
@@ -158,4 +160,29 @@ fn the_status_field_lists_its_options() {
     assert_eq!(field.option("In review"), Some("571c0c90"));
     assert_eq!(field.option("Doing"), None);
     assert_eq!(field.project(), "PVT_kwHOA6x_Is4BmIoK");
+}
+
+#[test]
+fn an_organization_page_of_items_becomes_cards() {
+    let org_target = Target::new("gatuno-manga", "web", Some(1));
+    let page = parse_items(ITEMS_ORG, &org_target).expect("the organization page parses");
+    let numbers: Vec<u64> = page
+        .cards()
+        .iter()
+        .map(|card| card.number().value())
+        .collect();
+    assert_eq!(numbers, [10, 11]);
+    assert_eq!(
+        page.cards()[0].status(),
+        tools_core::domain::Status::InProgress
+    );
+    assert_eq!(page.cards()[1].status(), tools_core::domain::Status::Ready);
+}
+
+#[test]
+fn the_status_field_of_an_organization_project_parses() {
+    let field = parse_status_field(STATUS_FIELD_ORG).expect("the field parses");
+    assert_eq!(field.option("In review"), Some("opt_review"));
+    assert_eq!(field.option("Doing"), None);
+    assert_eq!(field.project(), "PVT_kwDOEHF8jM4BVBtl");
 }
