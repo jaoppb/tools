@@ -5,8 +5,7 @@
 
 use serde::Deserialize;
 
-use crate::adapters::github::parse::PageCursor;
-use crate::adapters::github::target::Target;
+use crate::adapters::github::parse::{PageCursor, RepositoryRef};
 use crate::domain::Repo;
 
 #[derive(Debug, Deserialize)]
@@ -85,32 +84,13 @@ pub(super) struct BlockedBy {
 #[derive(Debug, Deserialize)]
 pub(super) struct Blocking {
     pub(super) number: u64,
-    pub(super) repository: Option<Home>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct Home {
-    pub(super) name_with_owner: String,
-}
-
-impl Home {
-    pub(super) fn to_repo(&self) -> Option<Repo> {
-        Repo::parse(&self.name_with_owner)
-    }
+    pub(super) repository: Option<RepositoryRef>,
 }
 
 impl Blocking {
-    pub(super) fn is_in(&self, target: &Target) -> bool {
-        self.repository
-            .as_ref()
-            .is_some_and(|home| target.contains_repo(&home.name_with_owner))
-    }
-
     pub(super) fn repo(&self, current_repo: &Repo) -> Repo {
         self.repository
             .as_ref()
-            .and_then(Home::to_repo)
-            .unwrap_or_else(|| current_repo.clone())
+            .map_or_else(|| current_repo.clone(), |r| r.resolve_or(current_repo))
     }
 }

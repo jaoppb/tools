@@ -46,7 +46,7 @@ pub struct Arguments {
     mode: Mode,
     config_path: Option<PathBuf>,
     owner: Option<String>,
-    repo: Option<String>,
+    repos: Vec<String>,
     project: Option<u32>,
 }
 
@@ -58,11 +58,15 @@ impl Arguments {
     /// Returns [`UsageError`] on invalid syntax or `--help`.
     pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, UsageError> {
         let matches = command().try_get_matches_from(arguments)?;
+        let repos: Vec<String> = matches
+            .get_many::<String>(REPO)
+            .map(|values| values.cloned().collect())
+            .unwrap_or_default();
         Ok(Self {
             mode: mode_of(&matches),
             config_path: matches.get_one::<String>(CONFIG).map(PathBuf::from),
             owner: matches.get_one::<String>(OWNER).cloned(),
-            repo: matches.get_one::<String>(REPO).cloned(),
+            repos,
             project: matches
                 .get_one::<String>(PROJECT)
                 .and_then(|p| p.parse().ok()),
@@ -88,7 +92,7 @@ impl Arguments {
             Err(err) => return Err(ResolveError::Config(err)),
         };
 
-        let target = if let Some(explicit_repo) = &self.repo {
+        let target = if !self.repos.is_empty() {
             let owner = self
                 .owner
                 .clone()
@@ -98,7 +102,7 @@ impl Arguments {
                 .project
                 .or_else(|| cfg_target.as_ref().and_then(Target::project))
                 .ok_or(ResolveError::MissingProject)?;
-            Target::single(owner, explicit_repo, Some(project))
+            Target::multi(owner, self.repos.clone(), Some(project))
         } else if let Some(mut target) = cfg_target {
             if let Some(owner) = self.owner.clone() {
                 target = target.with_owner(owner);
@@ -111,10 +115,9 @@ impl Arguments {
             }
             target
         } else {
-            let owner = self.owner.clone().ok_or(ResolveError::MissingOwner)?;
-            let repo = self.repo.clone().ok_or(ResolveError::MissingRepository)?;
-            let project = self.project.ok_or(ResolveError::MissingProject)?;
-            Target::single(owner, repo, Some(project))
+            self.owner.as_ref().ok_or(ResolveError::MissingOwner)?;
+            self.project.ok_or(ResolveError::MissingProject)?;
+            return Err(ResolveError::MissingRepository);
         };
 
         Ok(target)
@@ -146,6 +149,7 @@ fn command() -> Command {
             Arg::new(REPO)
                 .long(REPO)
                 .value_name("REPO")
+                .action(ArgAction::Append)
                 .help("GitHub repository name override"),
         )
         .arg(

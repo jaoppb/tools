@@ -32,4 +32,8 @@ fn accepts_rule_flags_and_overrides() {
     assert!(parse(&["--no-parent", "--no-membership"]).is_ok());
     assert!(parse(&["--owner", "jaoppb", "--repo", "tools", "--project", "1"]).is_ok());
     assert!(parse(&["--config", "custom-tools.toml"]).is_ok());
+    let multi = parse(&["--owner", "jaoppb", "--repo", "app", "--repo", "web"])
+        .expect("multiple repo flags parse");
+    let (target, _rules) = multi.resolve().expect("resolves multi-repo target");
+    assert_eq!(target.repos().len(), 2);
 }

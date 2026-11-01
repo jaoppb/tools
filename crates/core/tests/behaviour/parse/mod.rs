@@ -103,8 +103,15 @@ fn an_issue_of_another_repository_is_kept_when_part_of_multi_target() {
 }
 
 #[test]
-fn a_blocker_from_another_repository_counts_as_open() {
+fn a_closed_blocker_from_another_repository_unblocks_issue() {
     let plan = plan_of(EDGE, &[]).expect("the edge page parses");
+    assert!(moves_of(&plan).contains(&"cosmo#103 Backlog -> Ready (gate holds)".to_owned()));
+}
+
+#[test]
+fn an_open_blocker_from_another_repository_keeps_issue_in_backlog() {
+    let open_blocker_json = EDGE.replace("\"state\": \"CLOSED\"", "\"state\": \"OPEN\"");
+    let plan = plan_of(&open_blocker_json, &[]).expect("the modified edge page parses");
     assert!(
         moves_of(&plan)
             .iter()
@@ -140,6 +147,42 @@ fn a_page_of_pull_requests_lists_the_issues_they_close() {
         [cosmo_num(10), cosmo_num(11), cosmo_num(12)]
     );
     assert_eq!(many.next(), Some("pulls-next"));
+}
+
+#[test]
+fn a_pull_request_closing_an_issue_in_another_repository_is_read() {
+    let pulls_cross = r#"{
+      "data": {
+        "repository": {
+          "pullRequests": {
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": null
+            },
+            "nodes": [
+              {
+                "closingIssuesReferences": {
+                  "nodes": [
+                    {
+                      "number": 42,
+                      "repository": {
+                        "nameWithOwner": "other/repo"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }"#;
+    let cosmo_repo = Target::cosmo().repo_coords().remove(0);
+    let page = parse_pulls(pulls_cross, &cosmo_repo).expect("cross repo pulls parse");
+    assert_eq!(
+        page.closing(),
+        [IssueNumber::new(Repo::new("other", "repo"), 42)]
+    );
 }
 
 #[test]

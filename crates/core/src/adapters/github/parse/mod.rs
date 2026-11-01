@@ -9,6 +9,7 @@ pub mod texts;
 pub mod write;
 
 use crate::adapters::github::error::GhError;
+use crate::domain::Repo;
 
 pub use crate::adapters::github::parse::issues::{IssuesPage, parse_issues, parse_issues_for};
 pub use crate::adapters::github::parse::items::{ItemsPage, parse_items};
@@ -43,5 +44,24 @@ impl PageCursor {
             serde_json::Value::Bool(true) => self.end_cursor.clone(),
             _ => None,
         }
+    }
+}
+
+/// GraphQL's `{ repository { nameWithOwner } }` reference.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RepositoryRef {
+    pub(crate) name_with_owner: String,
+}
+
+impl RepositoryRef {
+    /// Parses the repository coordinate from `owner/repo`.
+    pub(crate) fn to_repo(&self) -> Option<Repo> {
+        Repo::parse(&self.name_with_owner)
+    }
+
+    /// Resolves the coordinate or falls back to `default`.
+    pub(crate) fn resolve_or(&self, default: &Repo) -> Repo {
+        self.to_repo().unwrap_or_else(|| default.clone())
     }
 }

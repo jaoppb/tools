@@ -43,7 +43,7 @@ pub enum ResolveError {
 pub struct Arguments {
     config_path: Option<PathBuf>,
     owner: Option<String>,
-    repo: Option<String>,
+    repos: Vec<String>,
     project: Option<u32>,
     no_parent: bool,
     no_membership: bool,
@@ -58,10 +58,14 @@ impl Arguments {
     /// `--help`, which asks for the usage and is not a failure.
     pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, UsageError> {
         let matches = command().try_get_matches_from(arguments)?;
+        let repos: Vec<String> = matches
+            .get_many::<String>(REPO)
+            .map(|values| values.cloned().collect())
+            .unwrap_or_default();
         Ok(Self {
             config_path: matches.get_one::<String>(CONFIG).map(PathBuf::from),
             owner: matches.get_one::<String>(OWNER).cloned(),
-            repo: matches.get_one::<String>(REPO).cloned(),
+            repos,
             project: matches
                 .get_one::<String>(PROJECT)
                 .and_then(|p| p.parse().ok()),
@@ -86,7 +90,7 @@ impl Arguments {
             Err(err) => return Err(ResolveError::Config(err)),
         };
 
-        let target = if let Some(explicit_repo) = &self.repo {
+        let target = if !self.repos.is_empty() {
             let owner = self
                 .owner
                 .clone()
@@ -95,7 +99,7 @@ impl Arguments {
             let project = self
                 .project
                 .or_else(|| cfg_target.as_ref().and_then(Target::project));
-            Target::single(owner, explicit_repo, project)
+            Target::multi(owner, self.repos.clone(), project)
         } else if let Some(mut target) = cfg_target {
             if let Some(owner) = self.owner.clone() {
                 target = target.with_owner(owner);
@@ -105,9 +109,8 @@ impl Arguments {
             }
             target
         } else {
-            let owner = self.owner.clone().ok_or(ResolveError::MissingOwner)?;
-            let repo = self.repo.clone().ok_or(ResolveError::MissingRepository)?;
-            Target::single(owner, repo, self.project)
+            self.owner.as_ref().ok_or(ResolveError::MissingOwner)?;
+            return Err(ResolveError::MissingRepository);
         };
 
         if self.no_parent {
@@ -140,6 +143,7 @@ fn command() -> Command {
             Arg::new(REPO)
                 .long(REPO)
                 .value_name("REPO")
+                .action(ArgAction::Append)
                 .help("GitHub repository name override"),
         )
         .arg(

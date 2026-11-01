@@ -62,11 +62,13 @@ fn reads_an_issue_with_no_parent_and_no_milestone() {
 }
 
 #[test]
-fn drops_a_blocker_of_another_repository() {
+fn retains_a_blocker_of_another_repository() {
     let issues = page(EDGE).expect(RECORDED);
+    let other_repo = Repo::new("jaoppb", "other");
+    let other_blocker = IssueNumber::new(other_repo, 7);
     let foreign = tooling(41, Lifecycle::Open)
         .with_parent(number(98))
-        .with_blocked_by(BlockedBy::new(vec![number(91)]));
+        .with_blocked_by(BlockedBy::new(vec![other_blocker, number(91)]));
     assert_eq!(issues.issues().get(1), Some(&foreign));
 }
 

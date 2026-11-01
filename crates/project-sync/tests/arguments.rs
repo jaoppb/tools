@@ -42,4 +42,17 @@ fn help_is_not_an_error_and_exits_with_zero() {
 fn accepts_target_overrides_and_config() {
     assert!(parse(&["--owner", "jaoppb", "--repo", "tools", "--project", "1"]).is_ok());
     assert!(parse(&["--config", "tools.toml", "--dry-run"]).is_ok());
+    let multi = parse(&[
+        "--owner",
+        "jaoppb",
+        "--repo",
+        "app",
+        "--repo",
+        "web",
+        "--project",
+        "1",
+    ])
+    .expect("multiple repo flags parse");
+    let target = multi.resolve().expect("resolves multi-repo target");
+    assert_eq!(target.repos().len(), 2);
 }

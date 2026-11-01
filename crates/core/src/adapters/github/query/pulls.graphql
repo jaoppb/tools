@@ -8,7 +8,12 @@ query($cursor: String) {
       }
       nodes {
         closingIssuesReferences(first: 50) {
-          nodes { number }
+          nodes {
+            number
+            repository {
+              nameWithOwner
+            }
+          }
         }
       }
     }
