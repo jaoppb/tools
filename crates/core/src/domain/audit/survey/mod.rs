@@ -21,13 +21,28 @@ impl IssueTree {
 
     /// The issue with this number, if the repository has it.
     #[must_use]
-    pub fn find(&self, number: IssueNumber) -> Option<&TreeIssue> {
+    pub fn find(&self, number: &IssueNumber) -> Option<&TreeIssue> {
         self.0.iter().find(|issue| issue.number() == number)
     }
 
     /// The issues in the order they were read.
     pub fn iter(&self) -> impl Iterator<Item = &TreeIssue> {
         self.0.iter()
+    }
+
+    /// Consumes the tree, returning the issues.
+    #[must_use]
+    pub fn into_issues(self) -> Vec<TreeIssue> {
+        self.0
+    }
+}
+
+impl IntoIterator for IssueTree {
+    type Item = TreeIssue;
+    type IntoIter = std::vec::IntoIter<TreeIssue>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -44,8 +59,8 @@ impl Members {
 
     /// Whether this issue is an item of the Project.
     #[must_use]
-    pub fn contains(&self, number: IssueNumber) -> bool {
-        self.0.contains(&number)
+    pub fn contains(&self, number: &IssueNumber) -> bool {
+        self.0.contains(number)
     }
 }
 
@@ -81,13 +96,13 @@ impl Survey {
 
     /// The issue with this number, if the repository has it.
     #[must_use]
-    pub fn find(&self, number: IssueNumber) -> Option<&TreeIssue> {
+    pub fn find(&self, number: &IssueNumber) -> Option<&TreeIssue> {
         self.issues.find(number)
     }
 
     /// Whether this issue is an item of the Project.
     #[must_use]
-    pub fn is_member(&self, number: IssueNumber) -> bool {
+    pub fn is_member(&self, number: &IssueNumber) -> bool {
         self.members.contains(number)
     }
 

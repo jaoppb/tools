@@ -69,7 +69,7 @@ impl Transition {
 }
 
 /// One card changing Status, and why.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Move {
     number: IssueNumber,
     transition: Transition,
@@ -89,8 +89,8 @@ impl Move {
 
     /// The issue that moves.
     #[must_use]
-    pub const fn number(&self) -> IssueNumber {
-        self.number
+    pub const fn number(&self) -> &IssueNumber {
+        &self.number
     }
 
     /// The Status the issue moves to.
@@ -140,7 +140,7 @@ impl Moves {
 }
 
 /// An issue that triage has to finish before it can be Ready.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Gap {
     number: IssueNumber,
     missing: Missing,
@@ -151,6 +151,12 @@ impl Gap {
     #[must_use]
     pub const fn new(number: IssueNumber, missing: Missing) -> Self {
         Self { number, missing }
+    }
+
+    /// The issue that has the gap.
+    #[must_use]
+    pub const fn number(&self) -> &IssueNumber {
+        &self.number
     }
 }
 
@@ -223,7 +229,11 @@ fn move_of(snapshot: &Snapshot, card: &Card) -> Option<Move> {
         return None;
     }
     let transition = Transition::new(card.status(), destination);
-    Some(Move::new(card.number(), transition, transition.reason()))
+    Some(Move::new(
+        card.number().clone(),
+        transition,
+        transition.reason(),
+    ))
 }
 
 fn gaps_of(snapshot: &Snapshot, card: &Card) -> Vec<Gap> {
@@ -232,6 +242,6 @@ fn gaps_of(snapshot: &Snapshot, card: &Card) -> Vec<Gap> {
     }
     card.missing()
         .into_iter()
-        .map(|missing| Gap::new(card.number(), missing))
+        .map(|missing| Gap::new(card.number().clone(), missing))
         .collect()
 }

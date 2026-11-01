@@ -63,8 +63,8 @@ impl Card {
 
     /// The issue number.
     #[must_use]
-    pub const fn number(&self) -> IssueNumber {
-        self.number
+    pub const fn number(&self) -> &IssueNumber {
+        &self.number
     }
 
     /// The current Status.
@@ -99,7 +99,7 @@ impl Card {
 
     /// The story this card is a task of, if its parent is a story.
     #[must_use]
-    pub fn story(&self) -> Option<IssueNumber> {
+    pub fn story(&self) -> Option<&IssueNumber> {
         self.links.story()
     }
 }
@@ -117,8 +117,8 @@ impl Cards {
 
     /// The card of this issue, if the Project has it.
     #[must_use]
-    pub fn find(&self, number: IssueNumber) -> Option<&Card> {
-        self.0.iter().find(|card| card.number == number)
+    pub fn find(&self, number: &IssueNumber) -> Option<&Card> {
+        self.0.iter().find(|card| card.number == *number)
     }
 
     /// The cards in Project order.
@@ -128,7 +128,7 @@ impl Cards {
 
     /// These cards with the card of `number` moved to `status`.
     #[must_use]
-    pub fn with_status(self, number: IssueNumber, status: Status) -> Self {
+    pub fn with_status(self, number: &IssueNumber, status: Status) -> Self {
         Self(
             self.0
                 .into_iter()
@@ -138,8 +138,8 @@ impl Cards {
     }
 }
 
-fn moved_if(card: Card, number: IssueNumber, status: Status) -> Card {
-    if card.number == number {
+fn moved_if(card: Card, number: &IssueNumber, status: Status) -> Card {
+    if card.number == *number {
         return card.with_status(status);
     }
     card

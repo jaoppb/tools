@@ -59,7 +59,7 @@ pub fn blocked_by(issue: TreeIssue, blockers: &[u64]) -> TreeIssue {
 /// A survey of these issues, every one of them a Project item.
 #[must_use]
 pub fn survey(issues: Vec<TreeIssue>) -> Survey {
-    let members = issues.iter().map(TreeIssue::number).collect();
+    let members = issues.iter().map(TreeIssue::number).cloned().collect();
     Survey::new(
         IssueTree::new(issues),
         Members::new(members),

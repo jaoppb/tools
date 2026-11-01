@@ -77,37 +77,46 @@ impl Arguments {
     /// Fails when configuration cannot be read or target lacks owner/repo.
     pub fn resolve(&self) -> Result<(Target, RulesConfig), ResolveError> {
         let loaded = load_or_find(self.config_path.as_deref());
-        let (cfg_owner, cfg_repo, cfg_proj, mut rules) = match loaded {
-            Ok(cfg) => (
-                Some(cfg.github.repository.owner),
-                Some(cfg.github.repository.name),
-                cfg.github.project.and_then(|p| p.number),
-                cfg.github.issues.rules,
-            ),
-            Err(ConfigError::NotFound) => (None, None, None, RulesConfig::default()),
+        let (cfg_target, mut rules) = match loaded {
+            Ok(cfg) => {
+                let target = cfg.target();
+                (Some(target), cfg.github.issues.rules)
+            }
+            Err(ConfigError::NotFound) => (None, RulesConfig::default()),
             Err(err) => return Err(ResolveError::Config(err)),
         };
 
-        let owner = self
-            .owner
-            .clone()
-            .or(cfg_owner)
-            .ok_or(ResolveError::MissingOwner)?;
-        let repo = self
-            .repo
-            .clone()
-            .or(cfg_repo)
-            .ok_or(ResolveError::MissingRepository)?;
-        let project = self.project.or(cfg_proj);
+        let target = if let Some(explicit_repo) = &self.repo {
+            let owner = self
+                .owner
+                .clone()
+                .or_else(|| cfg_target.as_ref().map(|t| t.owner().to_owned()))
+                .ok_or(ResolveError::MissingOwner)?;
+            let project = self
+                .project
+                .or_else(|| cfg_target.as_ref().and_then(Target::project));
+            Target::single(owner, explicit_repo, project)
+        } else if let Some(mut target) = cfg_target {
+            if let Some(owner) = self.owner.clone() {
+                target = target.with_owner(owner);
+            }
+            if let Some(proj) = self.project {
+                target = target.with_project(Some(proj));
+            }
+            target
+        } else {
+            let owner = self.owner.clone().ok_or(ResolveError::MissingOwner)?;
+            let repo = self.repo.clone().ok_or(ResolveError::MissingRepository)?;
+            Target::single(owner, repo, self.project)
+        };
 
         if self.no_parent {
             rules.parent = false;
         }
-        if self.no_membership || project.is_none() {
+        if self.no_membership || target.project().is_none() {
             rules.membership = false;
         }
 
-        let target = Target::new(owner, repo, project);
         Ok((target, rules))
     }
 }

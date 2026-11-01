@@ -22,5 +22,5 @@ fn closed(issue: &TreeIssue, survey: &Survey) -> Option<Rule> {
     let parent = survey.find(issue.parent()?)?;
     parent
         .is_closed()
-        .then_some(Rule::ClosedParent(parent.number()))
+        .then_some(Rule::ClosedParent(parent.number().clone()))
 }

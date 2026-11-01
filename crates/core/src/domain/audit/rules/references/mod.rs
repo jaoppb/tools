@@ -3,14 +3,13 @@
 
 use crate::domain::audit::survey::Survey;
 use crate::domain::audit::violation::Violation;
-use crate::domain::issue::IssueNumber;
 
 /// The pull request of issue 144, the one item this rule skips.
 ///
 /// Its comments hold the log of the rewrite of the references, with the old
 /// text of every edit, so its text names old numbers on purpose. If the log
 /// moves to an attachment, this constant goes away.
-pub const LOG_CARRIER: IssueNumber = IssueNumber::new(151);
+pub const LOG_CARRIER: u64 = 151;
 
 /// The findings of every text but the log carrier's, one per item, rule and
 /// surface.
@@ -18,11 +17,11 @@ pub const LOG_CARRIER: IssueNumber = IssueNumber::new(151);
 pub fn check(survey: &Survey) -> Vec<Violation> {
     survey
         .texts()
-        .filter(|item| item.number() != LOG_CARRIER)
+        .filter(|item| item.number().value() != LOG_CARRIER)
         .flat_map(|item| {
             item.broken_rules()
                 .into_iter()
-                .map(|rule| Violation::new(item.number(), rule))
+                .map(|rule| Violation::new(item.number().clone(), rule))
         })
         .collect()
 }

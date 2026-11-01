@@ -10,7 +10,7 @@ pub mod write;
 
 use crate::adapters::github::error::GhError;
 
-pub use crate::adapters::github::parse::issues::{IssuesPage, parse_issues};
+pub use crate::adapters::github::parse::issues::{IssuesPage, parse_issues, parse_issues_for};
 pub use crate::adapters::github::parse::items::{ItemsPage, parse_items};
 pub use crate::adapters::github::parse::pulls::{PullsPage, parse_pulls};
 pub use crate::adapters::github::parse::repo::{

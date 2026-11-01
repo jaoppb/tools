@@ -16,8 +16,8 @@ impl Closing {
 
     /// Whether an open pull request closes this issue.
     #[must_use]
-    pub fn contains(&self, number: IssueNumber) -> bool {
-        self.0.contains(&number)
+    pub fn contains(&self, number: &IssueNumber) -> bool {
+        self.0.contains(number)
     }
 }
 
@@ -42,19 +42,19 @@ impl Snapshot {
 
     /// The card of this issue, if the Project has it.
     #[must_use]
-    pub fn card(&self, number: IssueNumber) -> Option<&Card> {
+    pub fn card(&self, number: &IssueNumber) -> Option<&Card> {
         self.cards.find(number)
     }
 
     /// Whether an open pull request closes this issue.
     #[must_use]
-    pub fn closed_by_open_pull(&self, number: IssueNumber) -> bool {
+    pub fn closed_by_open_pull(&self, number: &IssueNumber) -> bool {
         self.closing.contains(number)
     }
 
     /// This snapshot with the card of `number` moved to `status`.
     #[must_use]
-    pub fn with_status(self, number: IssueNumber, status: Status) -> Self {
+    pub fn with_status(self, number: &IssueNumber, status: Status) -> Self {
         Self {
             cards: self.cards.with_status(number, status),
             ..self

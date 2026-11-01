@@ -177,7 +177,13 @@ impl Arguments {
             .clone()
             .unwrap_or_else(|| cfg.github.repository.name.clone());
         let project_number = cfg.github.project.as_ref().and_then(|p| p.number);
-        let target = Target::new(owner, repo, project_number);
+        let target = if let Some(explicit_repo) = &self.repo {
+            Target::single(owner, explicit_repo, project_number)
+        } else if !cfg.github.repositories.is_empty() {
+            Target::multi(owner, cfg.github.repositories.clone(), project_number)
+        } else {
+            Target::single(owner, repo, project_number)
+        };
 
         let spec = cfg.try_into_repo_spec()?;
         let spec = match self.explicit_entities {

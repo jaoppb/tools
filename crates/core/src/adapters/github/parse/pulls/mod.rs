@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{PageCursor, bad_reply};
-use crate::domain::IssueNumber;
+use crate::domain::{IssueNumber, Repo};
 
 /// The issues closed by the pull requests of one page, and the next cursor.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,14 +71,14 @@ struct Issue {
 /// # Errors
 ///
 /// Returns [`GhError::BadReply`] when the answer is not the expected JSON.
-pub fn parse_pulls(json: &str) -> Result<PullsPage, GhError> {
+pub fn parse_pulls(json: &str, repo: &Repo) -> Result<PullsPage, GhError> {
     let reply: Reply = serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
     let pulls = reply.data.repository.pull_requests;
     let closing = pulls
         .nodes
         .iter()
         .flat_map(|pull| &pull.closing_issues_references.nodes)
-        .map(|issue| IssueNumber::new(issue.number))
+        .map(|issue| IssueNumber::new(repo.clone(), issue.number))
         .collect();
     Ok(PullsPage {
         closing,

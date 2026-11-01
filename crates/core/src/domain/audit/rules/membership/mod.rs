@@ -9,6 +9,6 @@ pub fn check(survey: &Survey) -> Vec<Violation> {
     survey
         .issues()
         .filter(|issue| !survey.is_member(issue.number()))
-        .map(|issue| Violation::new(issue.number(), Rule::NotInProject))
+        .map(|issue| Violation::new(issue.number().clone(), Rule::NotInProject))
         .collect()
 }

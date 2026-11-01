@@ -4,7 +4,7 @@ use tools_core::adapters::github::parse::{
     parse_item_id, parse_items, parse_pulls, parse_status_field,
 };
 use tools_core::adapters::github::{GhError, GhRunner, Target};
-use tools_core::domain::{Cards, Closing, Plan, Snapshot};
+use tools_core::domain::{Cards, Closing, IssueNumber, Plan, Repo, Snapshot};
 
 use crate::support::{gaps_of, moves_of, number};
 
@@ -21,7 +21,11 @@ const STATUS_FIELD_ORG: &str = include_str!("../../fixtures/status_field_org.jso
 
 fn plan_of(json: &str, closing: &[u64]) -> Result<Plan, GhError> {
     let page = parse_items(json, &Target::cosmo())?;
-    let issues = closing.iter().map(|raw| number(*raw)).collect();
+    let repo = Target::cosmo().repo_coords().remove(0);
+    let issues = closing
+        .iter()
+        .map(|raw| IssueNumber::new(repo.clone(), *raw))
+        .collect();
     let cards = Cards::new(page.cards().to_vec());
     Ok(Snapshot::new(cards, Closing::new(issues)).plan())
 }
@@ -38,7 +42,7 @@ fn a_page_of_items_becomes_cards() {
     let plan = plan_of(LIVE, &[92, 20]).expect("the recorded page parses");
     assert_eq!(
         moves_of(&plan),
-        ["#92 In progress -> In review (pull request open)"]
+        ["cosmo#92 In progress -> In review (pull request open)"]
     );
 }
 
@@ -51,7 +55,7 @@ fn an_effort_recorded_with_a_decimal_point_is_read() {
 #[test]
 fn a_closed_as_not_planned_issue_is_closed() {
     let plan = plan_of(EDGE, &[]).expect("the edge page parses");
-    assert!(moves_of(&plan).contains(&"#102 Ready -> Done (closed)".to_owned()));
+    assert!(moves_of(&plan).contains(&"cosmo#102 Ready -> Done (closed)".to_owned()));
 }
 
 #[test]
@@ -63,19 +67,39 @@ fn an_item_that_is_not_an_issue_is_dropped() {
 #[test]
 fn an_item_without_a_status_is_in_backlog() {
     let plan = plan_of(EDGE, &[]).expect("the edge page parses");
-    assert!(moves_of(&plan).contains(&"#101 Backlog -> Ready (gate holds)".to_owned()));
+    assert!(moves_of(&plan).contains(&"cosmo#101 Backlog -> Ready (gate holds)".to_owned()));
 }
 
 #[test]
 fn a_missing_priority_is_none() {
     let plan = plan_of(EDGE, &[]).expect("the edge page parses");
-    assert_eq!(gaps_of(&plan), ["#104 needs triage: no Priority"]);
+    assert_eq!(gaps_of(&plan), ["cosmo#104 needs triage: no Priority"]);
 }
 
 #[test]
 fn an_issue_of_another_repository_is_dropped() {
     let page = parse_items(EDGE, &Target::cosmo()).expect("the edge page parses");
-    assert!(page.cards().iter().all(|card| card.number() != number(105)));
+    assert!(
+        page.cards()
+            .iter()
+            .all(|card| *card.number() != number(105))
+    );
+}
+
+#[test]
+fn an_issue_of_another_repository_is_kept_when_part_of_multi_target() {
+    let target = Target::multi(
+        "jaoppb",
+        vec!["cosmo".to_owned(), "someone/else".to_owned()],
+        Some(1),
+    );
+    let page = parse_items(EDGE, &target).expect("the edge page parses");
+    let target_issue = IssueNumber::new(Repo::new("someone", "else"), 105);
+    assert!(
+        page.cards()
+            .iter()
+            .any(|card| card.number() == &target_issue)
+    );
 }
 
 #[test]
@@ -84,7 +108,7 @@ fn a_blocker_from_another_repository_counts_as_open() {
     assert!(
         moves_of(&plan)
             .iter()
-            .all(|line| !line.starts_with("#103 "))
+            .all(|line| !line.starts_with("cosmo#103 "))
     );
 }
 
@@ -92,8 +116,8 @@ fn a_blocker_from_another_repository_counts_as_open() {
 fn a_parent_that_is_an_epic_has_the_epic_role() {
     let plan = plan_of(EDGE, &[]).expect("the edge page parses");
     let moves = moves_of(&plan);
-    assert!(moves.contains(&"#106 Backlog -> Ready (gate holds)".to_owned()));
-    assert!(moves.iter().all(|line| !line.starts_with("#108 ")));
+    assert!(moves.contains(&"cosmo#106 Backlog -> Ready (gate holds)".to_owned()));
+    assert!(moves.iter().all(|line| !line.starts_with("cosmo#108 ")));
 }
 
 #[test]
@@ -106,10 +130,15 @@ fn the_end_cursor_of_a_page_is_read() {
 
 #[test]
 fn a_page_of_pull_requests_lists_the_issues_they_close() {
-    let live = parse_pulls(PULLS_LIVE).expect("the recorded pulls parse");
-    assert_eq!(live.closing(), [number(73)]);
-    let many = parse_pulls(PULLS_MANY).expect("the pulls parse");
-    assert_eq!(many.closing(), [number(10), number(11), number(12)]);
+    let cosmo_repo = Target::cosmo().repo_coords().remove(0);
+    let live = parse_pulls(PULLS_LIVE, &cosmo_repo).expect("the recorded pulls parse");
+    let cosmo_num = |raw| IssueNumber::new(cosmo_repo.clone(), raw);
+    assert_eq!(live.closing(), [cosmo_num(73)]);
+    let many = parse_pulls(PULLS_MANY, &cosmo_repo).expect("the pulls parse");
+    assert_eq!(
+        many.closing(),
+        [cosmo_num(10), cosmo_num(11), cosmo_num(12)]
+    );
     assert_eq!(many.next(), Some("pulls-next"));
 }
 

@@ -83,8 +83,8 @@ impl TreeIssue {
 
     /// The issue number.
     #[must_use]
-    pub const fn number(&self) -> IssueNumber {
-        self.number
+    pub const fn number(&self) -> &IssueNumber {
+        &self.number
     }
 
     /// Whether the issue is open.
@@ -137,13 +137,13 @@ impl TreeIssue {
 
     /// The parent, if the issue has one.
     #[must_use]
-    pub const fn parent(&self) -> Option<IssueNumber> {
-        self.placement.parent
+    pub fn parent(&self) -> Option<&IssueNumber> {
+        self.placement.parent.as_ref()
     }
 
     /// The issues that block this one.
-    pub fn blockers(&self) -> impl Iterator<Item = IssueNumber> + '_ {
-        self.placement.blocked_by.0.iter().copied()
+    pub fn blockers(&self) -> impl Iterator<Item = &IssueNumber> + '_ {
+        self.placement.blocked_by.0.iter()
     }
 
     /// Whether both issues are open, have readable releases, and this one is

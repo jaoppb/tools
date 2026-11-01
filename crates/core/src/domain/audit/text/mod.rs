@@ -111,8 +111,8 @@ impl TextItem {
 
     /// The issue or pull request the text is on.
     #[must_use]
-    pub const fn number(&self) -> IssueNumber {
-        self.number
+    pub const fn number(&self) -> &IssueNumber {
+        &self.number
     }
 
     /// The rules this text breaks, one per kind of reference and sorted, so a
