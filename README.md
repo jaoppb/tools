@@ -26,6 +26,10 @@ A monorepo for developer tools, declarative repository management utilities, and
   - [Prerequisites](#prerequisites)
   - [Local Environment Setup](#local-environment-setup)
   - [Development Recipes](#development-recipes)
+- [Packaging, Installation & GitHub Action](#packaging-installation--github-action)
+  - [Composite GitHub Action](#composite-github-action)
+  - [Binary Releases & Installation Script](#binary-releases--installation-script)
+  - [Nix Flake Packages](#nix-flake-packages)
 - [Contributing & Guidelines](#contributing--guidelines)
 
 ---
@@ -222,6 +226,82 @@ Workspace recipes are managed with `just`:
 | **Migration & Releases** | | |
 | `just issues-migrate` | Audits or applies legacy label migrations to canonical taxonomy | `just issues-migrate apply=true default_area=area:core` |
 | `just bump-version` | Bumps workspace version, updates `Cargo.lock`, tags, and commits | `just bump-version patch` |
+
+---
+
+## Packaging, Installation & GitHub Action
+
+Pre-compiled binary releases, composite GitHub Actions, and Nix packages enable direct consumption in external repositories and CI pipelines without Rust toolchain setup or compilation overhead.
+
+### Composite GitHub Action
+
+To enforce workflow integrity in another repository's GitHub Actions workflow, use the official composite action `jaoppb/tools`:
+
+```yaml
+name: Verify Compliance
+on: [push, pull_request]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Tools Compliance Checks
+        uses: jaoppb/tools@v0.2.0
+        with:
+          version: 'latest'
+          check-issues: 'true'
+          check-repo: 'true'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Alternatively, omit `check-*` inputs to install `issues-check`, `repo-sync`, and `project-sync` onto `$GITHUB_PATH` for customized command execution:
+
+```yaml
+      - name: Setup Tools CLI
+        uses: jaoppb/tools@v0.2.0
+
+      - name: Run Audit
+        run: issues-check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Binary Releases & Installation Script
+
+Pre-compiled binaries for Linux (`x86_64`, `aarch64`), macOS (`x86_64`, `apple-silicon`), and Windows (`x86_64`) are published with SHA256 checksums on [GitHub Releases](https://github.com/jaoppb/tools/releases).
+
+Install directly via curl:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/jaoppb/tools/main/scripts/install-tools.sh | bash
+```
+
+Or install a specific version and toolset:
+
+```bash
+TOOLS_VERSION=v0.2.0 TOOLS_LIST="issues-check,repo-sync" ./scripts/install-tools.sh
+```
+
+### Nix Flake Packages
+
+Each tool is exposed as a packaged flake output in [`flake.nix`](flake.nix):
+
+```bash
+# Run directly without local installation
+nix run github:jaoppb/tools#issues-check
+nix run github:jaoppb/tools#repo-sync -- --check
+nix run github:jaoppb/tools#project-sync
+
+# Enter development shell with all utilities
+nix develop github:jaoppb/tools
+```
 
 ---
 
