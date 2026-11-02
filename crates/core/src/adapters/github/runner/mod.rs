@@ -64,6 +64,16 @@ impl GhRunner {
         self.rest_send("PATCH", endpoint, body)
     }
 
+    /// Runs a REST API PUT request against GitHub with a JSON payload provided on standard input.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GhError::Missing`] when the program is not installed, and
+    /// [`GhError::Failed`] when it fails or exits with an error.
+    pub fn rest_put(&self, endpoint: &str, body: &str) -> Result<String, GhError> {
+        self.rest_send("PUT", endpoint, body)
+    }
+
     /// Runs a REST API POST request against GitHub with a JSON payload provided on standard input.
     ///
     /// # Errors

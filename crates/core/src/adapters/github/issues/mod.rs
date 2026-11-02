@@ -6,7 +6,7 @@ use crate::adapters::github::parse::{IssuesPage, parse_issues_for};
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
-use crate::application::{AuditError, RepositoryIssues};
+use crate::application::{AuditError, IssueMigrationPort, MigrationError, RepositoryIssues};
 use crate::domain::{IssueTree, Repo, TreeIssue};
 
 /// The pages of issues read so far. It accepts them only when together they are
@@ -103,5 +103,36 @@ impl RepositoryIssues for GhIssues {
         self.read().map_err(|error| AuditError::Issues {
             reason: error.to_string(),
         })
+    }
+}
+
+impl IssueMigrationPort for GhIssues {
+    fn set_labels(
+        &self,
+        issue: &crate::domain::IssueNumber,
+        labels: &[String],
+    ) -> Result<(), MigrationError> {
+        let repo_owner = if issue.repo().owner().is_empty() {
+            self.target.owner()
+        } else {
+            issue.repo().owner()
+        };
+        let repo_name = if issue.repo().name().is_empty() {
+            self.target.primary_repo()
+        } else {
+            issue.repo().name()
+        };
+        let endpoint = format!(
+            "repos/{repo_owner}/{repo_name}/issues/{}/labels",
+            issue.value()
+        );
+        let body = serde_json::json!({ "labels": labels }).to_string();
+        self.runner
+            .rest_put(&endpoint, &body)
+            .map_err(|error| MigrationError::Update {
+                issue: issue.clone(),
+                reason: error.to_string(),
+            })?;
+        Ok(())
     }
 }

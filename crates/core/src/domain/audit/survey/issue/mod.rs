@@ -87,6 +87,12 @@ impl TreeIssue {
         &self.number
     }
 
+    /// The labels of the issue.
+    #[must_use]
+    pub const fn labels(&self) -> &Labels {
+        &self.labels
+    }
+
     /// Whether the issue is open.
     #[must_use]
     pub const fn is_open(&self) -> bool {

@@ -34,6 +34,33 @@ fn accepts_rule_flags_and_overrides() {
     assert!(parse(&["--config", "custom-tools.toml"]).is_ok());
     let multi = parse(&["--owner", "jaoppb", "--repo", "app", "--repo", "web"])
         .expect("multiple repo flags parse");
-    let (target, _rules) = multi.resolve().expect("resolves multi-repo target");
-    assert_eq!(target.repos().len(), 2);
+    let resolved = multi.resolve().expect("resolves multi-repo target");
+    assert_eq!(resolved.target.repos().len(), 2);
+}
+
+#[test]
+fn accepts_migration_flags() {
+    let migrate = parse(&["--migrate"]).expect("migrate parses");
+    assert!(migrate.is_migrate());
+    assert!(!migrate.is_apply());
+    assert_eq!(migrate.default_area(), None);
+
+    let apply = parse(&["--migrate", "--apply", "--default-area", "core"]).expect("apply parses");
+    assert!(apply.is_migrate());
+    assert!(apply.is_apply());
+    assert_eq!(apply.default_area(), Some("core"));
+
+    let org = parse(&["--org", "gatuno-manga", "--repo", "api"]).expect("org parses");
+    let resolved = org.resolve().expect("resolves org target");
+    assert_eq!(resolved.target.owner(), "gatuno-manga");
+}
+
+#[test]
+fn rejects_apply_or_default_area_without_migrate() {
+    let failure1 = parse(&["--apply"]).expect_err("apply without migrate fails");
+    assert_eq!(failure1.exit_code(), 2);
+
+    let failure2 =
+        parse(&["--default-area", "core"]).expect_err("default-area without migrate fails");
+    assert_eq!(failure2.exit_code(), 2);
 }

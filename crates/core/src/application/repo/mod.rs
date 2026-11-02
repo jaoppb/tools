@@ -327,6 +327,7 @@ mod tests {
             deprecated: vec!["old-label".into()],
             renames: Default::default(),
             prune_unmanaged: false,
+            migrations: Default::default(),
             items: vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
         };
         let desired_project = RepoProjectSpec::new(4, "Roadmap");

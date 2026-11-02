@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use issues_check::cli::Arguments;
 use tools_core::adapters::github::{GhIssues, GhProject, GhText};
-use tools_core::application::Audit;
+use tools_core::application::{Audit, IssueMigrator, RepositoryIssues};
 
 /// What to print and how to exit.
 struct Exit {
@@ -29,16 +29,43 @@ fn run() -> Result<Exit, Exit> {
         text: usage.to_string(),
         code: usage.exit_code(),
     })?;
-    let (target, rules) = arguments.resolve().map_err(|err| Exit {
+    let resolved = arguments.resolve().map_err(|err| Exit {
         text: err.to_string(),
         code: 2,
     })?;
-    let project = target.project().map(|_| GhProject::new(target.clone()));
+
+    if arguments.is_migrate() {
+        let gh_issues = GhIssues::new(resolved.target);
+        let tree = gh_issues.issues().map_err(|error| Exit {
+            text: error.to_string(),
+            code: 2,
+        })?;
+        let migrator = IssueMigrator::new(
+            &gh_issues,
+            resolved.migrations,
+            arguments.default_area().map(str::to_owned),
+        );
+        let outcome = migrator
+            .run(&tree, arguments.migration_mode())
+            .map_err(|error| Exit {
+                text: error.to_string(),
+                code: 2,
+            })?;
+        return Ok(Exit {
+            text: outcome.to_string(),
+            code: 0,
+        });
+    }
+
+    let project = resolved
+        .target
+        .project()
+        .map(|_| GhProject::new(resolved.target.clone()));
     let report = Audit::new(
-        GhIssues::new(target.clone()),
+        GhIssues::new(resolved.target.clone()),
         project,
-        GhText::new(target),
-        rules,
+        GhText::new(resolved.target),
+        resolved.rules,
     )
     .run()
     .map_err(|error| Exit {

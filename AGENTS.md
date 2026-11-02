@@ -40,3 +40,10 @@ This repository is a monorepo for developer tools, repository management utiliti
   - `pre-commit`: Validates Rust code formatting (`cargo fmt --all -- --check`) and workspace lints (`cargo clippy --workspace -- -D warnings`) when Rust or Cargo manifest files change.
   - `pre-push`: Runs full workspace validation (`just check`) and issue workflow audit (`just issues-check`).
   - Local custom overrides can be placed in `lefthook-local.yml` (ignored by git).
+
+## 3. Multi-repository organization onboarding
+
+- For onboarding organizations and standardizing repositories (`web`, `api`, `app`, etc.), see the [Multi-Repository Organization Onboarding Guide](docs/multi-repo-onboarding.md).
+- **Recipes:**
+  - `just repo-bootstrap` / `just org-sync [org=...]`: Reconciles repository merge settings, labels, and milestones.
+  - `just issues-migrate [apply=true] [default_area=...]`: Audits and migrates legacy issue labels in bulk.

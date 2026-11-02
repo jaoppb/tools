@@ -30,9 +30,38 @@ pub struct RepoLabelsSpec {
     /// Whether to prune unmanaged labels.
     #[serde(default)]
     pub prune_unmanaged: bool,
+    /// Mappings from legacy issue labels to canonical labels.
+    #[serde(default)]
+    pub migrations: BTreeMap<String, String>,
     /// Desired labels to enforce.
     #[serde(default)]
     pub items: Vec<RepoLabel>,
+}
+
+impl RepoLabelsSpec {
+    /// Returns default standard migrations for common legacy GitHub labels.
+    #[must_use]
+    pub fn default_migrations() -> BTreeMap<String, String> {
+        let mut map = BTreeMap::new();
+        map.insert("bug".to_string(), "type:fix".to_string());
+        map.insert("enhancement".to_string(), "type:feat".to_string());
+        map.insert("documentation".to_string(), "type:docs".to_string());
+        map.insert("chore".to_string(), "type:chore".to_string());
+        map.insert("refactor".to_string(), "type:refactor".to_string());
+        map.insert("spike".to_string(), "type:spike".to_string());
+        map.insert("feature".to_string(), "type:feat".to_string());
+        map.insert("fix".to_string(), "type:fix".to_string());
+        map
+    }
+
+    /// Resolves migration mappings combining standard defaults, repository renames, and explicit migration overrides.
+    #[must_use]
+    pub fn resolved_migrations(&self) -> BTreeMap<String, String> {
+        let mut migrations = Self::default_migrations();
+        migrations.extend(self.renames.clone());
+        migrations.extend(self.migrations.clone());
+        migrations
+    }
 }
 
 fn normalize_hex_color(color: &str) -> String {
