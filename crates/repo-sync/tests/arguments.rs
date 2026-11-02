@@ -60,6 +60,24 @@ fn accepts_entity_filtering_flags() {
 
 #[test]
 fn accepts_repository_target_and_config_overrides() {
-    assert!(parse(&["--owner", "my-org", "--repo", "my-repo"]).is_ok());
+    let arguments =
+        parse(&["--owner", "my-org", "--repo", "my-repo"]).expect("target overrides are valid");
+    assert_eq!(arguments.owner(), Some("my-org"));
+    assert_eq!(arguments.repos(), &["my-repo"]);
     assert!(parse(&["--config", "custom-tools.toml"]).is_ok());
+}
+
+#[test]
+fn accepts_multiple_repo_arguments() {
+    let arguments =
+        parse(&["--repo", "repo-a", "--repo", "repo-b"]).expect("multiple --repo is valid");
+    assert_eq!(arguments.repos(), &["repo-a", "repo-b"]);
+}
+
+#[test]
+fn accepts_org_and_multiple_repos() {
+    let arguments = parse(&["--org", "my-org", "--repo", "repo-a", "--repo", "repo-b"])
+        .expect("org and multiple repos are valid");
+    assert_eq!(arguments.owner(), Some("my-org"));
+    assert_eq!(arguments.repos(), &["repo-a", "repo-b"]);
 }
