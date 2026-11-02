@@ -50,8 +50,8 @@ org-sync org="":
     cargo run -q -p repo-sync -- {{ if org != "" { "--org " + org } else { "" } }}
 
 # Audit and migrate legacy issue labels to canonical type:* and area:* taxonomy (dry-run by default)
-issues-migrate apply="" default_area="":
-    cargo run -q -p issues-check -- --migrate {{ if apply != "" { "--apply" } else { "" } }} {{ if default_area != "" { "--default-area " + default_area } else { "" } }}
+issues-migrate *args:
+    cargo run -q -p issues-check -- --migrate {{ args }}
 
 # Bump workspace package version (major, minor, patch, or X.Y.Z), refresh Cargo.lock, commit, tag, and push
 bump-version target:

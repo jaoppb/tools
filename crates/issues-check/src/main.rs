@@ -44,6 +44,7 @@ fn run() -> Result<Exit, Exit> {
             &gh_issues,
             resolved.migrations,
             arguments.default_area().map(str::to_owned),
+            arguments.default_type().map(str::to_owned),
         );
         let outcome = migrator
             .run(&tree, arguments.migration_mode())
