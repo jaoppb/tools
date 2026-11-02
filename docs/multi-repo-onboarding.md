@@ -187,8 +187,11 @@ Run `just setup` locally to configure hooks:
 - **`pre-commit`**: Validates code formatting and clippy lints.
 - **`pre-push`**: Validates workspace checks (`just check`) and issue taxonomy (`just issues-check`).
 
-### GitHub Actions Workflow
-Add a workflow step to your repository's CI pipeline:
+### Composite GitHub Action (`jaoppb/tools`)
+The recommended way to enforce repository and issue compliance across external repositories is using the official composite action `jaoppb/tools`. It downloads pre-compiled release binaries with SHA256 verification and automatic runner caching—avoiding full monorepo checkout or Cargo compilation overhead.
+
+#### Option A: Automated Compliance Checks
+Use built-in flags (`check-issues`, `check-repo`) to run audits directly within the action:
 
 ```yaml
 name: Verify Compliance
@@ -197,13 +200,90 @@ on: [push, pull_request]
 jobs:
   audit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Tools Compliance Checks
+        uses: jaoppb/tools@v0.2.0
+        with:
+          version: 'latest' # or pin to a specific release tag such as 'v0.2.0'
+          check-issues: 'true'
+          check-repo: 'true'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+#### Option B: Setup CLI on PATH
+Install tools onto `$GITHUB_PATH` and invoke them with custom arguments in downstream steps:
+
+```yaml
+name: Verify Compliance
+on: [push, pull_request]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Tools CLI
+        uses: jaoppb/tools@v0.2.0
+        with:
+          version: 'latest'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Verify Repository Settings Drift
-        run: cargo run -p repo-sync -- --check
+        run: repo-sync --check
+
       - name: Verify Issue Workflow Rules
-        run: cargo run -p issues-check
+        run: issues-check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+#### Action Inputs Reference
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `version` | Release version tag to install (e.g. `v0.2.0` or `latest`) | `latest` |
+| `tools` | Comma-separated list of tools (`issues-check`, `repo-sync`, `project-sync`, or `all`) | `all` |
+| `install-dir` | Target directory where binaries are placed | `${{ runner.temp }}/tools-bin` |
+| `github-token` | GitHub token for API requests and issue auditing | `${{ github.token }}` |
+| `cache` | Enable cross-run caching of downloaded binaries | `true` |
+| `check-issues` | Run `issues-check` immediately after install | `false` |
+| `check-repo` | Run `repo-sync --check` immediately after install | `false` |
+| `issues-check-args`| Extra CLI flags passed to `issues-check` | `""` |
+| `repo-sync-args` | Extra CLI flags passed to `repo-sync --check` | `""` |
+
+### Nix Flake Execution
+For environments using Nix, binaries can be executed directly without local installation:
+
+```bash
+# Audit issue workflow rules
+nix run github:jaoppb/tools#issues-check
+
+# Audit repository drift
+nix run github:jaoppb/tools#repo-sync -- --check
+```
+
+### Standalone Script & Cargo Fallback
+You can also install binaries directly via the installation script:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/jaoppb/tools/main/scripts/install-tools.sh | bash
+```
+
+Or build from source using Cargo (requires a Rust toolchain):
+
+```bash
+cargo install --git https://github.com/jaoppb/tools issues-check repo-sync project-sync
 ```

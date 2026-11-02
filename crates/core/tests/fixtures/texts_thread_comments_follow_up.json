@@ -1,0 +1,17 @@
+{
+  "data": {
+    "node": {
+      "comments": {
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        },
+        "nodes": [
+          {
+            "body": "Follow-up thread comment"
+          }
+        ]
+      }
+    }
+  }
+}

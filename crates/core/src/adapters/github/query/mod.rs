@@ -11,6 +11,11 @@ const ISSUES: &str = include_str!("issues.graphql");
 const PULLS: &str = include_str!("pulls.graphql");
 const TEXTS_ISSUES: &str = include_str!("texts_issues.graphql");
 const TEXTS_PULLS: &str = include_str!("texts_pulls.graphql");
+const TEXT_ISSUE_COMMENTS: &str = include_str!("text_issue_comments.graphql");
+const TEXT_PULL_COMMENTS: &str = include_str!("text_pull_comments.graphql");
+const TEXT_PULL_REVIEWS: &str = include_str!("text_pull_reviews.graphql");
+const TEXT_PULL_THREADS: &str = include_str!("text_pull_threads.graphql");
+const TEXT_THREAD_COMMENTS: &str = include_str!("text_thread_comments.graphql");
 const ITEM_OF_ISSUE: &str = include_str!("item_of_issue.graphql");
 const STATUS_FIELD: &str = include_str!("status_field.graphql");
 const REPO_LABELS: &str = include_str!("repo_labels.graphql");
@@ -141,4 +146,34 @@ pub fn repo_milestones(target: &Target) -> String {
 #[must_use]
 pub fn repo_project(target: &Target) -> String {
     fill(REPO_PROJECT, target)
+}
+
+/// Additional comments of one issue.
+#[must_use]
+pub fn text_issue_comments_for_repo(target: &Target, repo: &Repo, number: u64) -> String {
+    fill_for_repo(TEXT_ISSUE_COMMENTS, target, repo).replace("@NUMBER@", &number.to_string())
+}
+
+/// Additional comments of one pull request.
+#[must_use]
+pub fn text_pull_comments_for_repo(target: &Target, repo: &Repo, number: u64) -> String {
+    fill_for_repo(TEXT_PULL_COMMENTS, target, repo).replace("@NUMBER@", &number.to_string())
+}
+
+/// Additional reviews of one pull request.
+#[must_use]
+pub fn text_pull_reviews_for_repo(target: &Target, repo: &Repo, number: u64) -> String {
+    fill_for_repo(TEXT_PULL_REVIEWS, target, repo).replace("@NUMBER@", &number.to_string())
+}
+
+/// Additional review threads of one pull request.
+#[must_use]
+pub fn text_pull_threads_for_repo(target: &Target, repo: &Repo, number: u64) -> String {
+    fill_for_repo(TEXT_PULL_THREADS, target, repo).replace("@NUMBER@", &number.to_string())
+}
+
+/// Additional comments of one review thread.
+#[must_use]
+pub const fn text_thread_comments() -> &'static str {
+    TEXT_THREAD_COMMENTS
 }

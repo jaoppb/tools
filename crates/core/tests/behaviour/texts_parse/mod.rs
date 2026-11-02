@@ -2,9 +2,14 @@
 //! the pages read are all of them, read against recorded and hand-written
 //! replies.
 
-use tools_core::adapters::github::parse::{TextsPage, parse_issue_texts, parse_pull_texts};
+use tools_core::adapters::github::parse::{
+    CutOff, TextsPage, parse_issue_page, parse_issue_texts, parse_item_comments, parse_pull_page,
+    parse_pull_review_threads, parse_pull_texts, parse_thread_comments,
+};
 use tools_core::adapters::github::{GatheredTexts, GhError};
-use tools_core::domain::{IssueTree, Members, Repo, Survey, Texts};
+use tools_core::domain::{
+    IssueNumber, IssueTree, Members, Repo, Surface, Survey, Text, TextItem, Texts,
+};
 
 use crate::support::audit::lines;
 
@@ -20,6 +25,16 @@ const PULLS_LIVE: &str = include_str!("../../fixtures/texts_pulls_live.json");
 const PULLS_SURFACES: &str = include_str!("../../fixtures/texts_pulls_surfaces.json");
 const PULLS_CUT_OFF: &str = include_str!("../../fixtures/texts_pulls_cut_off.json");
 const PULLS_THREAD_CUT_OFF: &str = include_str!("../../fixtures/texts_pulls_thread_cut_off.json");
+const ISSUE_COMMENTS_FOLLOW_UP: &str =
+    include_str!("../../fixtures/texts_issue_comments_follow_up.json");
+const PULL_COMMENTS_FOLLOW_UP: &str =
+    include_str!("../../fixtures/texts_pull_comments_follow_up.json");
+const PULL_REVIEWS_FOLLOW_UP: &str =
+    include_str!("../../fixtures/texts_pull_reviews_follow_up.json");
+const PULL_THREADS_FOLLOW_UP: &str =
+    include_str!("../../fixtures/texts_pull_threads_follow_up.json");
+const THREAD_COMMENTS_FOLLOW_UP: &str =
+    include_str!("../../fixtures/texts_thread_comments_follow_up.json");
 
 const RECORDED: &str = "the recorded reply parses";
 
@@ -130,4 +145,126 @@ fn refuses_a_read_that_returned_fewer_pull_requests_than_the_repository_has() {
         failure.to_string(),
         "gh answered only part of the data: read 2 of 43 pull requests"
     );
+}
+
+#[test]
+fn parses_follow_up_issue_comments() {
+    let number = IssueNumber::new(cosmo(), 2);
+    let (items, tail) =
+        parse_item_comments(ISSUE_COMMENTS_FOLLOW_UP, &number, Surface::Comment).expect(RECORDED);
+    assert_eq!(
+        items,
+        [TextItem::new(
+            number,
+            Surface::Comment,
+            Text::new("Follow-up comment on issue 2")
+        )]
+    );
+    assert!(!tail.is_cut_off());
+    assert_eq!(tail.cursor(), Some("cursor_issue_c2"));
+}
+
+#[test]
+fn parses_follow_up_pull_comments() {
+    let number = IssueNumber::new(cosmo(), 7);
+    let (items, tail) =
+        parse_item_comments(PULL_COMMENTS_FOLLOW_UP, &number, Surface::Comment).expect(RECORDED);
+    assert_eq!(
+        items,
+        [TextItem::new(
+            number,
+            Surface::Comment,
+            Text::new("Follow-up comment on pull 7")
+        )]
+    );
+    assert!(!tail.is_cut_off());
+}
+
+#[test]
+fn parses_follow_up_pull_reviews() {
+    let number = IssueNumber::new(cosmo(), 7);
+    let (items, tail) =
+        parse_item_comments(PULL_REVIEWS_FOLLOW_UP, &number, Surface::Review).expect(RECORDED);
+    assert_eq!(
+        items,
+        [TextItem::new(
+            number,
+            Surface::Review,
+            Text::new("Follow-up review body on pull 7")
+        )]
+    );
+    assert!(!tail.is_cut_off());
+}
+
+#[test]
+fn parses_follow_up_pull_review_threads() {
+    let number = IssueNumber::new(cosmo(), 7);
+    let (items, cut_offs, tail) =
+        parse_pull_review_threads(PULL_THREADS_FOLLOW_UP, &number).expect(RECORDED);
+    assert_eq!(
+        items,
+        [TextItem::new(
+            number,
+            Surface::ReviewComment,
+            Text::new("Thread comment from paginated thread")
+        )]
+    );
+    assert!(cut_offs.is_empty());
+    assert!(!tail.is_cut_off());
+}
+
+#[test]
+fn parses_follow_up_thread_comments() {
+    let number = IssueNumber::new(cosmo(), 8);
+    let (items, tail) = parse_thread_comments(THREAD_COMMENTS_FOLLOW_UP, &number).expect(RECORDED);
+    assert_eq!(
+        items,
+        [TextItem::new(
+            number,
+            Surface::ReviewComment,
+            Text::new("Follow-up thread comment")
+        )]
+    );
+    assert!(!tail.is_cut_off());
+}
+
+#[test]
+fn issue_page_identifies_cut_off_comments_for_pagination() {
+    let parsed = parse_issue_page(ISSUES_CUT_OFF, &cosmo()).expect(RECORDED);
+    let (page, cut_offs) = parsed.into_parts();
+    assert_eq!(page.items().len(), 5);
+    assert_eq!(cut_offs.len(), 1);
+    match &cut_offs[0] {
+        CutOff::IssueComments(number, tail) => {
+            assert_eq!(*number, IssueNumber::new(cosmo(), 2));
+            assert!(tail.is_cut_off());
+        }
+        other => panic!("expected IssueComments cut-off, got {other:?}"),
+    }
+}
+
+#[test]
+fn pull_page_identifies_cut_off_comments_and_threads_for_pagination() {
+    let parsed = parse_pull_page(PULLS_CUT_OFF, &cosmo()).expect(RECORDED);
+    let (_, cut_offs) = parsed.into_parts();
+    assert_eq!(cut_offs.len(), 1);
+    match &cut_offs[0] {
+        CutOff::PullComments(number, tail) => {
+            assert_eq!(*number, IssueNumber::new(cosmo(), 7));
+            assert!(tail.is_cut_off());
+        }
+        other => panic!("expected PullComments cut-off, got {other:?}"),
+    }
+
+    let thread_parsed = parse_pull_page(PULLS_THREAD_CUT_OFF, &cosmo()).expect(RECORDED);
+    let (_, thread_cut_offs) = thread_parsed.into_parts();
+    assert_eq!(thread_cut_offs.len(), 1);
+    match &thread_cut_offs[0] {
+        CutOff::ThreadComments(number, id, tail) => {
+            assert_eq!(*number, IssueNumber::new(cosmo(), 8));
+            assert!(id.is_none());
+            assert!(tail.is_cut_off());
+        }
+        other => panic!("expected ThreadComments cut-off, got {other:?}"),
+    }
 }
