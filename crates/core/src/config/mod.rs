@@ -1,6 +1,7 @@
 //! Configuration for repository target, repository settings, and audit rules, read from `tools.toml`.
 
 use crate::adapters::github::target::Target;
+use crate::domain::issue::{StatusMapping, StatusMappingError};
 pub use crate::domain::repo::{
     MergeCommitMessage, MergeCommitTitle, MilestoneState, ProjectDiff, RepoLabel, RepoLabelsSpec,
     RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec, RepoPlanError, RepoProject,
@@ -138,6 +139,20 @@ pub struct ProjectConfig {
     /// Project title, if specified.
     #[serde(default)]
     pub title: Option<String>,
+    /// Status field mapping from external column names to canonical status names.
+    #[serde(default)]
+    pub status_mapping: std::collections::HashMap<String, String>,
+}
+
+impl ProjectConfig {
+    /// Resolves the status mapping from configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatusMappingError`] if any target status name is invalid.
+    pub fn status_mapping(&self) -> Result<StatusMapping, StatusMappingError> {
+        StatusMapping::from_pairs(&self.status_mapping)
+    }
 }
 
 /// Settings for issues rules.
@@ -184,6 +199,12 @@ pub struct RulesConfig {
     /// Text rules (alias / companion for references).
     #[serde(default = "default_true")]
     pub text: bool,
+    /// Priority requirement rule for Ready gate.
+    #[serde(default)]
+    pub priority: bool,
+    /// Effort requirement rule for Ready gate.
+    #[serde(default)]
+    pub effort: bool,
 }
 
 const fn default_true() -> bool {
@@ -201,6 +222,8 @@ impl Default for RulesConfig {
             references: true,
             release: true,
             text: true,
+            priority: false,
+            effort: false,
         }
     }
 }

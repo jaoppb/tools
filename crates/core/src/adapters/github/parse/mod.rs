@@ -12,7 +12,7 @@ use crate::adapters::github::error::GhError;
 use crate::domain::Repo;
 
 pub use crate::adapters::github::parse::issues::{IssuesPage, parse_issues, parse_issues_for};
-pub use crate::adapters::github::parse::items::{ItemsPage, parse_items};
+pub use crate::adapters::github::parse::items::{ItemsPage, parse_items, parse_items_with};
 pub use crate::adapters::github::parse::pulls::{PullsPage, parse_pulls};
 pub use crate::adapters::github::parse::repo::{
     RepoLabelsPage, RepoMilestonesPage, parse_repo_labels, parse_repo_milestones,

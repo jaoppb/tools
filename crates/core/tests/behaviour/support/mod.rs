@@ -2,6 +2,7 @@
 
 pub mod audit;
 
+use tools_core::config::RulesConfig;
 use tools_core::domain::{
     Blocker, Blockers, Card, Cards, Closing, Effort, Facts, IssueNumber, Label, Labels, Lifecycle,
     Links, Milestone, Parent, Plan, Priority, Repo, Role, Snapshot, Standing, Status,
@@ -122,4 +123,14 @@ pub fn moves_of(plan: &Plan) -> Vec<String> {
 #[must_use]
 pub fn gaps_of(plan: &Plan) -> Vec<String> {
     plan.gaps().iter().map(ToString::to_string).collect()
+}
+
+/// Rules requiring Priority and Effort triage.
+#[must_use]
+pub fn strict_rules() -> RulesConfig {
+    RulesConfig {
+        priority: true,
+        effort: true,
+        ..RulesConfig::default()
+    }
 }

@@ -10,7 +10,7 @@ use crate::adapters::github::parse::items::shapes::{
 use crate::adapters::github::target::Target;
 use crate::domain::{
     Blocker, Blockers, Card, Effort, Facts, IssueNumber, Label, Labels, Lifecycle, Links,
-    Milestone, Parent, Priority, Repo, Role, Standing, Status,
+    Milestone, Parent, Priority, Repo, Role, Standing, Status, StatusMapping,
 };
 
 /// The cards of one page and the cursor of the next page.
@@ -34,14 +34,27 @@ impl ItemsPage {
     }
 }
 
-/// Reads one page of the Project's items. Items that are not issues of the
-/// target repository are dropped.
+/// Reads one page of the Project's items using default status mapping.
 ///
 /// # Errors
 ///
 /// Returns [`GhError::BadReply`] when the answer is not the expected JSON, and
 /// [`GhError::UnknownStatus`] when an item has a Status this tool does not know.
 pub fn parse_items(json: &str, target: &Target) -> Result<ItemsPage, GhError> {
+    parse_items_with(json, target, &StatusMapping::default())
+}
+
+/// Reads one page of the Project's items using the provided status mapping.
+///
+/// # Errors
+///
+/// Returns [`GhError::BadReply`] when the answer is not the expected JSON, and
+/// [`GhError::UnknownStatus`] when an item has a Status this tool does not know.
+pub fn parse_items_with(
+    json: &str,
+    target: &Target,
+    mapping: &StatusMapping,
+) -> Result<ItemsPage, GhError> {
     let reply: Reply = serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
     let project = reply.data.project_v2().ok_or_else(|| GhError::BadReply {
         reason: "projectV2 not found for owner".into(),
@@ -51,7 +64,7 @@ pub fn parse_items(json: &str, target: &Target) -> Result<ItemsPage, GhError> {
     let cards = items
         .nodes
         .iter()
-        .map(|item| card_of(item, target))
+        .map(|item| card_of(item, target, mapping))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ItemsPage {
         cards: cards.into_iter().flatten().collect(),
@@ -59,7 +72,7 @@ pub fn parse_items(json: &str, target: &Target) -> Result<ItemsPage, GhError> {
     })
 }
 
-fn card_of(item: &Item, target: &Target) -> Result<Option<Card>, GhError> {
+fn card_of(item: &Item, target: &Target, mapping: &StatusMapping) -> Result<Option<Card>, GhError> {
     let Some(content) = &item.content else {
         return Ok(None);
     };
@@ -74,19 +87,25 @@ fn card_of(item: &Item, target: &Target) -> Result<Option<Card>, GhError> {
     };
     let card = Card::new(
         IssueNumber::new(repo.clone(), raw),
-        standing_of(item, content)?,
+        standing_of(item, content, mapping)?,
     )
     .with_facts(facts_of(&item.field_values, &content.detail))
     .with_links(links_of(&content.detail, &repo));
     Ok(Some(card))
 }
 
-fn standing_of(item: &Item, content: &Content) -> Result<Standing, GhError> {
+fn standing_of(
+    item: &Item,
+    content: &Content,
+    mapping: &StatusMapping,
+) -> Result<Standing, GhError> {
     let status = match item.field_values.select("Status") {
         None => Status::Backlog,
-        Some(name) => Status::from_name(name).ok_or_else(|| GhError::UnknownStatus {
-            name: name.to_owned(),
-        })?,
+        Some(name) => mapping
+            .status_for(name)
+            .ok_or_else(|| GhError::UnknownStatus {
+                name: name.to_owned(),
+            })?,
     };
     Ok(Standing::new(
         status,

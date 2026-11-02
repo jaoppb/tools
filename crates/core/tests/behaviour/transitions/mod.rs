@@ -4,7 +4,7 @@ use tools_core::domain::{Cards, Closing, Lifecycle, Snapshot, Status};
 
 use crate::support::{
     blocked_by, closed_card, complete_facts, epic, gaps_of, moves_of, open_card, repo_card,
-    repo_number, snapshot, without_priority,
+    repo_number, snapshot, strict_rules, without_priority,
 };
 
 #[test]
@@ -61,7 +61,7 @@ fn an_in_progress_issue_without_a_pull_request_stays() {
 
 #[test]
 fn a_reopened_issue_lands_in_backlog_when_the_gate_fails() {
-    let plan = snapshot(vec![without_priority(20, Status::Done)], &[]).plan();
+    let plan = snapshot(vec![without_priority(20, Status::Done)], &[]).plan_with(&strict_rules());
     assert_eq!(moves_of(&plan), ["#20 Done -> Backlog (reopened)"]);
 }
 
@@ -80,7 +80,7 @@ fn a_ready_issue_with_a_new_open_blocker_goes_back_to_backlog() {
 
 #[test]
 fn a_ready_issue_that_lost_its_priority_goes_back_to_backlog() {
-    let plan = snapshot(vec![without_priority(20, Status::Ready)], &[]).plan();
+    let plan = snapshot(vec![without_priority(20, Status::Ready)], &[]).plan_with(&strict_rules());
     assert_eq!(moves_of(&plan), ["#20 Ready -> Backlog (gate lost)"]);
     assert_eq!(gaps_of(&plan), ["#20 needs triage: no Priority"]);
 }

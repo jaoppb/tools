@@ -30,11 +30,12 @@ fn run() -> Result<String, Exit> {
         text: usage.to_string(),
         code: usage.exit_code(),
     })?;
-    let target = arguments.resolve().map_err(|err| Exit {
+    let (target, mapping, rules) = arguments.resolve().map_err(|err| Exit {
         text: err.to_string(),
         code: 2,
     })?;
-    let mut sync = Sync::new(GhProject::new(target));
+    let gh_project = GhProject::new(target).with_mapping(mapping);
+    let mut sync = Sync::with_rules(gh_project, rules);
     let outcome = sync.run(arguments.mode()).map_err(|error| Exit {
         text: error.to_string(),
         code: 2,

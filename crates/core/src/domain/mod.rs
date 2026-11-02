@@ -18,7 +18,9 @@ pub use crate::domain::audit::{
 };
 pub use crate::domain::card::{Card, Cards, Standing};
 pub use crate::domain::facts::{Effort, Facts, Label, Labels, Milestone, Missing, Priority};
-pub use crate::domain::issue::{IssueNumber, Lifecycle, Role, Status};
+pub use crate::domain::issue::{
+    IssueNumber, Lifecycle, Role, Status, StatusMapping, StatusMappingError,
+};
 pub use crate::domain::links::{Blocker, Blockers, Links, Parent};
 pub use crate::domain::plan::{Gap, Gaps, Move, Moves, Plan, Reason, Transition};
 pub use crate::domain::repo::{
@@ -27,4 +29,4 @@ pub use crate::domain::repo::{
     RepoSpec, RepoState, SettingDiff,
 };
 pub use crate::domain::snapshot::{Closing, Snapshot};
-pub use crate::domain::target::target;
+pub use crate::domain::target::{target, target_with};

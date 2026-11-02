@@ -3,8 +3,8 @@
 use tools_core::domain::{Lifecycle, Status};
 
 use crate::support::{
-    blocked_by, child_of_epic, epic, gaps_of, moves_of, open_card, snapshot, task_of, with_effort,
-    without_priority,
+    blocked_by, child_of_epic, epic, gaps_of, moves_of, open_card, snapshot, strict_rules, task_of,
+    with_effort, without_priority,
 };
 
 #[test]
@@ -15,15 +15,23 @@ fn a_backlog_issue_with_everything_set_becomes_ready() {
 }
 
 #[test]
-fn an_issue_without_a_priority_stays_in_backlog_and_is_reported() {
+fn an_issue_without_a_priority_or_effort_becomes_ready_by_default() {
     let plan = snapshot(vec![without_priority(20, Status::Backlog)], &[]).plan();
+    assert_eq!(moves_of(&plan), ["#20 Backlog -> Ready (gate holds)"]);
+    assert!(gaps_of(&plan).is_empty());
+}
+
+#[test]
+fn an_issue_without_a_priority_stays_in_backlog_and_is_reported() {
+    let plan =
+        snapshot(vec![without_priority(20, Status::Backlog)], &[]).plan_with(&strict_rules());
     assert!(moves_of(&plan).is_empty());
     assert_eq!(gaps_of(&plan), ["#20 needs triage: no Priority"]);
 }
 
 #[test]
 fn an_effort_above_eight_stays_in_backlog_and_is_reported() {
-    let plan = snapshot(vec![with_effort(25, 13)], &[]).plan();
+    let plan = snapshot(vec![with_effort(25, 13)], &[]).plan_with(&strict_rules());
     assert!(moves_of(&plan).is_empty());
     assert_eq!(
         gaps_of(&plan),

@@ -31,13 +31,17 @@ pub enum GhError {
         what: String,
     },
     /// The Project has a Status this tool does not know.
-    #[error("the Project has a Status named {name} that this tool does not know")]
+    #[error(
+        "the Project has a Status named {name} that this tool does not know; configure a column alias in tools.toml under [github.project.status_mapping]"
+    )]
     UnknownStatus {
         /// The unknown Status name.
         name: String,
     },
     /// The Project's Status field lacks an option the tool must set.
-    #[error("the Project has no Status option named {name}")]
+    #[error(
+        "the Project has no Status option matching '{name}'; configure a column alias in tools.toml under [github.project.status_mapping]"
+    )]
     NoStatusOption {
         /// The missing option name.
         name: String,

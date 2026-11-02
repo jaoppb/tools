@@ -14,6 +14,7 @@ mod parse;
 mod queries;
 mod references;
 mod release;
+mod status_mapping;
 mod texts_parse;
 mod transitions;
 mod violation;

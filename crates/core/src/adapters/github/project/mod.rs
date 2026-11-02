@@ -3,19 +3,20 @@
 use crate::adapters::github::cursor_fields;
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{
-    StatusField, parse_item_id, parse_items, parse_pulls, parse_status_field,
+    StatusField, parse_item_id, parse_items_with, parse_pulls, parse_status_field,
 };
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
 use crate::application::{ProjectState, SyncError};
-use crate::domain::{Card, Cards, Closing, IssueNumber, Repo, Snapshot, Status};
+use crate::domain::{Card, Cards, Closing, IssueNumber, Repo, Snapshot, Status, StatusMapping};
 
 /// Reads and writes one Project through a `gh` runner.
 #[derive(Debug, Clone)]
 pub struct GhProject {
     runner: GhRunner,
     target: Target,
+    mapping: StatusMapping,
 }
 
 impl GhProject {
@@ -28,7 +29,18 @@ impl GhProject {
     /// A Project reached through this runner.
     #[must_use]
     pub const fn with_runner(runner: GhRunner, target: Target) -> Self {
-        Self { runner, target }
+        Self {
+            runner,
+            target,
+            mapping: StatusMapping::new(),
+        }
+    }
+
+    /// Configures status mapping on this project.
+    #[must_use]
+    pub fn with_mapping(mut self, mapping: StatusMapping) -> Self {
+        self.mapping = mapping;
+        self
     }
 
     fn read(&self) -> Result<Snapshot, GhError> {
@@ -42,7 +54,7 @@ impl GhProject {
         let reply = self
             .runner
             .graphql(&query::items(&self.target), &cursor_fields(cursor))?;
-        let page = parse_items(&reply, &self.target)?;
+        let page = parse_items_with(&reply, &self.target, &self.mapping)?;
         cards.extend_from_slice(page.cards());
         match page.next() {
             Some(next) => self.cards_from(Some(next), cards),
@@ -79,7 +91,7 @@ impl GhProject {
         let item = self.item_id(number.clone())?;
         let field = self.status_field()?;
         let option = field
-            .option(status.name())
+            .option_for_status(status, &self.mapping)
             .ok_or_else(|| GhError::NoStatusOption {
                 name: status.name().to_owned(),
             })?;

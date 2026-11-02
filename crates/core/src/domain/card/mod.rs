@@ -1,5 +1,6 @@
 //! A card of the Project: one issue with its status, facts and links.
 
+use crate::config::RulesConfig;
 use crate::domain::facts::{Facts, Missing};
 use crate::domain::issue::{IssueNumber, Lifecycle, Status};
 use crate::domain::links::Links;
@@ -89,6 +90,12 @@ impl Card {
     #[must_use]
     pub fn unblocked(&self) -> bool {
         self.links.unblocked()
+    }
+
+    /// What triage still has to set under the given rule configuration.
+    #[must_use]
+    pub fn missing_for(&self, rules: &RulesConfig) -> Vec<Missing> {
+        self.facts.missing_for(rules)
     }
 
     /// What triage still has to set.
