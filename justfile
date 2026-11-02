@@ -45,6 +45,14 @@ milestones-sync:
 # Bootstrap and reconcile all repository configuration (settings, labels, milestones)
 repo-bootstrap: repo-sync
 
+# Synchronize all GitHub repository configuration across an organization (or override owner)
+org-sync org="":
+    cargo run -q -p repo-sync -- {{ if org != "" { "--org " + org } else { "" } }}
+
+# Audit and migrate legacy issue labels to canonical type:* and area:* taxonomy (dry-run by default)
+issues-migrate apply="" default_area="":
+    cargo run -q -p issues-check -- --migrate {{ if apply != "" { "--apply" } else { "" } }} {{ if default_area != "" { "--default-area " + default_area } else { "" } }}
+
 # Bump workspace package version (major, minor, patch, or X.Y.Z), refresh Cargo.lock, commit, tag, and push
 bump-version target:
     ./scripts/bump-version.sh {{target}}

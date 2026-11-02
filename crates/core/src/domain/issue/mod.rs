@@ -2,7 +2,9 @@
 
 use std::fmt;
 
+pub mod migration;
 pub mod status_mapping;
+pub use migration::{IssueMigrationAction, IssueMigrationPlan};
 pub use status_mapping::{StatusMapping, StatusMappingError};
 
 use crate::domain::repo::Repo;

@@ -470,4 +470,26 @@ mod tests {
         assert!(target.contains_repo("api"));
         assert!(!target.contains_repo("other"));
     }
+
+    #[test]
+    fn parses_label_migrations_config() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github.labels]
+            migrations = { "legacy-bug" = "type:fix", "ui" = "area:web" }
+        "#;
+        let config: Config = toml::from_str(toml_str).expect("should parse");
+        let labels = config.labels().expect("labels config exists");
+        assert_eq!(
+            labels.migrations.get("legacy-bug"),
+            Some(&"type:fix".to_string())
+        );
+        let resolved = labels.resolved_migrations();
+        assert_eq!(resolved.get("bug"), Some(&"type:fix".to_string()));
+        assert_eq!(resolved.get("legacy-bug"), Some(&"type:fix".to_string()));
+        assert_eq!(resolved.get("ui"), Some(&"area:web".to_string()));
+    }
 }

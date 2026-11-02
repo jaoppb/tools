@@ -5,9 +5,13 @@ use std::fmt;
 use crate::config::RulesConfig;
 
 pub mod audit;
+pub mod migration;
 pub mod repo;
 
 pub use crate::application::audit::{Audit, AuditError, Report, RepositoryIssues, RepositoryText};
+pub use crate::application::migration::{
+    IssueMigrationMode, IssueMigrationOutcome, IssueMigrationPort, IssueMigrator, MigrationError,
+};
 pub use crate::application::repo::{
     RepoPort, RepoSync, RepoSyncError, RepoSyncMode, RepoSyncOutcome,
 };

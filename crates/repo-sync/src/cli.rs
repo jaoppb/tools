@@ -260,8 +260,9 @@ fn command() -> Command {
         .arg(
             Arg::new(OWNER)
                 .long(OWNER)
+                .visible_alias("org")
                 .value_name("OWNER")
-                .help("GitHub repository owner override"),
+                .help("GitHub repository owner or organization override"),
         )
         .arg(
             Arg::new(REPO)
@@ -286,6 +287,10 @@ mod tests {
 
         let args = Arguments::parse(["repo-sync".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Apply);
+
+        let args =
+            Arguments::parse(["repo-sync".into(), "--org".into(), "gatuno-manga".into()]).unwrap();
+        assert_eq!(args.owner.as_deref(), Some("gatuno-manga"));
     }
 
     #[test]

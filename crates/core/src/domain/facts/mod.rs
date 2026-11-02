@@ -15,6 +15,12 @@ impl Label {
         Self(text.to_owned())
     }
 
+    /// The label text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     fn has_prefix(&self, prefix: &str) -> bool {
         self.0.starts_with(prefix)
     }
@@ -33,6 +39,23 @@ impl Labels {
     #[must_use]
     pub const fn new(labels: Vec<Label>) -> Self {
         Self(labels)
+    }
+
+    /// Creates labels from string names.
+    #[must_use]
+    pub fn from_names(names: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self(names.into_iter().map(|n| Label(n.into())).collect())
+    }
+
+    /// The slice of labels.
+    #[must_use]
+    pub fn as_slice(&self) -> &[Label] {
+        &self.0
+    }
+
+    /// An iterator over label name strings.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.0.iter().map(Label::as_str)
     }
 
     /// Whether exactly one label starts with `type:`.

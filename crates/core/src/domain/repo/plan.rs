@@ -369,6 +369,7 @@ mod tests {
             deprecated: Vec::new(),
             renames: BTreeMap::new(),
             prune_unmanaged: false,
+            migrations: BTreeMap::new(),
             items: vec![
                 RepoLabel::new("type:feat", "1d76db", "Feature"),
                 RepoLabel::new("type:fix", "d73a4a", "Bug fix"),
@@ -432,6 +433,7 @@ mod tests {
                 deprecated: Vec::new(),
                 renames: BTreeMap::new(),
                 prune_unmanaged: false,
+                migrations: BTreeMap::new(),
                 items: vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
             }),
             None,

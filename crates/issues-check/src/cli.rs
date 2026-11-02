@@ -1,10 +1,12 @@
 //! The command line of `issues-check`.
 
 use clap::{Arg, ArgAction, Command};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
-use tools_core::config::{ConfigError, RulesConfig, load_or_find};
+use tools_core::application::IssueMigrationMode;
+use tools_core::config::{ConfigError, RepoLabelsSpec, RulesConfig, load_or_find};
 
 const PROGRAM: &str = "issues-check";
 const CONFIG: &str = "config";
@@ -13,6 +15,9 @@ const REPO: &str = "repo";
 const PROJECT: &str = "project";
 const NO_PARENT: &str = "no-parent";
 const NO_MEMBERSHIP: &str = "no-membership";
+const MIGRATE: &str = "migrate";
+const APPLY: &str = "apply";
+const DEFAULT_AREA: &str = "default-area";
 
 /// A command line that was not run: an argument clap rejected, or `--help`.
 #[derive(Debug, thiserror::Error)]
@@ -47,6 +52,20 @@ pub struct Arguments {
     project: Option<u32>,
     no_parent: bool,
     no_membership: bool,
+    migrate: bool,
+    apply: bool,
+    default_area: Option<String>,
+}
+
+/// Resolved target, audit rules, and label migrations from configuration and CLI overrides.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedCheck {
+    /// Target repository coordinates.
+    pub target: Target,
+    /// Issue audit rules.
+    pub rules: RulesConfig,
+    /// Resolved legacy-to-canonical label migrations.
+    pub migrations: BTreeMap<String, String>,
 }
 
 impl Arguments {
@@ -71,22 +90,61 @@ impl Arguments {
                 .and_then(|p| p.parse().ok()),
             no_parent: matches.get_flag(NO_PARENT),
             no_membership: matches.get_flag(NO_MEMBERSHIP),
+            migrate: matches.get_flag(MIGRATE),
+            apply: matches.get_flag(APPLY),
+            default_area: matches.get_one::<String>(DEFAULT_AREA).cloned(),
         })
     }
 
-    /// Resolves the target and rules from configuration and CLI overrides.
+    /// Whether issue migration mode is enabled.
+    #[must_use]
+    pub const fn is_migrate(&self) -> bool {
+        self.migrate
+    }
+
+    /// Execution mode for issue label migration.
+    #[must_use]
+    pub const fn migration_mode(&self) -> IssueMigrationMode {
+        if self.apply {
+            IssueMigrationMode::Apply
+        } else {
+            IssueMigrationMode::Preview
+        }
+    }
+
+    /// Whether to apply issue migrations directly to GitHub.
+    #[must_use]
+    pub const fn is_apply(&self) -> bool {
+        self.apply
+    }
+
+    /// Default area label to assign if an issue has none.
+    #[must_use]
+    pub fn default_area(&self) -> Option<&str> {
+        self.default_area.as_deref()
+    }
+
+    /// Resolves the target, rules, and migrations from configuration and CLI overrides.
     ///
     /// # Errors
     ///
     /// Fails when configuration cannot be read or target lacks owner/repo.
-    pub fn resolve(&self) -> Result<(Target, RulesConfig), ResolveError> {
+    pub fn resolve(&self) -> Result<ResolvedCheck, ResolveError> {
         let loaded = load_or_find(self.config_path.as_deref());
-        let (cfg_target, mut rules) = match loaded {
+        let (cfg_target, mut rules, migrations) = match loaded {
             Ok(cfg) => {
                 let target = cfg.target();
-                (Some(target), cfg.github.issues.rules)
+                let migrations = cfg.github.labels.as_ref().map_or_else(
+                    RepoLabelsSpec::default_migrations,
+                    RepoLabelsSpec::resolved_migrations,
+                );
+                (Some(target), cfg.github.issues.rules, migrations)
             }
-            Err(ConfigError::NotFound) => (None, RulesConfig::default()),
+            Err(ConfigError::NotFound) => (
+                None,
+                RulesConfig::default(),
+                RepoLabelsSpec::default_migrations(),
+            ),
             Err(err) => return Err(ResolveError::Config(err)),
         };
 
@@ -120,13 +178,17 @@ impl Arguments {
             rules.membership = false;
         }
 
-        Ok((target, rules))
+        Ok(ResolvedCheck {
+            target,
+            rules,
+            migrations,
+        })
     }
 }
 
 fn command() -> Command {
     Command::new(PROGRAM)
-        .about("Audits the structure and text of repository issues and writes nothing")
+        .about("Audits and migrates the structure and labels of repository issues")
         .arg(
             Arg::new(CONFIG)
                 .long(CONFIG)
@@ -136,8 +198,9 @@ fn command() -> Command {
         .arg(
             Arg::new(OWNER)
                 .long(OWNER)
+                .visible_alias("org")
                 .value_name("OWNER")
-                .help("GitHub repository owner override"),
+                .help("GitHub repository owner or organization override"),
         )
         .arg(
             Arg::new(REPO)
@@ -163,5 +226,27 @@ fn command() -> Command {
                 .long(NO_MEMBERSHIP)
                 .action(ArgAction::SetTrue)
                 .help("Disable Project membership audit"),
+        )
+        .arg(
+            Arg::new(MIGRATE)
+                .long(MIGRATE)
+                .action(ArgAction::SetTrue)
+                .help("Plan or apply issue label migrations to match standard taxonomy"),
+        )
+        .arg(
+            Arg::new(APPLY)
+                .long(APPLY)
+                .action(ArgAction::SetTrue)
+                .requires(MIGRATE)
+                .help(
+                    "Apply issue label migrations directly to GitHub (defaults to dry-run preview)",
+                ),
+        )
+        .arg(
+            Arg::new(DEFAULT_AREA)
+                .long(DEFAULT_AREA)
+                .value_name("AREA")
+                .requires(MIGRATE)
+                .help("Fallback area label for issues missing an area: label"),
         )
 }
