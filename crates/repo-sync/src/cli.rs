@@ -71,6 +71,11 @@ pub enum RepoResolveError {
         /// The tools.toml section (e.g. `[github.labels]`).
         section: &'static str,
     },
+    /// Organization override provided without target repositories.
+    #[error(
+        "organization override provided via --org/--owner, but no target repositories specified (pass --repo or define repositories in tools.toml)"
+    )]
+    NoRepositoriesForOrg,
 }
 
 /// A command line that was not run: an argument clap rejected, or `--help`.
@@ -93,7 +98,7 @@ pub struct Arguments {
     explicit_entities: Option<EntityFilter>,
     config_path: Option<PathBuf>,
     owner: Option<String>,
-    repo: Option<String>,
+    repos: Vec<String>,
 }
 
 /// Resolved repository target and desired configuration specification.
@@ -137,12 +142,17 @@ impl Arguments {
             None
         };
 
+        let repos: Vec<String> = matches
+            .get_many::<String>(REPO)
+            .map(|values| values.cloned().collect())
+            .unwrap_or_default();
+
         Ok(Self {
             mode,
             explicit_entities,
             config_path: matches.get_one::<String>(CONFIG).map(PathBuf::from),
             owner: matches.get_one::<String>(OWNER).cloned(),
-            repo: matches.get_one::<String>(REPO).cloned(),
+            repos,
         })
     }
 
@@ -150,6 +160,18 @@ impl Arguments {
     #[must_use]
     pub const fn mode(&self) -> RepoSyncMode {
         self.mode
+    }
+
+    /// Repositories specified on the command line.
+    #[must_use]
+    pub fn repos(&self) -> &[String] {
+        &self.repos
+    }
+
+    /// Organization or owner override specified on the command line.
+    #[must_use]
+    pub fn owner(&self) -> Option<&str> {
+        self.owner.as_deref()
     }
 
     /// Resolves target and all configured resources from `tools.toml` and CLI flags.
@@ -168,21 +190,21 @@ impl Arguments {
     ///
     /// Fails when a requested entity is not configured or when tools.toml has no repository configuration.
     pub fn resolve_with_config(&self, cfg: Config) -> Result<ResolvedRepo, RepoResolveError> {
+        if self.owner.is_some() && self.repos.is_empty() && cfg.github.repositories.is_empty() {
+            return Err(RepoResolveError::NoRepositoriesForOrg);
+        }
+
         let owner = self
             .owner
             .clone()
             .unwrap_or_else(|| cfg.github.repository.owner.clone());
-        let repo = self
-            .repo
-            .clone()
-            .unwrap_or_else(|| cfg.github.repository.name.clone());
         let project_number = cfg.github.project.as_ref().and_then(|p| p.number);
-        let target = if let Some(explicit_repo) = &self.repo {
-            Target::single(owner, explicit_repo, project_number)
+        let target = if !self.repos.is_empty() {
+            Target::multi(owner, self.repos.clone(), project_number)
         } else if !cfg.github.repositories.is_empty() {
             Target::multi(owner, cfg.github.repositories.clone(), project_number)
         } else {
-            Target::single(owner, repo, project_number)
+            Target::single(owner, cfg.github.repository.name.clone(), project_number)
         };
 
         let spec = cfg.try_into_repo_spec()?;
@@ -268,6 +290,7 @@ fn command() -> Command {
             Arg::new(REPO)
                 .long(REPO)
                 .value_name("REPO")
+                .action(ArgAction::Append)
                 .help("GitHub repository name override"),
         )
 }
@@ -290,7 +313,17 @@ mod tests {
 
         let args =
             Arguments::parse(["repo-sync".into(), "--org".into(), "gatuno-manga".into()]).unwrap();
-        assert_eq!(args.owner.as_deref(), Some("gatuno-manga"));
+        assert_eq!(args.owner(), Some("gatuno-manga"));
+
+        let args_repos = Arguments::parse([
+            "repo-sync".into(),
+            "--repo".into(),
+            "web".into(),
+            "--repo".into(),
+            "api".into(),
+        ])
+        .unwrap();
+        assert_eq!(args_repos.repos(), &["web", "api"]);
     }
 
     #[test]
@@ -431,5 +464,196 @@ mod tests {
             RepoResolveError::Plan(RepoPlanError::Validation(_))
         ));
         assert!(err.to_string().contains("project number is required"));
+    }
+
+    #[test]
+    fn resolve_targets_multiple_repos_from_cli() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args = Arguments::parse([
+            "repo-sync".into(),
+            "--repo".into(),
+            "web".into(),
+            "--repo".into(),
+            "api".into(),
+        ])
+        .unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        let coords: Vec<_> = resolved
+            .target
+            .repo_coords()
+            .iter()
+            .map(|r| (r.owner().to_string(), r.name().to_string()))
+            .collect();
+        assert_eq!(
+            coords,
+            vec![
+                ("jaoppb".to_string(), "web".to_string()),
+                ("jaoppb".to_string(), "api".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_targets_single_repo_from_cli() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args = Arguments::parse(["repo-sync".into(), "--repo".into(), "web".into()]).unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        let coords: Vec<_> = resolved
+            .target
+            .repo_coords()
+            .iter()
+            .map(|r| (r.owner().to_string(), r.name().to_string()))
+            .collect();
+        assert_eq!(coords, vec![("jaoppb".to_string(), "web".to_string())]);
+    }
+
+    #[test]
+    fn resolve_targets_org_and_multiple_repos_from_cli() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args = Arguments::parse([
+            "repo-sync".into(),
+            "--org".into(),
+            "gatuno-manga".into(),
+            "--repo".into(),
+            "web".into(),
+            "--repo".into(),
+            "api".into(),
+        ])
+        .unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        let coords: Vec<_> = resolved
+            .target
+            .repo_coords()
+            .iter()
+            .map(|r| (r.owner().to_string(), r.name().to_string()))
+            .collect();
+        assert_eq!(
+            coords,
+            vec![
+                ("gatuno-manga".to_string(), "web".to_string()),
+                ("gatuno-manga".to_string(), "api".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_targets_org_with_config_repositories() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github]
+            repositories = ["web", "api"]
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args =
+            Arguments::parse(["repo-sync".into(), "--org".into(), "gatuno-manga".into()]).unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        let coords: Vec<_> = resolved
+            .target
+            .repo_coords()
+            .iter()
+            .map(|r| (r.owner().to_string(), r.name().to_string()))
+            .collect();
+        assert_eq!(
+            coords,
+            vec![
+                ("gatuno-manga".to_string(), "web".to_string()),
+                ("gatuno-manga".to_string(), "api".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_fails_loud_when_org_provided_without_target_repositories() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args =
+            Arguments::parse(["repo-sync".into(), "--org".into(), "gatuno-manga".into()]).unwrap();
+        let err = args.resolve_with_config(config).unwrap_err();
+        assert!(matches!(err, RepoResolveError::NoRepositoriesForOrg));
+        assert_eq!(
+            err.to_string(),
+            "organization override provided via --org/--owner, but no target repositories specified (pass --repo or define repositories in tools.toml)"
+        );
+
+        // Also test with explicit repositories = []
+        let toml_empty_repos = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github]
+            repositories = []
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+        "#;
+        let config_empty: Config = toml::from_str(toml_empty_repos).unwrap();
+        let err_empty = args.resolve_with_config(config_empty).unwrap_err();
+        assert!(matches!(err_empty, RepoResolveError::NoRepositoriesForOrg));
+    }
+
+    #[test]
+    fn resolve_falls_back_to_config_repository_when_no_overrides() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args = Arguments::parse(["repo-sync".into()]).unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        let coords: Vec<_> = resolved
+            .target
+            .repo_coords()
+            .iter()
+            .map(|r| (r.owner().to_string(), r.name().to_string()))
+            .collect();
+        assert_eq!(coords, vec![("jaoppb".to_string(), "tools".to_string())]);
     }
 }
