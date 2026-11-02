@@ -2,11 +2,12 @@
 
 use std::fmt;
 
+use crate::config::RulesConfig;
 use crate::domain::card::Card;
 use crate::domain::facts::Missing;
 use crate::domain::issue::{IssueNumber, Status};
 use crate::domain::snapshot::Snapshot;
-use crate::domain::target::target;
+use crate::domain::target::target_with;
 
 /// Why a card moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,20 +212,29 @@ impl Plan {
 }
 
 impl Snapshot {
-    /// The moves and the gaps the rules produce from this snapshot.
+    /// The moves and the gaps the rules produce from this snapshot under default rules.
     #[must_use]
     pub fn plan(&self) -> Plan {
+        self.plan_with(&RulesConfig::default())
+    }
+
+    /// The moves and the gaps the rules produce from this snapshot under `rules`.
+    #[must_use]
+    pub fn plan_with(&self, rules: &RulesConfig) -> Plan {
         let moves = self
             .cards()
-            .filter_map(|card| move_of(self, card))
+            .filter_map(|card| move_of(self, card, rules))
             .collect();
-        let gaps = self.cards().flat_map(|card| gaps_of(self, card)).collect();
+        let gaps = self
+            .cards()
+            .flat_map(|card| gaps_of(self, card, rules))
+            .collect();
         Plan::new(Moves::new(moves), Gaps::new(gaps))
     }
 }
 
-fn move_of(snapshot: &Snapshot, card: &Card) -> Option<Move> {
-    let destination = target(card, snapshot);
+fn move_of(snapshot: &Snapshot, card: &Card, rules: &RulesConfig) -> Option<Move> {
+    let destination = target_with(card, snapshot, rules);
     if destination == card.status() {
         return None;
     }
@@ -236,11 +246,11 @@ fn move_of(snapshot: &Snapshot, card: &Card) -> Option<Move> {
     ))
 }
 
-fn gaps_of(snapshot: &Snapshot, card: &Card) -> Vec<Gap> {
-    if card.is_epic() || target(card, snapshot) != Status::Backlog {
+fn gaps_of(snapshot: &Snapshot, card: &Card, rules: &RulesConfig) -> Vec<Gap> {
+    if card.is_epic() || target_with(card, snapshot, rules) != Status::Backlog {
         return Vec::new();
     }
-    card.missing()
+    card.missing_for(rules)
         .into_iter()
         .map(|missing| Gap::new(card.number().clone(), missing))
         .collect()

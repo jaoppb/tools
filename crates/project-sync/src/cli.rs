@@ -5,7 +5,8 @@ use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
 use tools_core::application::Mode;
-use tools_core::config::{ConfigError, load_or_find};
+use tools_core::config::{ConfigError, RulesConfig, load_or_find};
+use tools_core::domain::{StatusMapping, StatusMappingError};
 
 const PROGRAM: &str = "project-sync";
 const DRY_RUN: &str = "dry-run";
@@ -32,6 +33,8 @@ impl UsageError {
 pub enum ResolveError {
     #[error(transparent)]
     Config(#[from] ConfigError),
+    #[error("invalid status mapping configuration: {0}")]
+    StatusMapping(#[from] StatusMappingError),
     #[error("owner is required (specify via --owner or in tools.toml)")]
     MissingOwner,
     #[error("repository is required (specify via --repo or in tools.toml)")]
@@ -79,16 +82,25 @@ impl Arguments {
         self.mode
     }
 
-    /// Resolves the target from configuration and CLI overrides.
+    /// Resolves target and configuration (status mapping, rules) from tools.toml and CLI overrides.
     ///
     /// # Errors
     ///
-    /// Fails when configuration cannot be found or read, or target lacks owner/repo/project.
-    pub fn resolve(&self) -> Result<Target, ResolveError> {
+    /// Fails when configuration cannot be found or read, or target lacks owner/repo/project,
+    /// or status mapping configuration is invalid.
+    pub fn resolve(&self) -> Result<(Target, StatusMapping, RulesConfig), ResolveError> {
         let loaded = load_or_find(self.config_path.as_deref());
-        let cfg_target = match loaded {
-            Ok(cfg) => Some(cfg.target()),
-            Err(ConfigError::NotFound) => None,
+        let (cfg_target, mapping, rules) = match loaded {
+            Ok(cfg) => {
+                let mapping = cfg
+                    .project()
+                    .map(|p| p.status_mapping())
+                    .transpose()?
+                    .unwrap_or_default();
+                let rules = cfg.rules().clone();
+                (Some(cfg.target()), mapping, rules)
+            }
+            Err(ConfigError::NotFound) => (None, StatusMapping::default(), RulesConfig::default()),
             Err(err) => return Err(ResolveError::Config(err)),
         };
 
@@ -120,7 +132,7 @@ impl Arguments {
             return Err(ResolveError::MissingRepository);
         };
 
-        Ok(target)
+        Ok((target, mapping, rules))
     }
 }
 

@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use crate::config::RulesConfig;
+
 /// A GitHub label, such as `type:feat`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Label(String);
@@ -130,15 +132,6 @@ pub enum Missing {
 }
 
 impl Missing {
-    const ALL: [Self; 6] = [
-        Self::Type,
-        Self::Area,
-        Self::Milestone,
-        Self::Priority,
-        Self::Effort,
-        Self::EffortAboveReady,
-    ];
-
     fn applies_to(self, facts: &Facts) -> bool {
         match self {
             Self::Type => !facts.labels.has_one_type(),
@@ -219,12 +212,35 @@ impl Facts {
         self.labels.is_epic()
     }
 
-    /// What triage still has to set, in a fixed order.
+    /// What triage still has to set under the given rule configuration.
+    #[must_use]
+    pub fn missing_for(&self, rules: &RulesConfig) -> Vec<Missing> {
+        let mut missing = Vec::new();
+        if Missing::Type.applies_to(self) {
+            missing.push(Missing::Type);
+        }
+        if Missing::Area.applies_to(self) {
+            missing.push(Missing::Area);
+        }
+        if Missing::Milestone.applies_to(self) {
+            missing.push(Missing::Milestone);
+        }
+        if rules.priority && Missing::Priority.applies_to(self) {
+            missing.push(Missing::Priority);
+        }
+        if rules.effort {
+            if Missing::Effort.applies_to(self) {
+                missing.push(Missing::Effort);
+            } else if Missing::EffortAboveReady.applies_to(self) {
+                missing.push(Missing::EffortAboveReady);
+            }
+        }
+        missing
+    }
+
+    /// What triage still has to set, under default rules.
     #[must_use]
     pub fn missing(&self) -> Vec<Missing> {
-        Missing::ALL
-            .into_iter()
-            .filter(|missing| missing.applies_to(self))
-            .collect()
+        self.missing_for(&RulesConfig::default())
     }
 }

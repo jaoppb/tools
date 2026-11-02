@@ -53,6 +53,6 @@ fn accepts_target_overrides_and_config() {
         "1",
     ])
     .expect("multiple repo flags parse");
-    let target = multi.resolve().expect("resolves multi-repo target");
+    let (target, _, _) = multi.resolve().expect("resolves multi-repo target");
     assert_eq!(target.repos().len(), 2);
 }

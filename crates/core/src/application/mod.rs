@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use crate::config::RulesConfig;
+
 pub mod audit;
 pub mod repo;
 
@@ -111,13 +113,20 @@ impl fmt::Display for Outcome {
 #[derive(Debug)]
 pub struct Sync<S> {
     state: S,
+    rules: RulesConfig,
 }
 
 impl<S: ProjectState> Sync<S> {
-    /// A sync over this Project.
+    /// A sync over this Project with default rules.
     #[must_use]
-    pub const fn new(state: S) -> Self {
-        Self { state }
+    pub fn new(state: S) -> Self {
+        Self::with_rules(state, RulesConfig::default())
+    }
+
+    /// A sync over this Project with explicit rules.
+    #[must_use]
+    pub const fn with_rules(state: S, rules: RulesConfig) -> Self {
+        Self { state, rules }
     }
 
     /// Reads the Project, plans, and writes the moves in [`Mode::Apply`],
@@ -128,7 +137,7 @@ impl<S: ProjectState> Sync<S> {
     /// Returns [`SyncError`] when the Project cannot be read or a Status cannot
     /// be set. Moves written before a failure stay written.
     pub fn run(&mut self, mode: Mode) -> Result<Outcome, SyncError> {
-        let plan = self.state.snapshot()?.plan();
+        let plan = self.state.snapshot()?.plan_with(&self.rules);
         match mode {
             Mode::Apply => self.apply(&plan)?,
             Mode::Preview => (),

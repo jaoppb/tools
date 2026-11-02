@@ -6,7 +6,7 @@ use tools_core::adapters::github::parse::{
 use tools_core::adapters::github::{GhError, GhRunner, Target};
 use tools_core::domain::{Cards, Closing, IssueNumber, Plan, Repo, Snapshot};
 
-use crate::support::{gaps_of, moves_of, number};
+use crate::support::{gaps_of, moves_of, number, strict_rules};
 
 const LIVE: &str = include_str!("../../fixtures/items_live.json");
 const EDGE: &str = include_str!("../../fixtures/items_edge.json");
@@ -20,6 +20,14 @@ const ITEMS_ORG: &str = include_str!("../../fixtures/items_org.json");
 const STATUS_FIELD_ORG: &str = include_str!("../../fixtures/status_field_org.json");
 
 fn plan_of(json: &str, closing: &[u64]) -> Result<Plan, GhError> {
+    plan_of_with(json, closing, &tools_core::config::RulesConfig::default())
+}
+
+fn plan_of_with(
+    json: &str,
+    closing: &[u64],
+    rules: &tools_core::config::RulesConfig,
+) -> Result<Plan, GhError> {
     let page = parse_items(json, &Target::cosmo())?;
     let repo = Target::cosmo().repo_coords().remove(0);
     let issues = closing
@@ -27,7 +35,7 @@ fn plan_of(json: &str, closing: &[u64]) -> Result<Plan, GhError> {
         .map(|raw| IssueNumber::new(repo.clone(), *raw))
         .collect();
     let cards = Cards::new(page.cards().to_vec());
-    Ok(Snapshot::new(cards, Closing::new(issues)).plan())
+    Ok(Snapshot::new(cards, Closing::new(issues)).plan_with(rules))
 }
 
 #[test]
@@ -72,7 +80,7 @@ fn an_item_without_a_status_is_in_backlog() {
 
 #[test]
 fn a_missing_priority_is_none() {
-    let plan = plan_of(EDGE, &[]).expect("the edge page parses");
+    let plan = plan_of_with(EDGE, &[], &strict_rules()).expect("the edge page parses");
     assert_eq!(gaps_of(&plan), ["cosmo#104 needs triage: no Priority"]);
 }
 
@@ -190,7 +198,7 @@ fn an_unknown_status_name_is_reported_with_its_value() {
     let failure = parse_items(UNKNOWN_STATUS, &Target::cosmo()).expect_err("Doing is unknown");
     assert_eq!(
         failure.to_string(),
-        "the Project has a Status named Doing that this tool does not know"
+        "the Project has a Status named Doing that this tool does not know; configure a column alias in tools.toml under [github.project.status_mapping]"
     );
 }
 

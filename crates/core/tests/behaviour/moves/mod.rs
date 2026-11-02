@@ -4,7 +4,7 @@ use tools_core::adapters::memory::MemoryProject;
 use tools_core::application::{Mode, Sync};
 use tools_core::domain::Status;
 
-use crate::support::{moves_of, number, open_card, snapshot, without_priority};
+use crate::support::{moves_of, number, open_card, snapshot, strict_rules, without_priority};
 
 const ANSWERS: &str = "the in-memory Project answers";
 
@@ -89,7 +89,7 @@ fn the_report_lists_each_move_and_each_gap() {
         open_card(20, Status::Backlog),
         without_priority(30, Status::Backlog),
     ];
-    let mut sync = Sync::new(MemoryProject::new(snapshot(cards, &[])));
+    let mut sync = Sync::with_rules(MemoryProject::new(snapshot(cards, &[])), strict_rules());
     let report = sync.run(Mode::Preview).expect(ANSWERS).to_string();
     let expected = "#20 Backlog -> Ready (gate holds)\n\
                     #30 needs triage: no Priority\n\

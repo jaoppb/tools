@@ -2,6 +2,9 @@
 
 use std::fmt;
 
+pub mod status_mapping;
+pub use status_mapping::{StatusMapping, StatusMappingError};
+
 use crate::domain::repo::Repo;
 
 /// The repository-qualified number of a GitHub issue. It is the only identity in the domain.
@@ -42,7 +45,7 @@ impl fmt::Display for IssueNumber {
 }
 
 /// Where an issue is in its life, as the Project's Status field says.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Status {
     /// Not ready to start.
     Backlog,
@@ -81,6 +84,28 @@ impl Status {
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|status| status.name() == name)
+    }
+
+    /// The status matching `name` case-insensitively, supporting space, hyphen, or underscore separators.
+    #[must_use]
+    pub fn from_name_case_insensitive(name: &str) -> Option<Self> {
+        let trimmed = name.trim();
+        Self::ALL.into_iter().find(|status| {
+            status.name().eq_ignore_ascii_case(trimmed)
+                || match status {
+                    Self::InProgress => {
+                        trimmed.eq_ignore_ascii_case("in_progress")
+                            || trimmed.eq_ignore_ascii_case("in-progress")
+                            || trimmed.eq_ignore_ascii_case("inprogress")
+                    }
+                    Self::InReview => {
+                        trimmed.eq_ignore_ascii_case("in_review")
+                            || trimmed.eq_ignore_ascii_case("in-review")
+                            || trimmed.eq_ignore_ascii_case("inreview")
+                    }
+                    _ => false,
+                }
+        })
     }
 
     /// Whether work has started: the issue is In progress or In review.
