@@ -1,0 +1,115 @@
+name: 'Tools CLI Setup and Quality Audit'
+description: 'Install tools CLI utilities (issues-check, repo-sync, project-sync) from pre-compiled release binaries and optionally execute compliance checks.'
+author: 'jaoppb'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
+inputs:
+  version:
+    description: 'Version of tools binaries to install (e.g. "v0.1.0", "v0.2.0", or "latest")'
+    required: false
+    default: 'latest'
+  tools:
+    description: 'Comma-separated list of tools to install (e.g. "issues-check,repo-sync,project-sync" or "all")'
+    required: false
+    default: 'all'
+  install-dir:
+    description: 'Directory where binaries are installed'
+    required: false
+    default: '${{ runner.temp }}/tools-bin'
+  github-token:
+    description: 'GitHub token for release downloads and running audits'
+    required: false
+    default: ${{ github.token }}
+  cache:
+    description: 'Enable cross-run caching of installed binaries'
+    required: false
+    default: 'true'
+  check-issues:
+    description: 'Execute issues-check audit immediately after installation'
+    required: false
+    default: 'false'
+  check-repo:
+    description: 'Execute repo-sync --check audit immediately after installation'
+    required: false
+    default: 'false'
+  issues-check-args:
+    description: 'Additional CLI arguments passed to issues-check'
+    required: false
+    default: ''
+  repo-sync-args:
+    description: 'Additional CLI arguments passed to repo-sync --check'
+    required: false
+    default: ''
+
+outputs:
+  installed-version:
+    description: 'Resolved version of the installed tools'
+    value: ${{ steps.resolve-version.outputs.version }}
+  tools-dir:
+    description: 'Directory where tools binaries are installed'
+    value: ${{ inputs.install-dir }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve Version
+      id: resolve-version
+      shell: bash
+      env:
+        TOOLS_VERSION: ${{ inputs.version }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        bash "${ACTION_PATH}/scripts/install-tools.sh" --resolve-version "$TOOLS_VERSION"
+
+    - name: Cache Tools Binaries
+      if: inputs.cache == 'true'
+      id: cache-tools
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.install-dir }}
+        key: tools-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve-version.outputs.version }}-${{ inputs.tools }}
+
+    - name: Install Tools Binaries
+      id: install
+      shell: bash
+      env:
+        TOOLS_VERSION: ${{ steps.resolve-version.outputs.version }}
+        TOOLS_LIST: ${{ inputs.tools }}
+        DEST_DIR: ${{ inputs.install-dir }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        CACHE_HIT: ${{ steps.cache-tools.outputs.cache-hit }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        bash "${ACTION_PATH}/scripts/install-tools.sh" "$TOOLS_VERSION" "$TOOLS_LIST" "$DEST_DIR"
+
+    - name: Add to PATH
+      shell: bash
+      env:
+        DEST_DIR: ${{ inputs.install-dir }}
+      run: |
+        echo "$DEST_DIR" >> "$GITHUB_PATH"
+
+    - name: Run issues-check
+      if: inputs.check-issues == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        EXTRA_ARGS: ${{ inputs.issues-check-args }}
+      run: |
+        issues-check $EXTRA_ARGS
+
+    - name: Run repo-sync --check
+      if: inputs.check-repo == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        EXTRA_ARGS: ${{ inputs.repo-sync-args }}
+      run: |
+        repo-sync --check $EXTRA_ARGS
