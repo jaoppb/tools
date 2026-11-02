@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use tools_core::adapters::github::Target;
 use tools_core::application::IssueMigrationMode;
 use tools_core::config::{ConfigError, RepoLabelsSpec, RulesConfig, load_or_find};
+use tools_core::domain::{CANONICAL_TYPES, canonical_type_label};
 
 const PROGRAM: &str = "issues-check";
 const CONFIG: &str = "config";
@@ -18,6 +19,7 @@ const NO_MEMBERSHIP: &str = "no-membership";
 const MIGRATE: &str = "migrate";
 const APPLY: &str = "apply";
 const DEFAULT_AREA: &str = "default-area";
+const DEFAULT_TYPE: &str = "default-type";
 
 /// A command line that was not run: an argument clap rejected, or `--help`.
 #[derive(Debug, thiserror::Error)]
@@ -55,6 +57,7 @@ pub struct Arguments {
     migrate: bool,
     apply: bool,
     default_area: Option<String>,
+    default_type: Option<String>,
 }
 
 /// Resolved target, audit rules, and label migrations from configuration and CLI overrides.
@@ -93,6 +96,7 @@ impl Arguments {
             migrate: matches.get_flag(MIGRATE),
             apply: matches.get_flag(APPLY),
             default_area: matches.get_one::<String>(DEFAULT_AREA).cloned(),
+            default_type: matches.get_one::<String>(DEFAULT_TYPE).cloned(),
         })
     }
 
@@ -122,6 +126,12 @@ impl Arguments {
     #[must_use]
     pub fn default_area(&self) -> Option<&str> {
         self.default_area.as_deref()
+    }
+
+    /// Default type label to assign if an issue has none.
+    #[must_use]
+    pub fn default_type(&self) -> Option<&str> {
+        self.default_type.as_deref()
     }
 
     /// Resolves the target, rules, and migrations from configuration and CLI overrides.
@@ -249,4 +259,21 @@ fn command() -> Command {
                 .requires(MIGRATE)
                 .help("Fallback area label for issues missing an area: label"),
         )
+        .arg(
+            Arg::new(DEFAULT_TYPE)
+                .long(DEFAULT_TYPE)
+                .value_name("TYPE")
+                .requires(MIGRATE)
+                .value_parser(validate_default_type)
+                .help("Fallback type label for issues missing a type: label"),
+        )
+}
+
+fn validate_default_type(value: &str) -> Result<String, String> {
+    canonical_type_label(value).ok_or_else(|| {
+        format!(
+            "invalid default type '{value}'; must be one of: {}",
+            CANONICAL_TYPES.join(", ")
+        )
+    })
 }

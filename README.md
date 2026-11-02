@@ -224,7 +224,7 @@ Workspace recipes are managed with `just`:
 | `just repo-bootstrap` | Reconciles repository configuration (alias for `repo-sync`) | `just repo-bootstrap` |
 | `just org-sync` | Synchronizes configuration across an organization | `just org-sync org="my-org"` |
 | **Migration & Releases** | | |
-| `just issues-migrate` | Audits or applies legacy label migrations to canonical taxonomy | `just issues-migrate apply=true default_area=area:core` |
+| `just issues-migrate` | Audits or applies legacy label migrations to canonical taxonomy | `just issues-migrate --apply --default-area area:core --default-type type:chore` |
 | `just bump-version` | Bumps workspace version, updates `Cargo.lock`, tags, and commits | `just bump-version patch` |
 
 ---

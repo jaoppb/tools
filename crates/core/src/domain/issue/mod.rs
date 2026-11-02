@@ -7,6 +7,29 @@ pub mod status_mapping;
 pub use migration::{IssueMigrationAction, IssueMigrationPlan};
 pub use status_mapping::{StatusMapping, StatusMappingError};
 
+/// Canonical issue types in the repository taxonomy.
+pub const CANONICAL_TYPES: &[&str] = &["feat", "fix", "chore", "docs", "refactor", "spike"];
+
+/// Validates whether a type name or label belongs to the canonical taxonomy.
+#[must_use]
+pub fn is_canonical_type(name: &str) -> bool {
+    let trimmed = name.trim();
+    let bare = trimmed.strip_prefix("type:").unwrap_or(trimmed);
+    CANONICAL_TYPES.contains(&bare)
+}
+
+/// Normalizes a type name or label to its canonical `type:<name>` format if valid.
+#[must_use]
+pub fn canonical_type_label(name: &str) -> Option<String> {
+    let trimmed = name.trim();
+    let bare = trimmed.strip_prefix("type:").unwrap_or(trimmed);
+    if CANONICAL_TYPES.contains(&bare) {
+        Some(format!("type:{bare}"))
+    } else {
+        None
+    }
+}
+
 use crate::domain::repo::Repo;
 
 /// The repository-qualified number of a GitHub issue. It is the only identity in the domain.
@@ -228,5 +251,22 @@ mod tests {
         let num = IssueNumber::new(repo.clone(), 99);
         assert_eq!(num.value(), 99);
         assert_eq!(num.repo(), &repo);
+    }
+
+    #[test]
+    fn canonical_type_validation_and_normalization() {
+        assert!(is_canonical_type("feat"));
+        assert!(is_canonical_type("type:fix"));
+        assert!(is_canonical_type(" chore "));
+        assert!(!is_canonical_type("invalid"));
+        assert!(!is_canonical_type("type:unknown"));
+
+        assert_eq!(canonical_type_label("feat"), Some("type:feat".to_string()));
+        assert_eq!(
+            canonical_type_label("type:fix"),
+            Some("type:fix".to_string())
+        );
+        assert_eq!(canonical_type_label("docs"), Some("type:docs".to_string()));
+        assert_eq!(canonical_type_label("invalid"), None);
     }
 }

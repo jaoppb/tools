@@ -44,11 +44,25 @@ fn accepts_migration_flags() {
     assert!(migrate.is_migrate());
     assert!(!migrate.is_apply());
     assert_eq!(migrate.default_area(), None);
+    assert_eq!(migrate.default_type(), None);
 
-    let apply = parse(&["--migrate", "--apply", "--default-area", "core"]).expect("apply parses");
+    let apply = parse(&[
+        "--migrate",
+        "--apply",
+        "--default-area",
+        "core",
+        "--default-type",
+        "chore",
+    ])
+    .expect("apply parses");
     assert!(apply.is_migrate());
     assert!(apply.is_apply());
     assert_eq!(apply.default_area(), Some("core"));
+    assert_eq!(apply.default_type(), Some("type:chore"));
+
+    let prefixed =
+        parse(&["--migrate", "--default-type", "type:feat"]).expect("prefixed type parses");
+    assert_eq!(prefixed.default_type(), Some("type:feat"));
 
     let org = parse(&["--org", "gatuno-manga", "--repo", "api"]).expect("org parses");
     let resolved = org.resolve().expect("resolves org target");
@@ -56,11 +70,27 @@ fn accepts_migration_flags() {
 }
 
 #[test]
-fn rejects_apply_or_default_area_without_migrate() {
+fn rejects_apply_or_default_area_or_default_type_without_migrate() {
     let failure1 = parse(&["--apply"]).expect_err("apply without migrate fails");
     assert_eq!(failure1.exit_code(), 2);
 
     let failure2 =
         parse(&["--default-area", "core"]).expect_err("default-area without migrate fails");
     assert_eq!(failure2.exit_code(), 2);
+
+    let failure3 =
+        parse(&["--default-type", "chore"]).expect_err("default-type without migrate fails");
+    assert_eq!(failure3.exit_code(), 2);
+}
+
+#[test]
+fn rejects_invalid_default_type() {
+    let failure =
+        parse(&["--migrate", "--default-type", "invalid"]).expect_err("invalid default type fails");
+    assert_eq!(failure.exit_code(), 2);
+    assert!(
+        failure
+            .to_string()
+            .contains("invalid default type 'invalid'")
+    );
 }
