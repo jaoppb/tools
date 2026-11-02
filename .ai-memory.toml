@@ -1,0 +1,27 @@
+# Opt-in marker for ai-memory: only a repository that carries this file is
+# captured by the agents' lifecycle hooks. No server address, token or
+# hostname belongs here.
+workspace = "default"
+project = "jaoppb-tools"
+drop_subagent_captures = "true"
+
+[briefing]
+inject_on_session_start = "true"
+max_chars = 4000
+
+[capture]
+ignore_paths = [
+  "target/**",
+  "AGENTS.md",
+  "docs/**",
+  "tools.toml",
+  "arch-lint.toml",
+  ".env",
+  "**/.env",
+  "*.pfx",
+  "**/*.pfx",
+  "*.p12",
+  "**/*.p12",
+  "*.db*",
+  "**/*.db*",
+]
