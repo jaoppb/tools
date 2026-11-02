@@ -1,0 +1,16 @@
+# Additional reviews of one pull request.
+query($cursor: String) {
+  repository(owner: "@OWNER@", name: "@REPOSITORY@") {
+    item: pullRequest(number: @NUMBER@) {
+      comments: reviews(first: 100, after: $cursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          body
+        }
+      }
+    }
+  }
+}

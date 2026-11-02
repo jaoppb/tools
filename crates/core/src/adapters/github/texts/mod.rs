@@ -3,21 +3,15 @@
 
 use crate::adapters::github::cursor_fields;
 use crate::adapters::github::error::GhError;
-use crate::adapters::github::parse::{TextsPage, parse_issue_texts, parse_pull_texts};
+use crate::adapters::github::parse::{
+    CutOff, ParsedTextsPage, Tail, TextsPage, parse_issue_page, parse_item_comments,
+    parse_pull_page, parse_pull_review_threads, parse_thread_comments,
+};
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
 use crate::application::{AuditError, RepositoryText};
-use crate::domain::{Repo, TextItem, Texts};
-
-/// One kind of item to read: its query, its parser and what to call it in a
-/// message.
-struct Feed {
-    query: String,
-    repo: Repo,
-    parse: fn(&str, &Repo) -> Result<TextsPage, GhError>,
-    what: &'static str,
-}
+use crate::domain::{IssueNumber, Repo, Surface, TextItem, Texts};
 
 /// The pages of one kind read so far. It accepts them only when together they
 /// are every issue or pull request the repository says it has.
@@ -81,38 +75,132 @@ impl GhText {
     fn read(&self) -> Result<Texts, GhError> {
         let mut items = Vec::new();
         for repo in self.target.repos() {
-            let issues = Feed {
-                query: query::texts_issues_for_repo(&self.target, repo),
-                repo: repo.clone(),
-                parse: parse_issue_texts,
-                what: "issues",
-            };
-            let pulls = Feed {
-                query: query::texts_pulls_for_repo(&self.target, repo),
-                repo: repo.clone(),
-                parse: parse_pull_texts,
-                what: "pull requests",
-            };
-            items.extend(self.feed(&issues)?);
-            items.extend(self.feed(&pulls)?);
+            let issues_query = query::texts_issues_for_repo(&self.target, repo);
+            let pulls_query = query::texts_pulls_for_repo(&self.target, repo);
+            items.extend(self.feed_issues(&issues_query, repo)?);
+            items.extend(self.feed_pulls(&pulls_query, repo)?);
         }
         Ok(Texts::new(items))
     }
 
-    fn feed(&self, feed: &Feed) -> Result<Vec<TextItem>, GhError> {
-        self.gather(feed, GatheredTexts::default())?
-            .into_items(feed.what)
+    fn feed_issues(&self, query: &str, repo: &Repo) -> Result<Vec<TextItem>, GhError> {
+        self.gather(query, repo, parse_issue_page, GatheredTexts::default())?
+            .into_items("issues")
     }
 
-    fn gather(&self, feed: &Feed, gathered: GatheredTexts) -> Result<GatheredTexts, GhError> {
+    fn feed_pulls(&self, query: &str, repo: &Repo) -> Result<Vec<TextItem>, GhError> {
+        self.gather(query, repo, parse_pull_page, GatheredTexts::default())?
+            .into_items("pull requests")
+    }
+
+    fn gather<P>(
+        &self,
+        query: &str,
+        repo: &Repo,
+        parse: P,
+        gathered: GatheredTexts,
+    ) -> Result<GatheredTexts, GhError>
+    where
+        P: Fn(&str, &Repo) -> Result<ParsedTextsPage, GhError>,
+    {
         let cursor = gathered.next.as_deref();
-        let reply = self.runner.graphql(&feed.query, &cursor_fields(cursor))?;
-        let page = (feed.parse)(&reply, &feed.repo)?;
-        let gathered = gathered.with(&page);
+        let reply = self.runner.graphql(query, &cursor_fields(cursor))?;
+        let parsed = parse(&reply, repo)?;
+        let (page, cut_offs) = parsed.into_parts();
+        let mut page_items = page.items().to_vec();
+        for cut_off in cut_offs {
+            page_items.extend(self.paginate_cut_off(repo, cut_off)?);
+        }
+        let full_page = TextsPage::new(
+            page_items,
+            page.next().map(str::to_owned),
+            page.read(),
+            page.total(),
+        );
+        let gathered = gathered.with(&full_page);
         match gathered.next {
-            Some(_) => self.gather(feed, gathered),
+            Some(_) => self.gather(query, repo, parse, gathered),
             None => Ok(gathered),
         }
+    }
+
+    fn paginate_cut_off(&self, repo: &Repo, cut_off: CutOff) -> Result<Vec<TextItem>, GhError> {
+        match cut_off {
+            CutOff::IssueComments(number, tail) => {
+                let query = query::text_issue_comments_for_repo(&self.target, repo, number.value());
+                self.paginate_connection(&number, "comments", tail, |cursor| {
+                    let reply = self.runner.graphql(&query, &cursor_fields(Some(cursor)))?;
+                    parse_item_comments(&reply, &number, Surface::Comment)
+                })
+            }
+            CutOff::PullComments(number, tail) => {
+                let query = query::text_pull_comments_for_repo(&self.target, repo, number.value());
+                self.paginate_connection(&number, "comments", tail, |cursor| {
+                    let reply = self.runner.graphql(&query, &cursor_fields(Some(cursor)))?;
+                    parse_item_comments(&reply, &number, Surface::Comment)
+                })
+            }
+            CutOff::PullReviews(number, tail) => {
+                let query = query::text_pull_reviews_for_repo(&self.target, repo, number.value());
+                self.paginate_connection(&number, "reviews", tail, |cursor| {
+                    let reply = self.runner.graphql(&query, &cursor_fields(Some(cursor)))?;
+                    parse_item_comments(&reply, &number, Surface::Review)
+                })
+            }
+            CutOff::PullThreads(number, tail) => {
+                let query = query::text_pull_threads_for_repo(&self.target, repo, number.value());
+                let mut extra = Vec::new();
+                let mut current_tail = tail;
+                while current_tail.is_cut_off() {
+                    let cursor = current_tail.cursor().ok_or_else(|| GhError::Incomplete {
+                        what: format!("{number} has more review threads than the page returned"),
+                    })?;
+                    let reply = self.runner.graphql(&query, &cursor_fields(Some(cursor)))?;
+                    let (items, thread_cut_offs, next_tail) =
+                        parse_pull_review_threads(&reply, &number)?;
+                    extra.extend(items);
+                    for nested in thread_cut_offs {
+                        extra.extend(self.paginate_cut_off(repo, nested)?);
+                    }
+                    current_tail = next_tail;
+                }
+                Ok(extra)
+            }
+            CutOff::ThreadComments(number, thread_id, tail) => {
+                let id = thread_id.ok_or_else(|| GhError::BadReply {
+                    reason: format!("{number} review thread missing id in reply"),
+                })?;
+                self.paginate_connection(&number, "comments in a review thread", tail, |cursor| {
+                    let fields = [format!("id={id}"), format!("cursor={cursor}")];
+                    let reply = self
+                        .runner
+                        .graphql(query::text_thread_comments(), &fields)?;
+                    parse_thread_comments(&reply, &number)
+                })
+            }
+        }
+    }
+
+    fn paginate_connection<F>(
+        &self,
+        number: &IssueNumber,
+        what: &str,
+        mut tail: Tail,
+        mut fetch_page: F,
+    ) -> Result<Vec<TextItem>, GhError>
+    where
+        F: FnMut(&str) -> Result<(Vec<TextItem>, Tail), GhError>,
+    {
+        let mut extra = Vec::new();
+        while tail.is_cut_off() {
+            let cursor = tail.cursor().ok_or_else(|| GhError::Incomplete {
+                what: format!("{number} has more {what} than the page returned"),
+            })?;
+            let (items, next_tail) = fetch_page(cursor)?;
+            extra.extend(items);
+            tail = next_tail;
+        }
+        Ok(extra)
     }
 }
 

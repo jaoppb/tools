@@ -1,0 +1,30 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "cursor_pr_t2"
+          },
+          "nodes": [
+            {
+              "id": "PRRT_2",
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                },
+                "nodes": [
+                  {
+                    "body": "Thread comment from paginated thread"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

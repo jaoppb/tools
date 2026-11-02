@@ -1,0 +1,25 @@
+# Additional review threads of one pull request.
+query($cursor: String) {
+  repository(owner: "@OWNER@", name: "@REPOSITORY@") {
+    pullRequest(number: @NUMBER@) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          comments(first: 100) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              body
+            }
+          }
+        }
+      }
+    }
+  }
+}

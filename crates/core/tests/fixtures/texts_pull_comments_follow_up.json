@@ -1,0 +1,19 @@
+{
+  "data": {
+    "repository": {
+      "item": {
+        "comments": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "cursor_pr_c2"
+          },
+          "nodes": [
+            {
+              "body": "Follow-up comment on pull 7"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

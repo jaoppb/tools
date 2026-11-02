@@ -95,20 +95,85 @@ pub(super) struct Threads {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct Thread {
+    pub(super) id: Option<String>,
     pub(super) comments: Bodies,
 }
 
 /// The `pageInfo` of a nested connection. The value is kept as JSON so that
 /// anything but an explicit `false` counts as cut off.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Tail {
+pub struct Tail {
     has_next_page: serde_json::Value,
+    end_cursor: Option<String>,
 }
 
 impl Tail {
     /// Whether the connection has more nodes than the page returned.
-    pub(super) const fn is_cut_off(&self) -> bool {
+    #[must_use]
+    pub const fn is_cut_off(&self) -> bool {
         !matches!(self.has_next_page, serde_json::Value::Bool(false))
     }
+
+    /// The cursor of the next page, if there is one.
+    #[must_use]
+    pub fn cursor(&self) -> Option<&str> {
+        self.end_cursor.as_deref()
+    }
+}
+
+/// A unified response for additional comments or reviews using the `item` alias.
+#[derive(Debug, Deserialize)]
+pub(super) struct ItemCommentsReply {
+    pub(super) data: ItemCommentsAnswer,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ItemCommentsAnswer {
+    pub(super) repository: ItemCommentsRepo,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ItemCommentsRepo {
+    pub(super) item: Option<CommentsNode>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct CommentsNode {
+    pub(super) comments: Bodies,
+}
+
+/// A response for additional review threads of a pull request.
+#[derive(Debug, Deserialize)]
+pub(super) struct PullThreadsReply {
+    pub(super) data: PullThreadsAnswer,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PullThreadsAnswer {
+    pub(super) repository: PullThreadsRepo,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PullThreadsRepo {
+    pub(super) pull_request: Option<ThreadsNode>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ThreadsNode {
+    pub(super) review_threads: Threads,
+}
+
+/// A response for additional comments of a single review thread.
+#[derive(Debug, Deserialize)]
+pub(super) struct ThreadCommentsReply {
+    pub(super) data: ThreadCommentsAnswer,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ThreadCommentsAnswer {
+    pub(super) node: Option<CommentsNode>,
 }
