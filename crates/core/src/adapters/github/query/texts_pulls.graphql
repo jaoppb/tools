@@ -14,18 +14,31 @@ query($cursor: String) {
         title
         body
         comments(first: 50) {
-          pageInfo { hasNextPage }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
           nodes { body }
         }
         reviews(first: 50) {
-          pageInfo { hasNextPage }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
           nodes { body }
         }
         reviewThreads(first: 50) {
-          pageInfo { hasNextPage }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
           nodes {
+            id
             comments(first: 50) {
-              pageInfo { hasNextPage }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
               nodes { body }
             }
           }

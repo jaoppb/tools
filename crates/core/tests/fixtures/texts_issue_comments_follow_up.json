@@ -1,0 +1,19 @@
+{
+  "data": {
+    "repository": {
+      "item": {
+        "comments": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "cursor_issue_c2"
+          },
+          "nodes": [
+            {
+              "body": "Follow-up comment on issue 2"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

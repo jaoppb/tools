@@ -18,7 +18,11 @@ pub use crate::adapters::github::parse::repo::{
     RepoLabelsPage, RepoMilestonesPage, parse_repo_labels, parse_repo_milestones,
     parse_repo_project, parse_repo_settings,
 };
-pub use crate::adapters::github::parse::texts::{TextsPage, parse_issue_texts, parse_pull_texts};
+pub use crate::adapters::github::parse::texts::{
+    CutOff, ParsedTextsPage, Tail, TextsPage, parse_issue_page, parse_issue_texts,
+    parse_item_comments, parse_pull_page, parse_pull_review_threads, parse_pull_texts,
+    parse_thread_comments,
+};
 pub use crate::adapters::github::parse::write::{StatusField, parse_item_id, parse_status_field};
 
 /// Wraps a JSON failure as an unreadable answer.

@@ -1,0 +1,16 @@
+# Additional comments of one issue.
+query($cursor: String) {
+  repository(owner: "@OWNER@", name: "@REPOSITORY@") {
+    item: issue(number: @NUMBER@) {
+      comments(first: 100, after: $cursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          body
+        }
+      }
+    }
+  }
+}
