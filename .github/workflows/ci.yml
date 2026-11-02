@@ -75,3 +75,27 @@ jobs:
 
       - name: Run nix flake check
         run: nix flake check
+
+  action-test:
+    name: Test Composite Action
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Test Composite Action
+        uses: ./
+        with:
+          version: 'v0.1.0'
+          check-issues: 'true'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify installed binaries on PATH
+        run: |
+          issues-check --help
+          repo-sync --help
+          project-sync --help
