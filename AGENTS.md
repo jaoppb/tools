@@ -18,7 +18,7 @@ This repository is a monorepo for developer tools, repository management utiliti
   - Assign the target milestone (`v0.1.0`, `v0.2.0`, etc.).
   - Link dependencies using native GitHub blocked-by links and list them under `Dependencies` if needed.
 - **Branches, Commits, and Pull Requests.**
-  - Branch naming: `<type>/<issue>` or `<type>/<issue>-<slug>` (e.g., `feat/7`, `chore/1-bootstrap-issue-workflow`, `feat/12-github-graphql-client`).
+  - Branch naming: `<type>/<issue>` (e.g., `feat/7`, `chore/1`, `docs/31`).
   - Commit title: `type: subject (#issue)`.
   - Pull request title: `type: subject (#issue)`.
   - Closing keywords: Use `Closes #issue` in the PR body and the branch's final commit. Use `Refs #issue` for intermediate commits.
