@@ -190,14 +190,14 @@ pub struct RulesConfig {
     /// Parent requirement rule (every non-epic must have a parent).
     #[serde(default = "default_true", alias = "require_parent")]
     pub parent: bool,
-    /// References / text rules (ADR number and SPDD path checks).
-    #[serde(default = "default_true")]
+    /// References / text rules (deprecated; legacy Cosmo ADR/SPDD checks removed).
+    #[serde(default)]
     pub references: bool,
     /// Release issue rules.
     #[serde(default = "default_true")]
     pub release: bool,
-    /// Text rules (alias / companion for references).
-    #[serde(default = "default_true")]
+    /// Text rules (deprecated; legacy Cosmo ADR/SPDD checks removed).
+    #[serde(default)]
     pub text: bool,
     /// Priority requirement rule for Ready gate.
     #[serde(default)]
@@ -226,9 +226,9 @@ impl Default for RulesConfig {
             membership: true,
             milestone: true,
             parent: true,
-            references: true,
+            references: false,
             release: true,
-            text: true,
+            text: false,
             priority: false,
             effort: false,
             area_prefixes: default_area_prefixes(),

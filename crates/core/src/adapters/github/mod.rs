@@ -19,7 +19,7 @@ pub use crate::adapters::github::project::GhProject;
 pub use crate::adapters::github::repo::GhRepo;
 pub use crate::adapters::github::runner::GhRunner;
 pub use crate::adapters::github::target::Target;
-pub use crate::adapters::github::texts::{GatheredTexts, GhText};
+pub use crate::adapters::github::texts::GatheredTexts;
 
 pub(crate) fn cursor_fields(cursor: Option<&str>) -> Vec<String> {
     cursor

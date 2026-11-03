@@ -13,5 +13,5 @@ pub mod violation;
 pub use crate::domain::audit::release::Release;
 pub use crate::domain::audit::survey::issue::{BlockedBy, Placement, TreeIssue};
 pub use crate::domain::audit::survey::{IssueTree, Members, Survey};
-pub use crate::domain::audit::text::{Reference, Surface, Text, TextItem, Texts};
+pub use crate::domain::audit::text::{Surface, Text, TextItem, Texts};
 pub use crate::domain::audit::violation::{Cycle, Rule, Violation, Violations};

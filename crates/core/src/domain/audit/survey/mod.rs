@@ -4,7 +4,6 @@ pub mod issue;
 
 use crate::domain::audit::rules;
 use crate::domain::audit::survey::issue::TreeIssue;
-use crate::domain::audit::text::{TextItem, Texts};
 use crate::domain::audit::violation::Violations;
 use crate::domain::issue::IssueNumber;
 
@@ -64,24 +63,18 @@ impl Members {
     }
 }
 
-/// The repository's issues, the Project's items and the text of the issues and
-/// pull requests: all the audit sees.
+/// The repository's issues and the Project's items: all the audit sees.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Survey {
     issues: IssueTree,
     members: Members,
-    texts: Texts,
 }
 
 impl Survey {
-    /// A survey of these issues, Project items and texts.
+    /// A survey of these issues and Project items.
     #[must_use]
-    pub const fn new(issues: IssueTree, members: Members, texts: Texts) -> Self {
-        Self {
-            issues,
-            members,
-            texts,
-        }
+    pub const fn new(issues: IssueTree, members: Members) -> Self {
+        Self { issues, members }
     }
 
     /// Every issue, open and closed.
@@ -104,11 +97,6 @@ impl Survey {
     #[must_use]
     pub fn is_member(&self, number: &IssueNumber) -> bool {
         self.members.contains(number)
-    }
-
-    /// Every text of an issue or a pull request, open or closed.
-    pub fn texts(&self) -> impl Iterator<Item = &TextItem> {
-        self.texts.iter()
     }
 
     /// Every rule broken, sorted by issue number and then by rule.

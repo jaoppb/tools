@@ -3,7 +3,6 @@
 
 use std::fmt;
 
-use crate::domain::audit::text::Surface;
 use crate::domain::issue::IssueNumber;
 
 /// The issues of one blocked-by cycle, lowest number first.
@@ -48,10 +47,6 @@ pub enum Rule {
     Cycle(Cycle),
     /// The issue is not an item of the Project.
     NotInProject,
-    /// This surface of the issue or pull request names an ADR by an old number.
-    OldAdrNumber(Surface),
-    /// This surface of the issue or pull request names a numbered `spdd/` file.
-    DeletedSpddPath(Surface),
 }
 
 impl Rule {
@@ -69,8 +64,6 @@ impl Rule {
             Self::BlocksEarlierRelease(_) => "blocks-earlier-release",
             Self::Cycle(_) => "blocked-by-cycle",
             Self::NotInProject => "not-in-project",
-            Self::OldAdrNumber(_) => "old-adr-number",
-            Self::DeletedSpddPath(_) => "deleted-spdd-path",
         }
     }
 }
@@ -104,23 +97,7 @@ fn describe(rule: &Rule, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         }
         Rule::Cycle(cycle) => write!(formatter, "blocked-by cycle: {cycle}"),
         Rule::NotInProject => formatter.write_str("not an item of the Project"),
-        Rule::OldAdrNumber(surface) => old_number(*surface, formatter),
-        Rule::DeletedSpddPath(surface) => deleted_path(*surface, formatter),
     }
-}
-
-fn old_number(surface: Surface, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(
-        formatter,
-        "old ADR number in the {surface}; link the ADR by its title (only formerly ADR-NNNN may keep one)"
-    )
-}
-
-fn deleted_path(surface: Surface, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(
-        formatter,
-        "spdd file named in the {surface}; canvases are not committed, name the issue as #<n> or link the file at a commit"
-    )
 }
 
 /// One finding: an issue and the rule it breaks.

@@ -12,7 +12,6 @@ mod issues_parse;
 mod moves;
 mod parse;
 mod queries;
-mod references;
 mod release;
 mod status_mapping;
 mod texts_parse;

@@ -5,7 +5,6 @@ pub mod labels;
 pub mod membership;
 pub mod milestone;
 pub mod parent;
-pub mod references;
 pub mod release;
 
 use crate::config::RulesConfig;
@@ -33,9 +32,6 @@ pub fn check(survey: &Survey, rules: &RulesConfig) -> Violations {
     }
     if rules.membership {
         themes.push(membership::check(survey));
-    }
-    if rules.references && rules.text {
-        themes.push(references::check(survey));
     }
     Violations::new(themes.concat())
 }

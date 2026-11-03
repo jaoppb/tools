@@ -8,7 +8,7 @@ use std::io::Write;
 use std::process::ExitCode;
 
 use issues_check::cli::Arguments;
-use tools_core::adapters::github::{GhIssues, GhProject, GhText};
+use tools_core::adapters::github::{GhIssues, GhProject};
 use tools_core::application::{Audit, IssueMigrator, RepositoryIssues};
 
 /// What to print and how to exit.
@@ -62,17 +62,12 @@ fn run() -> Result<Exit, Exit> {
         .target
         .project()
         .map(|_| GhProject::new(resolved.target.clone()));
-    let report = Audit::new(
-        GhIssues::new(resolved.target.clone()),
-        project,
-        GhText::new(resolved.target),
-        resolved.rules,
-    )
-    .run()
-    .map_err(|error| Exit {
-        text: error.to_string(),
-        code: 2,
-    })?;
+    let report = Audit::new(GhIssues::new(resolved.target), project, resolved.rules)
+        .run()
+        .map_err(|error| Exit {
+            text: error.to_string(),
+            code: 2,
+        })?;
     Ok(Exit {
         text: report.to_string(),
         code: report.exit_code(),
