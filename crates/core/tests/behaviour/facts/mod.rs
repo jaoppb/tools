@@ -22,6 +22,21 @@ fn labels_need_an_area_label() {
 }
 
 #[test]
+fn labels_recognize_accented_area_label() {
+    assert!(labels(&["type:feat", "área:app-ui"]).has_area());
+    assert!(labels(&["type:feat", "Área:Segurança"]).has_area());
+    assert!(!labels(&["type:feat", "area"]).has_area());
+}
+
+#[test]
+fn labels_recognize_configured_area_prefix_aliases() {
+    let issue_labels = labels(&["type:feat", "domain:auth"]);
+    assert!(!issue_labels.has_area());
+    assert!(issue_labels.has_area_matching(&["domain:"]));
+    assert!(issue_labels.has_area_matching(&["area:", "domain:"]));
+}
+
+#[test]
 fn an_effort_of_eight_fits_ready_and_nine_does_not() {
     assert!(Effort::new(8).fits_ready());
     assert!(!Effort::new(9).fits_ready());

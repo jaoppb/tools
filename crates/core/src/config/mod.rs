@@ -205,6 +205,13 @@ pub struct RulesConfig {
     /// Effort requirement rule for Ready gate.
     #[serde(default)]
     pub effort: bool,
+    /// Configurable area label prefixes.
+    #[serde(default = "default_area_prefixes")]
+    pub area_prefixes: Vec<String>,
+}
+
+fn default_area_prefixes() -> Vec<String> {
+    vec!["area:".to_string()]
 }
 
 const fn default_true() -> bool {
@@ -224,6 +231,7 @@ impl Default for RulesConfig {
             text: true,
             priority: false,
             effort: false,
+            area_prefixes: default_area_prefixes(),
         }
     }
 }
@@ -491,5 +499,19 @@ mod tests {
         assert_eq!(resolved.get("bug"), Some(&"type:fix".to_string()));
         assert_eq!(resolved.get("legacy-bug"), Some(&"type:fix".to_string()));
         assert_eq!(resolved.get("ui"), Some(&"area:web".to_string()));
+    }
+
+    #[test]
+    fn parses_custom_area_prefixes_config() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github.issues.rules]
+            area_prefixes = ["area:", "área:"]
+        "#;
+        let config: Config = toml::from_str(toml_str).expect("should parse");
+        assert_eq!(config.rules().area_prefixes, vec!["area:", "área:"]);
     }
 }

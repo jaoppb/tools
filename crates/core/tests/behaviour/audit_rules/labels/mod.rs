@@ -40,3 +40,31 @@ fn reports_a_closed_issue_with_no_area_label() {
     let repaired = survey(vec![epic(1), labelled(closed(10, 1), &FIXED)]);
     assert!(lines(&repaired).is_empty());
 }
+
+#[test]
+fn accepts_accented_area_label() {
+    let accented = ["type:feat", "área:segurança"];
+    let pass = survey(vec![epic(1), labelled(story(10, 1), &accented)]);
+    assert!(lines(&pass).is_empty());
+}
+
+#[test]
+fn accepts_configured_area_prefix_alias() {
+    let custom = ["type:feat", "domain:auth"];
+    let survey_item = survey(vec![epic(1), labelled(story(10, 1), &custom)]);
+
+    // Fails under default rules (area_prefixes = ["area:"])
+    assert_eq!(lines(&survey_item), ["#10 no-area: no area label"]);
+
+    // Passes under custom rules where domain: is an alias
+    let custom_rules = tools_core::config::RulesConfig {
+        area_prefixes: vec!["area:".to_string(), "domain:".to_string()],
+        ..tools_core::config::RulesConfig::default()
+    };
+    let custom_lines: Vec<String> = survey_item
+        .violations(&custom_rules)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert!(custom_lines.is_empty());
+}
