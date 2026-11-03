@@ -17,7 +17,7 @@ use crate::domain::audit::violation::Violations;
 pub fn check(survey: &Survey, rules: &RulesConfig) -> Violations {
     let mut themes = Vec::new();
     if rules.labels {
-        themes.push(labels::check(survey));
+        themes.push(labels::check(survey, &rules.area_prefixes));
     }
     if rules.milestone {
         themes.push(milestone::check(survey));

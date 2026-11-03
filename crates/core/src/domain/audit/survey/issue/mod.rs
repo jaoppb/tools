@@ -123,6 +123,12 @@ impl TreeIssue {
         self.labels.has_area()
     }
 
+    /// Whether the issue has an area label matching the given prefixes.
+    #[must_use]
+    pub fn has_area_matching<S: AsRef<str>>(&self, prefixes: &[S]) -> bool {
+        self.labels.has_area_matching(prefixes)
+    }
+
     /// Whether the issue has a milestone.
     #[must_use]
     pub const fn has_milestone(&self) -> bool {
