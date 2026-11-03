@@ -1,13 +1,11 @@
 //! The audit use case over the in-memory repository and Project.
 
-use tools_core::adapters::memory::{MemoryIssues, MemoryProject, MemoryText};
+use tools_core::adapters::memory::{MemoryIssues, MemoryProject};
 use tools_core::application::{Audit, ProjectState, SyncError};
 use tools_core::config::RulesConfig;
-use tools_core::domain::{
-    IssueNumber, IssueTree, Snapshot, Status, Surface, TextItem, Texts, TreeIssue,
-};
+use tools_core::domain::{IssueNumber, IssueTree, Snapshot, Status, TreeIssue};
 
-use crate::support::audit::{epic, labelled, story, text};
+use crate::support::audit::{epic, labelled, story};
 use crate::support::{number, open_card, snapshot};
 
 const ANSWERS: &str = "the in-memory sources answer";
@@ -20,18 +18,13 @@ fn project_of(issues: &[TreeIssue]) -> MemoryProject {
     MemoryProject::new(snapshot(cards, &[]))
 }
 
-type MemoryAudit = Audit<MemoryIssues, MemoryProject, MemoryText>;
-
-fn no_texts() -> MemoryText {
-    MemoryText::new(Texts::default())
-}
+type MemoryAudit = Audit<MemoryIssues, MemoryProject>;
 
 fn audit_of(issues: Vec<TreeIssue>) -> MemoryAudit {
     let project = project_of(&issues);
     Audit::new(
         MemoryIssues::new(IssueTree::new(issues)),
         Some(project),
-        no_texts(),
         RulesConfig::default(),
     )
 }
@@ -93,7 +86,6 @@ fn reports_an_issue_missing_from_the_project() {
     let audit = Audit::new(
         MemoryIssues::new(IssueTree::new(issues)),
         Some(project),
-        no_texts(),
         RulesConfig::default(),
     );
     let report = audit.run().expect(ANSWERS);
@@ -108,7 +100,6 @@ fn stops_with_an_error_when_the_issues_cannot_be_read() {
     let audit = Audit::new(
         MemoryIssues::failing("gh failed"),
         Some(project_of(&clean())),
-        no_texts(),
         RulesConfig::default(),
     );
     let failure = audit.run().expect_err("the issues are unreadable");
@@ -141,7 +132,6 @@ fn stops_with_an_error_when_the_project_cannot_be_read() {
     let audit = Audit::new(
         MemoryIssues::new(IssueTree::new(clean())),
         Some(BrokenProject),
-        no_texts(),
         RulesConfig::default(),
     );
     let failure = audit.run().expect_err("the Project is unreadable");
@@ -155,7 +145,6 @@ fn a_run_leaves_the_project_as_it_found_it() {
     let audit = Audit::new(
         MemoryIssues::new(IssueTree::new(clean())),
         Some(project.clone()),
-        no_texts(),
         RulesConfig::default(),
     );
     audit.run().expect(ANSWERS);
@@ -163,45 +152,11 @@ fn a_run_leaves_the_project_as_it_found_it() {
     assert_eq!(number(10).value(), 10);
 }
 
-fn audit_with_texts(items: Vec<TextItem>) -> MemoryAudit {
-    Audit::new(
-        MemoryIssues::new(IssueTree::new(clean())),
-        Some(project_of(&clean())),
-        MemoryText::new(Texts::new(items)),
-        RulesConfig::default(),
-    )
-}
-
 #[test]
-fn a_text_without_references_leaves_the_report_clean() {
-    let audit = audit_with_texts(vec![text(10, Surface::Body, "Links the ADR by its title.")]);
-    let report = audit.run().expect(ANSWERS);
-    assert_eq!(report.to_string(), "no violations found\n");
+fn generic_audit_does_not_fail_or_scan_texts() {
+    // Issues with arbitrary text, ADR references, or SPDD strings in titles/bodies
+    // do not trigger any reference violations in default issue checks.
+    let report = audit_of(clean()).run().expect(ANSWERS);
     assert_eq!(report.exit_code(), 0);
-}
-
-#[test]
-fn an_old_adr_number_makes_the_report_exit_with_one() {
-    let audit = audit_with_texts(vec![text(10, Surface::Body, "See ADR-0013.")]);
-    let report = audit.run().expect(ANSWERS);
-    assert_eq!(
-        report.to_string(),
-        "#10 old-adr-number: old ADR number in the body; link the ADR by its title (only formerly ADR-NNNN may keep one)\n1 violation\n"
-    );
-    assert_eq!(report.exit_code(), 1);
-}
-
-#[test]
-fn stops_with_an_error_when_the_text_cannot_be_read() {
-    let audit = Audit::new(
-        MemoryIssues::new(IssueTree::new(clean())),
-        Some(project_of(&clean())),
-        MemoryText::failing("gh failed"),
-        RulesConfig::default(),
-    );
-    let failure = audit.run().expect_err("the text is unreadable");
-    assert_eq!(
-        failure.to_string(),
-        "cannot read the text of the issues and pull requests: gh failed"
-    );
+    assert_eq!(report.to_string(), "no violations found\n");
 }

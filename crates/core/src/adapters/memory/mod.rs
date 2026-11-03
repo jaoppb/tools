@@ -1,7 +1,7 @@
-//! An in-memory Project, repository issues and text for tests.
+//! An in-memory Project and repository issues for tests.
 
-use crate::application::{AuditError, ProjectState, RepositoryIssues, RepositoryText, SyncError};
-use crate::domain::{IssueNumber, IssueTree, Snapshot, Status, Texts};
+use crate::application::{AuditError, ProjectState, RepositoryIssues, SyncError};
+use crate::domain::{IssueNumber, IssueTree, Snapshot, Status};
 
 /// Holds a snapshot and applies Status changes to it.
 ///
@@ -97,48 +97,6 @@ impl RepositoryIssues for MemoryIssues {
 
 fn unreadable(reason: &str) -> AuditError {
     AuditError::Issues {
-        reason: reason.to_owned(),
-    }
-}
-
-/// Holds the texts of the issues and pull requests, or refuses to give them.
-#[derive(Debug, Clone)]
-pub struct MemoryText {
-    texts: Texts,
-    failure: Option<String>,
-}
-
-impl MemoryText {
-    /// A repository holding these texts.
-    #[must_use]
-    pub const fn new(texts: Texts) -> Self {
-        Self {
-            texts,
-            failure: None,
-        }
-    }
-
-    /// A repository whose texts cannot be read, for this reason.
-    #[must_use]
-    pub fn failing(reason: &str) -> Self {
-        Self {
-            texts: Texts::default(),
-            failure: Some(reason.to_owned()),
-        }
-    }
-}
-
-impl RepositoryText for MemoryText {
-    fn texts(&self) -> Result<Texts, AuditError> {
-        self.failure.as_deref().map_or_else(
-            || Ok(self.texts.clone()),
-            |reason| Err(unreadable_text(reason)),
-        )
-    }
-}
-
-fn unreadable_text(reason: &str) -> AuditError {
-    AuditError::Text {
         reason: reason.to_owned(),
     }
 }

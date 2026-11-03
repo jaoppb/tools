@@ -1,11 +1,11 @@
 //! The audit use case and the ports it reads the repository through: the
-//! issues, the Project and the text of issues and pull requests.
+//! issues and the Project.
 
 use std::fmt;
 
 use crate::application::{ProjectState, SyncError};
 use crate::config::RulesConfig;
-use crate::domain::{IssueTree, Members, Survey, Texts, Violations};
+use crate::domain::{IssueTree, Members, Survey, Violations};
 
 /// Why an audit could not run.
 #[derive(Debug, thiserror::Error)]
@@ -19,12 +19,6 @@ pub enum AuditError {
     /// The Project could not be read.
     #[error("cannot read the Project: {reason}")]
     Project {
-        /// What went wrong, in the words of the adapter.
-        reason: String,
-    },
-    /// The text of the issues and pull requests could not be read.
-    #[error("cannot read the text of the issues and pull requests: {reason}")]
-    Text {
         /// What went wrong, in the words of the adapter.
         reason: String,
     },
@@ -42,20 +36,6 @@ pub trait RepositoryIssues {
     ///
     /// Returns [`AuditError::Issues`] when the issues cannot be read in full.
     fn issues(&self) -> Result<IssueTree, AuditError>;
-}
-
-/// The text of the repository's issues and pull requests as the audit sees it.
-///
-/// It has no method that writes anything, like the other ports of the audit.
-pub trait RepositoryText {
-    /// Reads every title, body, comment, review body and review-thread comment
-    /// of every issue and pull request, open and closed, or fails. It never
-    /// returns part of the data.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`AuditError::Text`] when the text cannot be read in full.
-    fn texts(&self) -> Result<Texts, AuditError>;
 }
 
 /// What an audit found.
@@ -95,24 +75,21 @@ fn write_report(violations: &Violations, formatter: &mut fmt::Formatter<'_>) -> 
     }
 }
 
-/// Reads the repository, the Project and the text, applies the rules and
-/// reports.
+/// Reads the repository and the Project, applies the rules and reports.
 #[derive(Debug)]
-pub struct Audit<I, P, T> {
+pub struct Audit<I, P> {
     issues: I,
     project: Option<P>,
-    texts: T,
     rules: RulesConfig,
 }
 
-impl<I: RepositoryIssues, P: ProjectState, T: RepositoryText> Audit<I, P, T> {
+impl<I: RepositoryIssues, P: ProjectState> Audit<I, P> {
     /// An audit over these sources.
     #[must_use]
-    pub const fn new(issues: I, project: Option<P>, texts: T, rules: RulesConfig) -> Self {
+    pub const fn new(issues: I, project: Option<P>, rules: RulesConfig) -> Self {
         Self {
             issues,
             project,
-            texts,
             rules,
         }
     }
@@ -121,8 +98,7 @@ impl<I: RepositoryIssues, P: ProjectState, T: RepositoryText> Audit<I, P, T> {
     ///
     /// # Errors
     ///
-    /// Returns [`AuditError`] when the issues, the Project or the text cannot
-    /// be read.
+    /// Returns [`AuditError`] when the issues or the Project cannot be read.
     pub fn run(&self) -> Result<Report, AuditError> {
         let issues = self.issues.issues()?;
         let members = if let Some(project) = &self.project {
@@ -136,7 +112,7 @@ impl<I: RepositoryIssues, P: ProjectState, T: RepositoryText> Audit<I, P, T> {
         } else {
             Members::default()
         };
-        let survey = Survey::new(issues, members, self.texts.texts()?);
+        let survey = Survey::new(issues, members);
         Ok(Report::new(survey.violations(&self.rules)))
     }
 }

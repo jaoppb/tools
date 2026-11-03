@@ -7,11 +7,7 @@ use tools_core::adapters::github::parse::{
     parse_pull_review_threads, parse_pull_texts, parse_thread_comments,
 };
 use tools_core::adapters::github::{GatheredTexts, GhError};
-use tools_core::domain::{
-    IssueNumber, IssueTree, Members, Repo, Surface, Survey, Text, TextItem, Texts,
-};
-
-use crate::support::audit::lines;
+use tools_core::domain::{IssueNumber, Repo, Surface, Text, TextItem};
 
 fn cosmo() -> Repo {
     Repo::new("jaoppb", "cosmo")
@@ -58,23 +54,15 @@ fn a_page_of_pull_requests_becomes_title_body_comment_review_and_thread_texts() 
 #[test]
 fn keeps_each_text_on_its_own_surface() {
     let page = parse_pull_texts(PULLS_SURFACES, &cosmo()).expect(RECORDED);
-    let survey = Survey::new(
-        IssueTree::default(),
-        Members::default(),
-        Texts::new(page.items().to_vec()),
-    );
-    let surfaces: Vec<String> = lines(&survey)
-        .iter()
-        .map(|line| line.split(';').next().unwrap_or_default().to_owned())
-        .collect();
+    let surfaces: Vec<Surface> = page.items().iter().map(TextItem::surface).collect();
     assert_eq!(
         surfaces,
         [
-            "cosmo#9 old-adr-number: old ADR number in the title",
-            "cosmo#9 old-adr-number: old ADR number in the body",
-            "cosmo#9 old-adr-number: old ADR number in the comment",
-            "cosmo#9 old-adr-number: old ADR number in the review",
-            "cosmo#9 old-adr-number: old ADR number in the review comment",
+            Surface::Title,
+            Surface::Body,
+            Surface::Comment,
+            Surface::Review,
+            Surface::ReviewComment,
         ]
     );
 }

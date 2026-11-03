@@ -8,7 +8,7 @@ pub mod audit;
 pub mod migration;
 pub mod repo;
 
-pub use crate::application::audit::{Audit, AuditError, Report, RepositoryIssues, RepositoryText};
+pub use crate::application::audit::{Audit, AuditError, Report, RepositoryIssues};
 pub use crate::application::migration::{
     IssueMigrationMode, IssueMigrationOutcome, IssueMigrationPort, IssueMigrator, MigrationError,
 };

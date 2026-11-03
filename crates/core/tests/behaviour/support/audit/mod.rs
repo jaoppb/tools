@@ -2,7 +2,7 @@
 
 use tools_core::domain::{
     BlockedBy, IssueNumber, IssueTree, Label, Labels, Lifecycle, Members, Milestone, Surface,
-    Survey, Text, TextItem, Texts, TreeIssue,
+    Survey, Text, TextItem, TreeIssue,
 };
 
 use crate::support::number;
@@ -60,22 +60,14 @@ pub fn blocked_by(issue: TreeIssue, blockers: &[u64]) -> TreeIssue {
 #[must_use]
 pub fn survey(issues: Vec<TreeIssue>) -> Survey {
     let members = issues.iter().map(TreeIssue::number).cloned().collect();
-    Survey::new(
-        IssueTree::new(issues),
-        Members::new(members),
-        Texts::default(),
-    )
+    Survey::new(IssueTree::new(issues), Members::new(members))
 }
 
 /// A survey of these issues where only these numbers are Project items.
 #[must_use]
 pub fn survey_with_members(issues: Vec<TreeIssue>, members: &[u64]) -> Survey {
     let numbers = members.iter().map(|raw| number(*raw)).collect();
-    Survey::new(
-        IssueTree::new(issues),
-        Members::new(numbers),
-        Texts::default(),
-    )
+    Survey::new(IssueTree::new(issues), Members::new(numbers))
 }
 
 /// The findings of a survey, one printed line each.
@@ -92,10 +84,4 @@ pub fn lines(survey: &Survey) -> Vec<String> {
 #[must_use]
 pub fn text(raw: u64, surface: Surface, words: &str) -> TextItem {
     TextItem::new(number(raw), surface, Text::new(words))
-}
-
-/// A survey with no issue where only these texts exist.
-#[must_use]
-pub fn survey_of_texts(items: Vec<TextItem>) -> Survey {
-    Survey::new(IssueTree::default(), Members::default(), Texts::new(items))
 }

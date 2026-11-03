@@ -1,14 +1,9 @@
-//! The text of issues and pull requests that the audit reads for references to
-//! ADRs by number and to `spdd/` files.
+//! The text of issues and pull requests: titles, bodies, comments, and reviews.
 //!
-//! The scans are written on `std` only, as the rest of `domain` is.
-
-mod adr_number;
-mod spdd_path;
+//! The models are written on `std` only, as the rest of `domain` is.
 
 use std::fmt;
 
-use crate::domain::audit::violation::Rule;
 use crate::domain::issue::IssueNumber;
 
 /// Where in an issue or a pull request a piece of text sits.
@@ -46,26 +41,6 @@ impl fmt::Display for Surface {
     }
 }
 
-/// What a text names that the repository must not name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Reference {
-    /// An ADR named by its old running number.
-    OldAdrNumber,
-    /// A numbered file of `spdd/`, which is never committed.
-    DeletedSpddPath,
-}
-
-impl Reference {
-    /// The rule that a reference of this kind in this surface breaks.
-    #[must_use]
-    pub const fn rule(self, surface: Surface) -> Rule {
-        match self {
-            Self::OldAdrNumber => Rule::OldAdrNumber(surface),
-            Self::DeletedSpddPath => Rule::DeletedSpddPath(surface),
-        }
-    }
-}
-
 /// A string a person reads on GitHub.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Text(String);
@@ -77,15 +52,10 @@ impl Text {
         Self(raw.to_owned())
     }
 
-    /// What this text names that no longer exists, once per kind, in the order
-    /// of [`Reference`].
+    /// The raw string content of this text.
     #[must_use]
-    pub fn references(&self) -> Vec<Reference> {
-        let found = [
-            adr_number::names_old_number(&self.0).then_some(Reference::OldAdrNumber),
-            spdd_path::names_file(&self.0).then_some(Reference::DeletedSpddPath),
-        ];
-        found.into_iter().flatten().collect()
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -115,19 +85,20 @@ impl TextItem {
         &self.number
     }
 
-    /// The rules this text breaks, one per kind of reference and sorted, so a
-    /// surface with three numbers gives one finding.
+    /// Where in the item the text sits.
     #[must_use]
-    pub fn broken_rules(&self) -> Vec<Rule> {
-        self.text
-            .references()
-            .into_iter()
-            .map(|reference| reference.rule(self.surface))
-            .collect()
+    pub const fn surface(&self) -> Surface {
+        self.surface
+    }
+
+    /// The text content.
+    #[must_use]
+    pub const fn text(&self) -> &Text {
+        &self.text
     }
 }
 
-/// Every text the audit reads.
+/// Every text read from an issue or pull request.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Texts(Vec<TextItem>);
 

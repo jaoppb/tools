@@ -6,7 +6,6 @@ mod labels;
 mod membership;
 mod milestone;
 mod parent;
-mod references;
 mod release;
 
 use tools_core::domain::Survey;
