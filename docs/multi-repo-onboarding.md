@@ -110,7 +110,7 @@ items = [
 items = [{ title = "v1.0.0", description = "Infra GA", state = "open" }]
 ```
 
-Merge rules: `items` override by key (`name` for labels, `title` for milestones) and otherwise append; `deprecated` is a union; `renames` and label `migrations` are merged key by key; `prune_unmanaged` replaces the shared value only when set. When using `--labels`, `--milestones`, etc., the shared section must be present.
+Merge rules: `items` override by key (`name` for labels, `title` for milestones) and otherwise append; `deprecated` is a union; `renames` and label `migrations` are merged key by key; `prune_unmanaged` replaces the shared value only when set. The shared section is optional: a repository may declare its labels or milestones only through its overlay. A key not recognised inside an overlay (for example a misspelled `prune_unmanged`) is a configuration error, but an overlay keyed by a repository that is not targeted is ignored.
 
 ---
 

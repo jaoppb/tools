@@ -71,7 +71,8 @@ impl RepoLabelsSpec {
 /// Items override shared items with the same name and are otherwise appended; `deprecated` is a
 /// union; `renames` and `migrations` are merged with overlay entries winning; `prune_unmanaged`
 /// replaces the shared value only when set.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RepoLabelsOverlay {
     /// Additional label names to prune.
     #[serde(default)]

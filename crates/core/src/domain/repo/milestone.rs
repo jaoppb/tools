@@ -62,7 +62,8 @@ pub struct RepoMilestonesSpec {
 /// Items override shared items with the same title and are otherwise appended; `deprecated` is a
 /// union; `renames` are merged with overlay entries winning; `prune_unmanaged` replaces the shared
 /// value only when set.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RepoMilestonesOverlay {
     /// Additional milestone titles to close/prune.
     #[serde(default)]

@@ -102,22 +102,25 @@ pub struct Arguments {
     repos: Vec<String>,
 }
 
-/// Resolved repository target and desired configuration specification.
+/// Resolved repository target and the desired specification of each target repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedRepo {
     /// Repository target.
     pub target: Target,
-    /// Shared desired configuration specification.
-    pub spec: RepoSpec,
-    /// Specifications of target repositories that declare a `[github.overrides.<repo>]` overlay.
-    pub overrides: BTreeMap<String, RepoSpec>,
+    specs: BTreeMap<String, RepoSpec>,
 }
 
 impl ResolvedRepo {
-    /// The desired specification for `repo_name`: its overlay when declared, else the shared one.
+    /// The desired specification for a target repository, with its overlay applied.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `repo_name` is not part of [`Self::target`].
     #[must_use]
     pub fn spec_for(&self, repo_name: &str) -> &RepoSpec {
-        self.overrides.get(repo_name).unwrap_or(&self.spec)
+        self.specs
+            .get(repo_name)
+            .unwrap_or_else(|| panic!("repository {repo_name} is not a resolved target"))
     }
 }
 
@@ -218,20 +221,14 @@ impl Arguments {
             Target::single(owner, cfg.github.repository.name.clone(), project_number)
         };
 
-        let spec = self.finalize(cfg.spec_for("")?)?;
-        let mut overrides = BTreeMap::new();
+        let mut specs = BTreeMap::new();
         for repo in target.repo_coords() {
-            let name = repo.name();
-            if cfg.overridden_repos().any(|overridden| overridden == name) {
-                overrides.insert(name.to_string(), self.finalize(cfg.spec_for(name)?)?);
-            }
+            let name = repo.name().to_string();
+            let spec = self.finalize(cfg.spec_for(&name)?)?;
+            specs.insert(name, spec);
         }
 
-        Ok(ResolvedRepo {
-            target,
-            spec,
-            overrides,
-        })
+        Ok(ResolvedRepo { target, specs })
     }
 
     /// Applies the entity filter and validates a resolved specification.
@@ -435,17 +432,17 @@ mod tests {
         // When --labels is passed, settings should be None
         let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
-        assert!(resolved.spec.settings.is_none());
-        assert!(resolved.spec.labels.is_some());
-        assert!(resolved.spec.milestones.is_none());
+        assert!(resolved.spec_for("tools").settings.is_none());
+        assert!(resolved.spec_for("tools").labels.is_some());
+        assert!(resolved.spec_for("tools").milestones.is_none());
 
         // When no filter is passed, configured entities should be Some
         let args_all = Arguments::parse(["repo-sync".into()]).unwrap();
         let resolved_all = args_all.resolve_with_config(config).unwrap();
-        assert!(resolved_all.spec.settings.is_some());
-        assert!(resolved_all.spec.labels.is_some());
-        assert!(resolved_all.spec.milestones.is_none());
-        assert!(resolved_all.spec.project.is_none());
+        assert!(resolved_all.spec_for("tools").settings.is_some());
+        assert!(resolved_all.spec_for("tools").labels.is_some());
+        assert!(resolved_all.spec_for("tools").milestones.is_none());
+        assert!(resolved_all.spec_for("tools").project.is_none());
     }
 
     #[test]
@@ -463,11 +460,11 @@ mod tests {
 
         let args = Arguments::parse(["repo-sync".into(), "--project".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
-        assert!(resolved.spec.settings.is_none());
-        assert!(resolved.spec.labels.is_none());
-        assert!(resolved.spec.milestones.is_none());
+        assert!(resolved.spec_for("tools").settings.is_none());
+        assert!(resolved.spec_for("tools").labels.is_none());
+        assert!(resolved.spec_for("tools").milestones.is_none());
         assert_eq!(
-            resolved.spec.project,
+            resolved.spec_for("tools").project,
             Some(RepoProjectSpec::new(4, "Tools Roadmap"))
         );
     }
@@ -537,7 +534,31 @@ mod tests {
                 .len(),
             1
         );
-        assert_eq!(resolved.overrides.len(), 1);
+    }
+
+    #[test]
+    fn resolve_accepts_config_defined_only_by_overlays() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github.overrides.web.labels]
+            items = [{ name = "area:ssr", color = "2ea44f", description = "SSR" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        assert_eq!(
+            resolved
+                .spec_for("web")
+                .labels
+                .as_ref()
+                .unwrap()
+                .items
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -556,7 +577,16 @@ mod tests {
         let config: Config = toml::from_str(toml_str).unwrap();
         let args = Arguments::parse(["repo-sync".into()]).unwrap();
         let resolved = args.resolve_with_config(config).unwrap();
-        assert!(resolved.overrides.is_empty());
+        assert_eq!(
+            resolved
+                .spec_for("web")
+                .labels
+                .as_ref()
+                .unwrap()
+                .items
+                .len(),
+            1
+        );
     }
 
     #[test]

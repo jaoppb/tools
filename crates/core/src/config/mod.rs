@@ -70,17 +70,8 @@ impl Config {
         self.github.project.as_ref()
     }
 
-    /// Converts this configuration into the shared desired repository specification.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`RepoPlanError::Validation`] if project title is configured without a project number.
-    pub fn try_into_repo_spec(self) -> Result<RepoSpec, RepoPlanError> {
-        self.spec_for("")
-    }
-
     /// Resolves the desired specification for `repo_name`: the shared labels and milestones with
-    /// that repository's `[github.overrides.<repo>]` overlay applied on top.
+    /// that repository's `[github.overrides.<repo>]` overlay applied on top, if any.
     ///
     /// # Errors
     ///
@@ -100,14 +91,14 @@ impl Config {
             None => None,
         };
         let overlay = self.github.overrides.get(repo_name);
-        let labels = match overlay.and_then(|o| o.labels.as_ref()) {
-            Some(over) => Some(over.apply_to(self.github.labels.as_ref())),
-            None => self.github.labels.clone(),
-        };
-        let milestones = match overlay.and_then(|o| o.milestones.as_ref()) {
-            Some(over) => Some(over.apply_to(self.github.milestones.as_ref())),
-            None => self.github.milestones.clone(),
-        };
+        let labels = overlay.and_then(|o| o.labels.as_ref()).map_or_else(
+            || self.github.labels.clone(),
+            |over| Some(over.apply_to(self.github.labels.as_ref())),
+        );
+        let milestones = overlay.and_then(|o| o.milestones.as_ref()).map_or_else(
+            || self.github.milestones.clone(),
+            |over| Some(over.apply_to(self.github.milestones.as_ref())),
+        );
         Ok(RepoSpec::new(
             self.github.repository.settings.clone(),
             labels,
@@ -115,15 +106,11 @@ impl Config {
             project,
         ))
     }
-
-    /// Names of repositories that declare a `[github.overrides.<repo>]` overlay.
-    pub fn overridden_repos(&self) -> impl Iterator<Item = &str> {
-        self.github.overrides.keys().map(String::as_str)
-    }
 }
 
 /// Per-repository overlay of the shared labels and milestones, from `[github.overrides.<repo>]`.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RepoOverrideConfig {
     /// Labels overlay.
     #[serde(default)]
@@ -494,7 +481,7 @@ mod tests {
         let milestones = config.milestones().expect("milestones should exist");
         assert_eq!(milestones.renames.get("v0.9"), Some(&"v1".to_string()));
 
-        let repo_spec = config.try_into_repo_spec().unwrap();
+        let repo_spec = config.spec_for("tools").unwrap();
         let proj_spec = repo_spec.project.expect("project spec should exist");
         assert_eq!(proj_spec.number, 4);
         assert_eq!(proj_spec.title, "Tools Roadmap");
@@ -614,9 +601,18 @@ mod tests {
 
         let infra = config.spec_for("infra").unwrap();
         assert_eq!(infra.milestones.expect("milestones").items.len(), 1);
-        assert_eq!(
-            config.overridden_repos().collect::<Vec<_>>(),
-            ["infra", "web"]
-        );
+    }
+
+    #[test]
+    fn overlay_rejects_unknown_keys() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "o"
+            name = "web"
+
+            [github.overrides.web.labels]
+            prune_unmanged = true
+        "#;
+        assert!(toml::from_str::<Config>(toml_str).is_err());
     }
 }
