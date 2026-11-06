@@ -41,7 +41,10 @@ fn run() -> Result<String, Exit> {
 
     for repo in &repo_coords {
         let single_target = Target::single(repo.owner(), repo.name(), resolved.target.project());
-        let repo_sync = RepoSync::new(GhRepo::new(single_target), resolved.spec.clone());
+        let repo_sync = RepoSync::new(
+            GhRepo::new(single_target),
+            resolved.spec_for(repo.name()).clone(),
+        );
         match repo_sync.run(arguments.mode()) {
             Ok(outcome) => {
                 let text = outcome.to_string();

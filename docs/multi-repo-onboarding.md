@@ -90,6 +90,28 @@ release = true
 text = false
 ```
 
+### Per-Repository Overrides
+
+Subsystem-specific labels and milestones go in `[github.overrides.<repo>.labels]` and `[github.overrides.<repo>.milestones]`. `repo-sync` resolves the shared declarations plus the overlay of each target repository; repositories without an overlay get the shared declarations only, and overlays of repositories that are not targeted are ignored.
+
+```toml
+[github.overrides.web.labels]
+prune_unmanaged = false          # overrides the shared value; omit to inherit it
+deprecated = ["accessibility"]   # unioned with the shared list
+items = [
+    { name = "area:ssr", color = "2ea44f", description = "Server-side rendering" },
+    { name = "type:feat", color = "00ff00", description = "Web-specific feature color" }, # same name: replaces the shared item
+]
+
+[github.overrides.web.labels.renames]
+"old-name" = "area:ssr"          # merged with shared renames; overlay wins on conflict
+
+[github.overrides.infra.milestones]
+items = [{ title = "v1.0.0", description = "Infra GA", state = "open" }]
+```
+
+Merge rules: `items` override by key (`name` for labels, `title` for milestones) and otherwise append; `deprecated` is a union; `renames` and label `migrations` are merged key by key; `prune_unmanaged` replaces the shared value only when set. When using `--labels`, `--milestones`, etc., the shared section must be present.
+
 ---
 
 ## 3. Provisioning Repositories (`repo-sync`)

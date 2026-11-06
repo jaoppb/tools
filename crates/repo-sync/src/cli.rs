@@ -1,6 +1,7 @@
 //! The command line for `repo-sync`, parsed with clap.
 
 use clap::{Arg, ArgAction, Command};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
@@ -106,8 +107,18 @@ pub struct Arguments {
 pub struct ResolvedRepo {
     /// Repository target.
     pub target: Target,
-    /// Desired configuration specification.
+    /// Shared desired configuration specification.
     pub spec: RepoSpec,
+    /// Specifications of target repositories that declare a `[github.overrides.<repo>]` overlay.
+    pub overrides: BTreeMap<String, RepoSpec>,
+}
+
+impl ResolvedRepo {
+    /// The desired specification for `repo_name`: its overlay when declared, else the shared one.
+    #[must_use]
+    pub fn spec_for(&self, repo_name: &str) -> &RepoSpec {
+        self.overrides.get(repo_name).unwrap_or(&self.spec)
+    }
 }
 
 impl Arguments {
@@ -207,15 +218,31 @@ impl Arguments {
             Target::single(owner, cfg.github.repository.name.clone(), project_number)
         };
 
-        let spec = cfg.try_into_repo_spec()?;
+        let spec = self.finalize(cfg.spec_for("")?)?;
+        let mut overrides = BTreeMap::new();
+        for repo in target.repo_coords() {
+            let name = repo.name();
+            if cfg.overridden_repos().any(|overridden| overridden == name) {
+                overrides.insert(name.to_string(), self.finalize(cfg.spec_for(name)?)?);
+            }
+        }
+
+        Ok(ResolvedRepo {
+            target,
+            spec,
+            overrides,
+        })
+    }
+
+    /// Applies the entity filter and validates a resolved specification.
+    fn finalize(&self, spec: RepoSpec) -> Result<RepoSpec, RepoResolveError> {
         let spec = match self.explicit_entities {
             Some(filter) => filter.apply(spec)?,
             None if spec.is_empty() => return Err(RepoResolveError::EmptyConfig),
             None => spec,
         };
         spec.validate()?;
-
-        Ok(ResolvedRepo { target, spec })
+        Ok(spec)
     }
 }
 
@@ -464,6 +491,72 @@ mod tests {
             RepoResolveError::Plan(RepoPlanError::Validation(_))
         ));
         assert!(err.to_string().contains("project number is required"));
+    }
+
+    #[test]
+    fn resolve_applies_repository_overlay_per_target() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+
+            [github.overrides.web.labels]
+            items = [{ name = "area:ssr", color = "2ea44f", description = "SSR" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args = Arguments::parse([
+            "repo-sync".into(),
+            "--repo".into(),
+            "web".into(),
+            "--repo".into(),
+            "api".into(),
+        ])
+        .unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        assert_eq!(
+            resolved
+                .spec_for("web")
+                .labels
+                .as_ref()
+                .unwrap()
+                .items
+                .len(),
+            2
+        );
+        assert_eq!(
+            resolved
+                .spec_for("api")
+                .labels
+                .as_ref()
+                .unwrap()
+                .items
+                .len(),
+            1
+        );
+        assert_eq!(resolved.overrides.len(), 1);
+    }
+
+    #[test]
+    fn resolve_ignores_overlay_of_untargeted_repo() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+
+            [github.overrides.infra.labels]
+            items = [{ name = "area:ci", color = "2ea44f", description = "CI" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let args = Arguments::parse(["repo-sync".into()]).unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        assert!(resolved.overrides.is_empty());
     }
 
     #[test]

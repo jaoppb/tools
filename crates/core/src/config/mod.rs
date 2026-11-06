@@ -3,9 +3,9 @@
 use crate::adapters::github::target::Target;
 use crate::domain::issue::{StatusMapping, StatusMappingError};
 pub use crate::domain::repo::{
-    MergeCommitMessage, MergeCommitTitle, MilestoneState, ProjectDiff, RepoLabel, RepoLabelsSpec,
-    RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec, RepoPlanError, RepoProject,
-    RepoProjectSpec, RepoSettings, RepoSpec,
+    MergeCommitMessage, MergeCommitTitle, MilestoneState, ProjectDiff, RepoLabel,
+    RepoLabelsOverlay, RepoLabelsSpec, RepoMilestone, RepoMilestoneSpec, RepoMilestonesOverlay,
+    RepoMilestonesSpec, RepoPlanError, RepoProject, RepoProjectSpec, RepoSettings, RepoSpec,
 };
 mod milestone_format;
 pub use milestone_format::{MilestoneFormat, TitlePattern};
@@ -70,14 +70,24 @@ impl Config {
         self.github.project.as_ref()
     }
 
-    /// Converts this configuration into a desired repository specification.
+    /// Converts this configuration into the shared desired repository specification.
     ///
     /// # Errors
     ///
     /// Returns [`RepoPlanError::Validation`] if project title is configured without a project number.
     pub fn try_into_repo_spec(self) -> Result<RepoSpec, RepoPlanError> {
-        let project = match self.github.project {
-            Some(p) => match (p.number, p.title) {
+        self.spec_for("")
+    }
+
+    /// Resolves the desired specification for `repo_name`: the shared labels and milestones with
+    /// that repository's `[github.overrides.<repo>]` overlay applied on top.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoPlanError::Validation`] if project title is configured without a project number.
+    pub fn spec_for(&self, repo_name: &str) -> Result<RepoSpec, RepoPlanError> {
+        let project = match &self.github.project {
+            Some(p) => match (p.number, p.title.as_deref()) {
                 (Some(number), Some(title)) => Some(RepoProjectSpec::new(number, title)),
                 (None, Some(_)) => {
                     return Err(RepoPlanError::Validation(
@@ -89,13 +99,38 @@ impl Config {
             },
             None => None,
         };
+        let overlay = self.github.overrides.get(repo_name);
+        let labels = match overlay.and_then(|o| o.labels.as_ref()) {
+            Some(over) => Some(over.apply_to(self.github.labels.as_ref())),
+            None => self.github.labels.clone(),
+        };
+        let milestones = match overlay.and_then(|o| o.milestones.as_ref()) {
+            Some(over) => Some(over.apply_to(self.github.milestones.as_ref())),
+            None => self.github.milestones.clone(),
+        };
         Ok(RepoSpec::new(
-            self.github.repository.settings,
-            self.github.labels,
-            self.github.milestones,
+            self.github.repository.settings.clone(),
+            labels,
+            milestones,
             project,
         ))
     }
+
+    /// Names of repositories that declare a `[github.overrides.<repo>]` overlay.
+    pub fn overridden_repos(&self) -> impl Iterator<Item = &str> {
+        self.github.overrides.keys().map(String::as_str)
+    }
+}
+
+/// Per-repository overlay of the shared labels and milestones, from `[github.overrides.<repo>]`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+pub struct RepoOverrideConfig {
+    /// Labels overlay.
+    #[serde(default)]
+    pub labels: Option<RepoLabelsOverlay>,
+    /// Milestones overlay.
+    #[serde(default)]
+    pub milestones: Option<RepoMilestonesOverlay>,
 }
 
 /// GitHub configuration namespace.
@@ -118,6 +153,9 @@ pub struct GithubConfig {
     /// Repository milestones configuration.
     #[serde(default)]
     pub milestones: Option<MilestonesConfig>,
+    /// Per-repository label and milestone overlays, keyed by repository name.
+    #[serde(default)]
+    pub overrides: std::collections::BTreeMap<String, RepoOverrideConfig>,
 }
 
 /// Repository coordinates and optional settings.
@@ -539,5 +577,46 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).expect("should parse");
         assert_eq!(config.rules().area_prefixes, vec!["area:", "área:"]);
+    }
+
+    #[test]
+    fn spec_for_applies_repository_overlay() {
+        let toml_str = r##"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github]
+            repositories = ["web", "api"]
+
+            [github.labels]
+            prune_unmanaged = true
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+
+            [github.overrides.web.labels]
+            prune_unmanaged = false
+            items = [{ name = "area:ssr", color = "2ea44f", description = "SSR" }]
+
+            [github.overrides.infra.milestones]
+            items = [{ title = "v1", description = "Infra" }]
+        "##;
+        let config: Config = toml::from_str(toml_str).expect("should parse");
+        let web = config.spec_for("web").unwrap();
+        let web_labels = web.labels.expect("labels");
+        assert_eq!(web_labels.items.len(), 2);
+        assert!(!web_labels.prune_unmanaged);
+
+        let api = config.spec_for("api").unwrap();
+        let api_labels = api.labels.expect("labels");
+        assert_eq!(api_labels.items.len(), 1);
+        assert!(api_labels.prune_unmanaged);
+        assert!(api.milestones.is_none());
+
+        let infra = config.spec_for("infra").unwrap();
+        assert_eq!(infra.milestones.expect("milestones").items.len(), 1);
+        assert_eq!(
+            config.overridden_repos().collect::<Vec<_>>(),
+            ["infra", "web"]
+        );
     }
 }

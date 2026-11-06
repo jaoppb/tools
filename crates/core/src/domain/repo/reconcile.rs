@@ -225,3 +225,22 @@ where
 
     Ok(diffs)
 }
+
+/// Overrides items in `base` that share a key with `overlay` (keeping position) and appends the rest.
+pub(crate) fn overlay_by_key<T>(base: &mut Vec<T>, overlay: Vec<T>, key: impl Fn(&T) -> &str) {
+    for item in overlay {
+        match base.iter().position(|existing| key(existing) == key(&item)) {
+            Some(index) => base[index] = item,
+            None => base.push(item),
+        }
+    }
+}
+
+/// Appends entries of `overlay` that are not yet in `base`, preserving order.
+pub(crate) fn union_names(base: &mut Vec<String>, overlay: Vec<String>) {
+    for name in overlay {
+        if !base.contains(&name) {
+            base.push(name);
+        }
+    }
+}
