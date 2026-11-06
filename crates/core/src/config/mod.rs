@@ -172,6 +172,9 @@ pub type LabelsConfig = RepoLabelsSpec;
 /// Repository milestones configuration (alias for [`RepoMilestonesSpec`]).
 pub type MilestonesConfig = RepoMilestonesSpec;
 
+mod milestone_format;
+pub use milestone_format::MilestoneFormat;
+
 /// Granular boolean toggles for each issues-check rule.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct RulesConfig {
@@ -208,6 +211,9 @@ pub struct RulesConfig {
     /// Configurable area label prefixes.
     #[serde(default = "default_area_prefixes")]
     pub area_prefixes: Vec<String>,
+    /// What a milestone title must look like: `semver`, `any` or a regex.
+    #[serde(default)]
+    pub milestone_format: MilestoneFormat,
 }
 
 fn default_area_prefixes() -> Vec<String> {
@@ -232,6 +238,7 @@ impl Default for RulesConfig {
             priority: false,
             effort: false,
             area_prefixes: default_area_prefixes(),
+            milestone_format: MilestoneFormat::default(),
         }
     }
 }
@@ -499,6 +506,25 @@ mod tests {
         assert_eq!(resolved.get("bug"), Some(&"type:fix".to_string()));
         assert_eq!(resolved.get("legacy-bug"), Some(&"type:fix".to_string()));
         assert_eq!(resolved.get("ui"), Some(&"area:web".to_string()));
+    }
+
+    #[test]
+    fn parses_milestone_format_config() {
+        let parse = |format: &str| {
+            load_from_str(&format!("[github.repository]\nowner = 'o'\nname = 'n'\n[github.issues.rules]\nmilestone_format = '{format}'"))
+                .map(|config| config.rules().milestone_format.clone())
+        };
+        assert_eq!(parse("semver").unwrap(), MilestoneFormat::Semver);
+        assert_eq!(parse("any").unwrap(), MilestoneFormat::Any);
+        assert_eq!(
+            parse("^Fase \\d+").unwrap(),
+            MilestoneFormat::Pattern("^Fase \\d+".to_string())
+        );
+        assert!(parse("(unclosed").is_err());
+        assert_eq!(
+            RulesConfig::default().milestone_format,
+            MilestoneFormat::Semver
+        );
     }
 
     #[test]

@@ -19,7 +19,7 @@ pub fn check(survey: &Survey, rules: &RulesConfig) -> Violations {
         themes.push(labels::check(survey, &rules.area_prefixes));
     }
     if rules.milestone {
-        themes.push(milestone::check(survey));
+        themes.push(milestone::check(survey, &rules.milestone_format));
     }
     if rules.parent {
         themes.push(parent::check(survey));
