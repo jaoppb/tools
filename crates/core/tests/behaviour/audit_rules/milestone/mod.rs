@@ -1,9 +1,9 @@
-//! Every open issue has a milestone, and it is a release.
+//! Every open issue has a milestone, and its title has the configured format.
 
-use tools_core::config::{MilestoneFormat, RulesConfig};
+use tools_core::config::{MilestoneFormat, RulesConfig, TitlePattern};
 use tools_core::domain::{Lifecycle, TreeIssue};
 
-use crate::support::audit::{closed, epic, in_milestone, labels, lines, story, survey};
+use crate::support::audit::{blocked_by, closed, epic, in_milestone, labels, lines, story, survey};
 use crate::support::number;
 
 fn without_milestone(lifecycle: Lifecycle) -> TreeIssue {
@@ -75,7 +75,7 @@ fn still_requires_a_milestone_when_the_format_is_any() {
 
 #[test]
 fn checks_the_title_against_a_pattern() {
-    let format = MilestoneFormat::Pattern("^(v1|Fase \\d+)$".to_string());
+    let format = MilestoneFormat::Pattern(TitlePattern::new("^(v1|Fase \\d+)$").unwrap());
     let good = in_milestone(story(10, 1), "Fase 2");
     let bad = in_milestone(story(11, 1), "backlog");
     let found = audit_with(format, vec![epic(1), good, bad]);
@@ -87,7 +87,7 @@ fn checks_the_title_against_a_pattern() {
 
 #[test]
 fn does_not_report_a_closed_issue_whose_title_misses_the_pattern() {
-    let format = MilestoneFormat::Pattern("^(v1|Fase \\d+)$".to_string());
+    let format = MilestoneFormat::Pattern(TitlePattern::new("^(v1|Fase \\d+)$").unwrap());
     let history = in_milestone(closed(10, 1), "backlog");
     assert!(audit_with(format, vec![epic(1), history]).is_empty());
 }
@@ -96,11 +96,7 @@ fn does_not_report_a_closed_issue_whose_title_misses_the_pattern() {
 fn skips_release_ordering_for_non_semver_milestones() {
     let phase = in_milestone(story(10, 1), "Fase 2");
     let blocker = in_milestone(epic(11), "v9");
-    let tree = vec![
-        epic(1),
-        crate::support::audit::blocked_by(phase, &[11]),
-        blocker,
-    ];
+    let tree = vec![epic(1), blocked_by(phase, &[11]), blocker];
     assert!(audit_with(MilestoneFormat::Any, tree).is_empty());
 }
 

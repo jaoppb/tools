@@ -7,6 +7,9 @@ pub use crate::domain::repo::{
     RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec, RepoPlanError, RepoProject,
     RepoProjectSpec, RepoSettings, RepoSpec,
 };
+mod milestone_format;
+pub use milestone_format::{MilestoneFormat, TitlePattern};
+
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -171,9 +174,6 @@ pub type LabelsConfig = RepoLabelsSpec;
 
 /// Repository milestones configuration (alias for [`RepoMilestonesSpec`]).
 pub type MilestonesConfig = RepoMilestonesSpec;
-
-mod milestone_format;
-pub use milestone_format::MilestoneFormat;
 
 /// Granular boolean toggles for each issues-check rule.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -518,7 +518,7 @@ mod tests {
         assert_eq!(parse("any").unwrap(), MilestoneFormat::Any);
         assert_eq!(
             parse("^Fase \\d+").unwrap(),
-            MilestoneFormat::Pattern("^Fase \\d+".to_string())
+            MilestoneFormat::Pattern(TitlePattern::new("^Fase \\d+").unwrap())
         );
         assert!(parse("(unclosed").is_err());
         assert_eq!(

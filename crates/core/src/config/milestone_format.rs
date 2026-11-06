@@ -3,6 +3,41 @@
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// A compiled regular expression that compares by its source text.
+#[derive(Debug, Clone)]
+pub struct TitlePattern(Regex);
+
+impl TitlePattern {
+    /// The pattern for this regular expression.
+    ///
+    /// # Errors
+    ///
+    /// Returns the compile error when `source` is not a valid regular expression.
+    pub fn new(source: &str) -> Result<Self, regex::Error> {
+        Regex::new(source).map(Self)
+    }
+
+    /// Whether the pattern matches somewhere in `title`.
+    #[must_use]
+    pub fn is_match(&self, title: &str) -> bool {
+        self.0.is_match(title)
+    }
+
+    /// The regular expression source.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl PartialEq for TitlePattern {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for TitlePattern {}
+
 /// The accepted shape of an open issue's milestone title.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum MilestoneFormat {
@@ -12,20 +47,7 @@ pub enum MilestoneFormat {
     /// Any title: phases, sprints, or whatever the organization names them.
     Any,
     /// A title the regular expression matches somewhere.
-    Pattern(String),
-}
-
-impl MilestoneFormat {
-    /// Whether this title is acceptable. A pattern that does not compile accepts nothing;
-    /// loading the configuration already rejects such patterns.
-    #[must_use]
-    pub fn accepts(&self, title: &str, is_release: bool) -> bool {
-        match self {
-            Self::Semver => is_release,
-            Self::Any => true,
-            Self::Pattern(pattern) => Regex::new(pattern).is_ok_and(|regex| regex.is_match(title)),
-        }
-    }
+    Pattern(TitlePattern),
 }
 
 impl<'de> Deserialize<'de> for MilestoneFormat {
@@ -34,8 +56,8 @@ impl<'de> Deserialize<'de> for MilestoneFormat {
         match text.as_str() {
             "semver" => Ok(Self::Semver),
             "any" => Ok(Self::Any),
-            pattern => Regex::new(pattern)
-                .map(|_| Self::Pattern(text.clone()))
+            source => TitlePattern::new(source)
+                .map(Self::Pattern)
                 .map_err(serde::de::Error::custom),
         }
     }
@@ -46,7 +68,7 @@ impl Serialize for MilestoneFormat {
         serializer.serialize_str(match self {
             Self::Semver => "semver",
             Self::Any => "any",
-            Self::Pattern(pattern) => pattern,
+            Self::Pattern(pattern) => pattern.as_str(),
         })
     }
 }

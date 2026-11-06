@@ -27,12 +27,14 @@ pub fn check(survey: &Survey, format: &MilestoneFormat) -> Vec<Violation> {
 /// its own rule, so reports of the default setup do not change.
 fn badly_titled(issue: &TreeIssue, format: &MilestoneFormat) -> Option<Rule> {
     let milestone = issue.milestone()?;
-    let is_release = issue.release().is_some();
-    if format.accepts(&milestone.to_string(), is_release) {
-        return None;
+    match format {
+        MilestoneFormat::Semver => issue
+            .release()
+            .is_none()
+            .then_some(Rule::UnreadableMilestone),
+        MilestoneFormat::Any => None,
+        MilestoneFormat::Pattern(pattern) => {
+            (!pattern.is_match(&milestone.to_string())).then_some(Rule::InvalidMilestoneFormat)
+        }
     }
-    Some(match format {
-        MilestoneFormat::Semver => Rule::UnreadableMilestone,
-        _ => Rule::InvalidMilestoneFormat,
-    })
 }
