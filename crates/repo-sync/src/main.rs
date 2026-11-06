@@ -34,17 +34,13 @@ fn run() -> Result<String, Exit> {
         text: err.to_string(),
         code: 2,
     })?;
-    let repo_coords = resolved.target.repo_coords();
-    let is_multi = repo_coords.len() > 1;
+    let is_multi = resolved.repos.len() > 1;
     let mut outputs = Vec::new();
     let mut drift_outputs = Vec::new();
 
-    for repo in &repo_coords {
+    for (repo, spec) in &resolved.repos {
         let single_target = Target::single(repo.owner(), repo.name(), resolved.target.project());
-        let repo_sync = RepoSync::new(
-            GhRepo::new(single_target),
-            resolved.spec_for(repo.name()).clone(),
-        );
+        let repo_sync = RepoSync::new(GhRepo::new(single_target), spec.clone());
         match repo_sync.run(arguments.mode()) {
             Ok(outcome) => {
                 let text = outcome.to_string();

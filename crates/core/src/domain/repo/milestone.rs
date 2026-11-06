@@ -81,16 +81,22 @@ pub struct RepoMilestonesOverlay {
 
 impl RepoMilestonesOverlay {
     /// Resolves the effective milestones specification for a repository.
-    #[must_use]
-    pub fn apply_to(&self, base: Option<&RepoMilestonesSpec>) -> RepoMilestonesSpec {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoPlanError::Validation`] when the overlay repeats an item key.
+    pub fn apply_to(
+        &self,
+        base: Option<&RepoMilestonesSpec>,
+    ) -> Result<RepoMilestonesSpec, RepoPlanError> {
         let mut spec = base.cloned().unwrap_or_default();
         union_names(&mut spec.deprecated, self.deprecated.clone());
         spec.renames.extend(self.renames.clone());
         if let Some(prune) = self.prune_unmanaged {
             spec.prune_unmanaged = prune;
         }
-        overlay_by_key(&mut spec.items, self.items.clone(), |item| &item.title);
-        spec
+        overlay_by_key(&mut spec.items, self.items.clone(), |item| &item.title)?;
+        Ok(spec)
     }
 }
 
@@ -521,7 +527,7 @@ mod tests {
             ],
             ..RepoMilestonesOverlay::default()
         };
-        let merged = overlay.apply_to(Some(&base));
+        let merged = overlay.apply_to(Some(&base)).unwrap();
         assert_eq!(merged.deprecated, vec!["v0", "v9"]);
         assert!(merged.prune_unmanaged);
         assert_eq!(merged.items.len(), 2);

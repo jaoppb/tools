@@ -1,13 +1,12 @@
 //! The command line for `repo-sync`, parsed with clap.
 
 use clap::{Arg, ArgAction, Command};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
 use tools_core::application::RepoSyncMode;
 use tools_core::config::{Config, ConfigError, load_or_find};
-use tools_core::domain::repo::{RepoPlanError, RepoSpec};
+use tools_core::domain::repo::{Repo, RepoPlanError, RepoSpec};
 
 const PROGRAM: &str = "repo-sync";
 const CHECK: &str = "check";
@@ -107,21 +106,8 @@ pub struct Arguments {
 pub struct ResolvedRepo {
     /// Repository target.
     pub target: Target,
-    specs: BTreeMap<String, RepoSpec>,
-}
-
-impl ResolvedRepo {
-    /// The desired specification for a target repository, with its overlay applied.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `repo_name` is not part of [`Self::target`].
-    #[must_use]
-    pub fn spec_for(&self, repo_name: &str) -> &RepoSpec {
-        self.specs
-            .get(repo_name)
-            .unwrap_or_else(|| panic!("repository {repo_name} is not a resolved target"))
-    }
+    /// Each target repository with its desired specification, overlay applied.
+    pub repos: Vec<(Repo, RepoSpec)>,
 }
 
 impl Arguments {
@@ -221,14 +207,16 @@ impl Arguments {
             Target::single(owner, cfg.github.repository.name.clone(), project_number)
         };
 
-        let mut specs = BTreeMap::new();
-        for repo in target.repo_coords() {
-            let name = repo.name().to_string();
-            let spec = self.finalize(cfg.spec_for(&name)?)?;
-            specs.insert(name, spec);
-        }
+        let repos = target
+            .repo_coords()
+            .into_iter()
+            .map(|repo| {
+                let spec = self.finalize(cfg.spec_for(repo.name())?)?;
+                Ok((repo, spec))
+            })
+            .collect::<Result<Vec<_>, RepoResolveError>>()?;
 
-        Ok(ResolvedRepo { target, specs })
+        Ok(ResolvedRepo { target, repos })
     }
 
     /// Applies the entity filter and validates a resolved specification.
@@ -321,6 +309,15 @@ fn command() -> Command {
 
 #[cfg(test)]
 mod tests {
+    fn spec_of<'a>(resolved: &'a ResolvedRepo, name: &str) -> &'a RepoSpec {
+        &resolved
+            .repos
+            .iter()
+            .find(|(repo, _)| repo.name() == name)
+            .expect("target repository")
+            .1
+    }
+
     use super::*;
     use tools_core::domain::repo::RepoProjectSpec;
 
@@ -432,17 +429,17 @@ mod tests {
         // When --labels is passed, settings should be None
         let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
-        assert!(resolved.spec_for("tools").settings.is_none());
-        assert!(resolved.spec_for("tools").labels.is_some());
-        assert!(resolved.spec_for("tools").milestones.is_none());
+        assert!(spec_of(&resolved, "tools").settings.is_none());
+        assert!(spec_of(&resolved, "tools").labels.is_some());
+        assert!(spec_of(&resolved, "tools").milestones.is_none());
 
         // When no filter is passed, configured entities should be Some
         let args_all = Arguments::parse(["repo-sync".into()]).unwrap();
         let resolved_all = args_all.resolve_with_config(config).unwrap();
-        assert!(resolved_all.spec_for("tools").settings.is_some());
-        assert!(resolved_all.spec_for("tools").labels.is_some());
-        assert!(resolved_all.spec_for("tools").milestones.is_none());
-        assert!(resolved_all.spec_for("tools").project.is_none());
+        assert!(spec_of(&resolved_all, "tools").settings.is_some());
+        assert!(spec_of(&resolved_all, "tools").labels.is_some());
+        assert!(spec_of(&resolved_all, "tools").milestones.is_none());
+        assert!(spec_of(&resolved_all, "tools").project.is_none());
     }
 
     #[test]
@@ -460,11 +457,11 @@ mod tests {
 
         let args = Arguments::parse(["repo-sync".into(), "--project".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
-        assert!(resolved.spec_for("tools").settings.is_none());
-        assert!(resolved.spec_for("tools").labels.is_none());
-        assert!(resolved.spec_for("tools").milestones.is_none());
+        assert!(spec_of(&resolved, "tools").settings.is_none());
+        assert!(spec_of(&resolved, "tools").labels.is_none());
+        assert!(spec_of(&resolved, "tools").milestones.is_none());
         assert_eq!(
-            resolved.spec_for("tools").project,
+            spec_of(&resolved, "tools").project,
             Some(RepoProjectSpec::new(4, "Tools Roadmap"))
         );
     }
@@ -515,8 +512,7 @@ mod tests {
         .unwrap();
         let resolved = args.resolve_with_config(config).unwrap();
         assert_eq!(
-            resolved
-                .spec_for("web")
+            spec_of(&resolved, "web")
                 .labels
                 .as_ref()
                 .unwrap()
@@ -525,8 +521,7 @@ mod tests {
             2
         );
         assert_eq!(
-            resolved
-                .spec_for("api")
+            spec_of(&resolved, "api")
                 .labels
                 .as_ref()
                 .unwrap()
@@ -550,8 +545,7 @@ mod tests {
         let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
         let resolved = args.resolve_with_config(config).unwrap();
         assert_eq!(
-            resolved
-                .spec_for("web")
+            spec_of(&resolved, "web")
                 .labels
                 .as_ref()
                 .unwrap()
@@ -559,6 +553,25 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn resolve_rejects_duplicate_items_introduced_by_overlay() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github.overrides.web.labels]
+            items = [
+                { name = "a", color = "111111", description = "" },
+                { name = "a", color = "222222", description = "" },
+            ]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let args = Arguments::parse(["repo-sync".into()]).unwrap();
+        let err = args.resolve_with_config(config).unwrap_err();
+        assert!(err.to_string().contains("duplicate item"));
     }
 
     #[test]
@@ -578,8 +591,7 @@ mod tests {
         let args = Arguments::parse(["repo-sync".into()]).unwrap();
         let resolved = args.resolve_with_config(config).unwrap();
         assert_eq!(
-            resolved
-                .spec_for("web")
+            spec_of(&resolved, "web")
                 .labels
                 .as_ref()
                 .unwrap()

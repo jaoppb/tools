@@ -227,13 +227,29 @@ where
 }
 
 /// Overrides items in `base` that share a key with `overlay` (keeping position) and appends the rest.
-pub(crate) fn overlay_by_key<T>(base: &mut Vec<T>, overlay: Vec<T>, key: impl Fn(&T) -> &str) {
+///
+/// # Errors
+///
+/// Returns [`RepoPlanError::Validation`] when `overlay` itself repeats a key.
+pub(crate) fn overlay_by_key<T>(
+    base: &mut Vec<T>,
+    overlay: Vec<T>,
+    key: impl Fn(&T) -> &str,
+) -> Result<(), RepoPlanError> {
+    let mut seen = std::collections::BTreeSet::new();
     for item in overlay {
-        match base.iter().position(|existing| key(existing) == key(&item)) {
+        let name = key(&item).to_string();
+        if !seen.insert(name.clone()) {
+            return Err(RepoPlanError::Validation(format!(
+                "duplicate item '{name}' in overlay items"
+            )));
+        }
+        match base.iter().position(|existing| key(existing) == name) {
             Some(index) => base[index] = item,
             None => base.push(item),
         }
     }
+    Ok(())
 }
 
 /// Appends entries of `overlay` that are not yet in `base`, preserving order.

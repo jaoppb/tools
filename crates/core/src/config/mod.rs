@@ -91,14 +91,14 @@ impl Config {
             None => None,
         };
         let overlay = self.github.overrides.get(repo_name);
-        let labels = overlay.and_then(|o| o.labels.as_ref()).map_or_else(
-            || self.github.labels.clone(),
-            |over| Some(over.apply_to(self.github.labels.as_ref())),
-        );
-        let milestones = overlay.and_then(|o| o.milestones.as_ref()).map_or_else(
-            || self.github.milestones.clone(),
-            |over| Some(over.apply_to(self.github.milestones.as_ref())),
-        );
+        let labels = match overlay.and_then(|o| o.labels.as_ref()) {
+            Some(over) => Some(over.apply_to(self.github.labels.as_ref())?),
+            None => self.github.labels.clone(),
+        };
+        let milestones = match overlay.and_then(|o| o.milestones.as_ref()) {
+            Some(over) => Some(over.apply_to(self.github.milestones.as_ref())?),
+            None => self.github.milestones.clone(),
+        };
         Ok(RepoSpec::new(
             self.github.repository.settings.clone(),
             labels,

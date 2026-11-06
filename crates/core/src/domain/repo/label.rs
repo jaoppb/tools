@@ -93,8 +93,11 @@ pub struct RepoLabelsOverlay {
 
 impl RepoLabelsOverlay {
     /// Resolves the effective labels specification for a repository.
-    #[must_use]
-    pub fn apply_to(&self, base: Option<&RepoLabelsSpec>) -> RepoLabelsSpec {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoPlanError::Validation`] when the overlay repeats an item key.
+    pub fn apply_to(&self, base: Option<&RepoLabelsSpec>) -> Result<RepoLabelsSpec, RepoPlanError> {
         let mut spec = base.cloned().unwrap_or_default();
         union_names(&mut spec.deprecated, self.deprecated.clone());
         spec.renames.extend(self.renames.clone());
@@ -102,8 +105,8 @@ impl RepoLabelsOverlay {
         if let Some(prune) = self.prune_unmanaged {
             spec.prune_unmanaged = prune;
         }
-        overlay_by_key(&mut spec.items, self.items.clone(), |label| &label.name);
-        spec
+        overlay_by_key(&mut spec.items, self.items.clone(), |label| &label.name)?;
+        Ok(spec)
     }
 }
 
@@ -490,7 +493,7 @@ mod tests {
                 RepoLabel::new("area:ssr", "333333", "ssr"),
             ],
         };
-        let merged = overlay.apply_to(Some(&base));
+        let merged = overlay.apply_to(Some(&base)).unwrap();
         assert_eq!(merged.deprecated, vec!["bug", "wontfix"]);
         assert_eq!(merged.renames.len(), 2);
         assert_eq!(merged.migrations.get("ui"), Some(&"area:ssr".to_string()));
@@ -512,8 +515,8 @@ mod tests {
             prune_unmanaged: true,
             ..RepoLabelsSpec::default()
         };
-        assert!(!overlay.apply_to(Some(&base)).prune_unmanaged);
-        let alone = overlay.apply_to(None);
+        assert!(!overlay.apply_to(Some(&base)).unwrap().prune_unmanaged);
+        let alone = overlay.apply_to(None).unwrap();
         assert_eq!(alone.items.len(), 1);
         assert!(!alone.prune_unmanaged);
     }
