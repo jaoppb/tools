@@ -1,7 +1,6 @@
 //! Configuration for repository target, repository settings, and audit rules, read from `tools.toml`.
 
 use crate::adapters::github::target::Target;
-use crate::domain::issue::{StatusMapping, StatusMappingError};
 pub use crate::domain::repo::{
     MergeCommitMessage, MergeCommitTitle, MilestoneState, ProjectDiff, RepoLabel,
     RepoLabelsOverlay, RepoLabelsSpec, RepoMilestone, RepoMilestoneSpec, RepoMilestonesOverlay,
@@ -219,20 +218,10 @@ pub struct ProjectConfig {
     /// Project title, if specified.
     #[serde(default)]
     pub title: Option<String>,
-    /// Status field mapping from external column names to canonical status names.
+    /// Legacy column aliases. The sync no longer reads them: board columns must
+    /// match `[workflow].statuses`. Removed with the config migration (#58).
     #[serde(default)]
     pub status_mapping: std::collections::HashMap<String, String>,
-}
-
-impl ProjectConfig {
-    /// Resolves the status mapping from configuration.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StatusMappingError`] if any target status name is invalid.
-    pub fn status_mapping(&self) -> Result<StatusMapping, StatusMappingError> {
-        StatusMapping::from_pairs(&self.status_mapping)
-    }
 }
 
 /// Settings for issues rules.

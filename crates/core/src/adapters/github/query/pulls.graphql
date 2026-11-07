@@ -7,6 +7,7 @@ query($cursor: String) {
         endCursor
       }
       nodes {
+        number
         closingIssuesReferences(first: 50) {
           nodes {
             number

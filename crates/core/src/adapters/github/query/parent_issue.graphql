@@ -1,0 +1,24 @@
+# One issue with what the sync reads of it, for a parent that is not a Project card.
+query {
+  repository(owner: "@OWNER@", name: "@REPOSITORY@") {
+    issue(number: @NUMBER@) {
+      number
+      state
+      repository { nameWithOwner }
+      labels(first: 30) { nodes { name } }
+      milestone { title }
+      parent {
+        number
+        repository { nameWithOwner }
+        labels(first: 30) { nodes { name } }
+      }
+      blockedBy(first: 50) {
+        nodes {
+          number
+          state
+          repository { nameWithOwner }
+        }
+      }
+    }
+  }
+}

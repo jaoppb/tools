@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::domain::{Card, IssueNumber, Snapshot};
+use crate::domain::{Card, Facts, IssueNumber, Links, Snapshot, StatusName};
 
 /// A Project field value: a select option or a number.
 #[derive(Debug, Clone, PartialEq)]
@@ -22,7 +22,7 @@ pub struct Subject {
     /// Whether the issue is closed.
     pub closed: bool,
     /// The board column; `None` when the issue is not a Project card.
-    pub status: Option<String>,
+    pub status: Option<StatusName>,
     /// The label names.
     pub labels: Vec<String>,
     /// The milestone title.
@@ -33,15 +33,35 @@ pub struct Subject {
     pub blockers: Vec<(IssueNumber, bool)>,
     /// The parent issue.
     pub parent: Option<IssueNumber>,
-    /// Whether an open pull request closes the issue.
-    pub closed_by_open_pr: bool,
+    /// The open pull requests that close the issue.
+    pub prs: Vec<IssueNumber>,
 }
 
 impl Subject {
     /// The subject of a Project card.
     #[must_use]
     pub fn from_card(card: &Card, snapshot: &Snapshot) -> Self {
-        let facts = card.facts();
+        Self::from_parts(
+            card.number().clone(),
+            card.is_closed(),
+            Some(card.status().clone()),
+            card.facts(),
+            card.links(),
+            snapshot.open_pulls_closing(card.number()),
+        )
+    }
+
+    /// The subject of an issue from its facts and links: the one place that maps
+    /// them onto the schema, for cards and for parents read on demand alike.
+    #[must_use]
+    pub fn from_parts(
+        number: IssueNumber,
+        closed: bool,
+        status: Option<StatusName>,
+        facts: &Facts,
+        links: &Links,
+        prs: Vec<IssueNumber>,
+    ) -> Self {
         let mut fields = BTreeMap::new();
         if let Some(priority) = facts.priority_name() {
             fields.insert("Priority".to_owned(), FieldValue::Text(priority));
@@ -50,20 +70,19 @@ impl Subject {
             fields.insert("Effort".to_owned(), FieldValue::Number(i64::from(points)));
         }
         Self {
-            number: card.number().clone(),
-            closed: card.is_closed(),
-            status: Some(card.status().name().to_owned()),
+            number,
+            closed,
+            status,
             labels: facts.labels().names().map(str::to_owned).collect(),
             milestone: facts.milestone_title(),
             fields,
-            blockers: card
-                .links()
+            blockers: links
                 .blockers()
                 .iter()
                 .map(|(number, closed)| (number.clone(), closed))
                 .collect(),
-            parent: card.links().parent_number().cloned(),
-            closed_by_open_pr: snapshot.closed_by_open_pull(card.number()),
+            parent: links.parent_number().cloned(),
+            prs,
         }
     }
 }

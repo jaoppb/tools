@@ -7,10 +7,9 @@ use std::sync::Arc;
 
 use cel_interpreter::{Context, Value};
 
-use crate::domain::{IssueNumber, Snapshot};
-use crate::workflow::config::{Rule, Workflow};
+use crate::domain::{IssueNumber, Snapshot, StatusName};
+use crate::workflow::config::{Rule, RuleId, Set, Workflow};
 use crate::workflow::explain::{Explain, RuleResult, RuleTrace};
-use crate::workflow::schema::CURRENT;
 use crate::workflow::subject::{FieldValue, ParentResolver, ResolveError, Subject};
 
 /// Why an issue was frozen: no status change.
@@ -53,6 +52,31 @@ impl fmt::Display for Violation {
     }
 }
 
+/// What a run does with one card. Diagnostics (the trace) are separate: see
+/// [`Decision::explain`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    /// The card changes status.
+    Move {
+        /// The status it has.
+        from: StatusName,
+        /// The status it gets.
+        to: StatusName,
+        /// The rule that decided.
+        rule: RuleId,
+    },
+    /// The card stays where it is. `rule` is the rule that fired, if any did.
+    Keep {
+        /// The rule that decided, if one fired.
+        rule: Option<RuleId>,
+    },
+    /// The card is not evaluated and does not change.
+    Frozen {
+        /// Why.
+        cause: Violation,
+    },
+}
+
 /// The decision for one Project card: the trace says everything.
 #[derive(Debug, Clone)]
 pub struct Decision {
@@ -66,20 +90,45 @@ impl Decision {
         &self.explain.number
     }
 
+    /// The status the card has now.
+    #[must_use]
+    pub const fn current(&self) -> &StatusName {
+        &self.explain.current
+    }
+
     /// The status the card should have; its current one when frozen.
     #[must_use]
-    pub fn destination(&self) -> &str {
+    pub const fn destination(&self) -> &StatusName {
         &self.explain.destination
     }
 
     /// The id of the rule that fired, if one did.
     #[must_use]
-    pub fn fired(&self) -> Option<&str> {
+    pub fn fired(&self) -> Option<&RuleId> {
         self.explain
             .rules
             .iter()
             .find(|rule| rule.result == RuleResult::Fired)
-            .map(|rule| rule.id.as_str())
+            .map(|rule| &rule.id)
+    }
+
+    /// What the run does with this card.
+    #[must_use]
+    pub fn outcome(&self) -> Outcome {
+        if let Some(cause) = self.violation() {
+            return Outcome::Frozen {
+                cause: cause.clone(),
+            };
+        }
+        let rule = self.fired().cloned();
+        match (rule, self.current() == self.destination()) {
+            (Some(rule), false) => Outcome::Move {
+                from: self.current().clone(),
+                to: self.destination().clone(),
+                rule,
+            },
+            (rule, _) => Outcome::Keep { rule },
+        }
     }
 
     /// Why the card is frozen, if it is.
@@ -236,7 +285,7 @@ impl<'a> Run<'a> {
         let current = subject
             .status
             .clone()
-            .unwrap_or_else(|| self.workflow.default.clone());
+            .unwrap_or_else(|| self.workflow.statuses.default_status().clone());
         if self.cyclic.contains(&subject.number) {
             return self.frozen(subject, &current, Violation::Cycle, Partial::default());
         }
@@ -271,7 +320,7 @@ impl<'a> Run<'a> {
         Ok(node.value.clone())
     }
 
-    fn evaluate(&self, subject: &Subject, current: &str, parent: Value) -> Node {
+    fn evaluate(&self, subject: &Subject, current: &StatusName, parent: Value) -> Node {
         let mut map = issue_map(subject, current);
         map.insert("parent".to_owned(), parent);
         let mut context = self.root.new_inner_scope();
@@ -288,14 +337,14 @@ impl<'a> Run<'a> {
         }
         let (rules, outcome) = self.eval_rules(&context);
         let set = match outcome {
-            Ok(rule) => rule.map(|rule| rule.set.as_str()),
+            Ok(rule) => rule.map(|rule| &rule.set),
             Err(violation) => {
                 return self.frozen(subject, current, violation, Partial { facts, rules });
             }
         };
         let next = match set {
-            Some(set) if set != CURRENT => set.to_owned(),
-            _ => current.to_owned(),
+            Some(Set::Status(status)) => status.clone(),
+            _ => current.clone(),
         };
         for (name, value) in &facts {
             map.insert(name.clone(), value.clone());
@@ -342,7 +391,7 @@ impl<'a> Run<'a> {
             .map(|rule| RuleTrace {
                 id: rule.id.clone(),
                 when: rule.when.source().to_owned(),
-                set: rule.set.clone(),
+                set: rule.set.to_string(),
                 result: RuleResult::NotReached,
             })
             .collect();
@@ -361,7 +410,7 @@ impl<'a> Run<'a> {
             };
             trace.result = RuleResult::Error(failure.clone());
             let violation = Violation::Eval {
-                origin: format!("rule {:?}", rule.id),
+                origin: format!("rule {:?}", rule.id.as_str()),
                 message: failure,
             };
             return (traces, Err(violation));
@@ -373,13 +422,13 @@ impl<'a> Run<'a> {
     fn frozen(
         &self,
         subject: &Subject,
-        current: &str,
+        current: &StatusName,
         violation: Violation,
         partial: Partial,
     ) -> Node {
         let mut map = issue_map(subject, current);
         map.insert("parent".to_owned(), Value::Null);
-        map.insert("next".to_owned(), Value::from(current));
+        map.insert("next".to_owned(), Value::from(current.as_str()));
         Node {
             value: map.into(),
             decision: decision(subject, current, current, partial, Some(violation)),
@@ -389,16 +438,16 @@ impl<'a> Run<'a> {
 
 fn decision(
     subject: &Subject,
-    current: &str,
-    destination: &str,
+    current: &StatusName,
+    destination: &StatusName,
     partial: Partial,
     violation: Option<Violation>,
 ) -> Decision {
     Decision {
         explain: Explain {
             number: subject.number.clone(),
-            current: current.to_owned(),
-            destination: destination.to_owned(),
+            current: current.clone(),
+            destination: destination.clone(),
             facts: partial.facts,
             rules: partial.rules,
             violation,
@@ -413,7 +462,7 @@ fn unreadable(parent: &IssueNumber, error: ResolveError) -> Violation {
     }
 }
 
-fn issue_map(subject: &Subject, status: &str) -> HashMap<String, Value> {
+fn issue_map(subject: &Subject, status: &StatusName) -> HashMap<String, Value> {
     let fields: HashMap<String, Value> = subject
         .fields
         .iter()
@@ -430,10 +479,21 @@ fn issue_map(subject: &Subject, status: &str) -> HashMap<String, Value> {
             Value::from(blocker)
         })
         .collect();
+    let prs: Vec<Value> = subject
+        .prs
+        .iter()
+        .map(|pull| {
+            let pull_map: HashMap<String, Value> = HashMap::from([
+                ("number".to_owned(), number_value(pull)),
+                ("repo".to_owned(), Value::from(pull.repo().name())),
+            ]);
+            Value::from(pull_map)
+        })
+        .collect();
     HashMap::from([
         ("number".to_owned(), number_value(&subject.number)),
         ("state".to_owned(), state(subject.closed)),
-        ("status".to_owned(), Value::from(status)),
+        ("status".to_owned(), Value::from(status.as_str())),
         ("labels".to_owned(), Value::from(subject.labels.clone())),
         (
             "milestone".to_owned(),
@@ -441,10 +501,7 @@ fn issue_map(subject: &Subject, status: &str) -> HashMap<String, Value> {
         ),
         ("fields".to_owned(), Value::from(fields)),
         ("blockers".to_owned(), Value::from(blockers)),
-        (
-            "closed_by_open_pr".to_owned(),
-            Value::Bool(subject.closed_by_open_pr),
-        ),
+        ("prs".to_owned(), Value::from(prs)),
     ])
 }
 

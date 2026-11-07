@@ -3,44 +3,48 @@
 use crate::adapters::github::cursor_fields;
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{
-    StatusField, parse_item_id, parse_items_with, parse_pulls, parse_status_field,
+    StatusField, parse_item_id, parse_items, parse_pulls, parse_status_field, parse_subject,
 };
 use crate::adapters::github::query;
 use crate::adapters::github::runner::GhRunner;
 use crate::adapters::github::target::Target;
 use crate::application::{ProjectState, SyncError};
-use crate::domain::{Card, Cards, Closing, IssueNumber, Repo, Snapshot, Status, StatusMapping};
+use crate::domain::{
+    Card, Cards, Closes, Closing, IssueNumber, Repo, Snapshot, StatusName, Statuses,
+};
+use crate::workflow::{ParentResolver, ResolveError, Subject};
 
 /// Reads and writes one Project through a `gh` runner.
 #[derive(Debug, Clone)]
 pub struct GhProject {
     runner: GhRunner,
     target: Target,
-    mapping: StatusMapping,
+    statuses: Statuses,
 }
 
 impl GhProject {
-    /// A Project reached through the installed `gh`.
+    /// A Project reached through the installed `gh` that is only read for its
+    /// membership (the audit): any Status column is accepted.
     #[must_use]
     pub fn new(target: Target) -> Self {
-        Self::with_runner(GhRunner::default(), target)
+        Self::with_runner(GhRunner::default(), target, Statuses::undeclared())
+    }
+
+    /// A Project reached through the installed `gh` whose Status columns are
+    /// exactly `statuses`.
+    #[must_use]
+    pub fn with_statuses(target: Target, statuses: Statuses) -> Self {
+        Self::with_runner(GhRunner::default(), target, statuses)
     }
 
     /// A Project reached through this runner.
     #[must_use]
-    pub const fn with_runner(runner: GhRunner, target: Target) -> Self {
+    pub const fn with_runner(runner: GhRunner, target: Target, statuses: Statuses) -> Self {
         Self {
             runner,
             target,
-            mapping: StatusMapping::new(),
+            statuses,
         }
-    }
-
-    /// Configures status mapping on this project.
-    #[must_use]
-    pub fn with_mapping(mut self, mapping: StatusMapping) -> Self {
-        self.mapping = mapping;
-        self
     }
 
     fn read(&self) -> Result<Snapshot, GhError> {
@@ -54,7 +58,7 @@ impl GhProject {
         let reply = self
             .runner
             .graphql(&query::items(&self.target), &cursor_fields(cursor))?;
-        let page = parse_items_with(&reply, &self.target, &self.mapping)?;
+        let page = parse_items(&reply, &self.target, &self.statuses)?;
         cards.extend_from_slice(page.cards());
         match page.next() {
             Some(next) => self.cards_from(Some(next), cards),
@@ -62,7 +66,7 @@ impl GhProject {
         }
     }
 
-    fn closing(&self) -> Result<Vec<IssueNumber>, GhError> {
+    fn closing(&self) -> Result<Vec<Closes>, GhError> {
         let mut all_closing = Vec::new();
         for repo in self.target.repos() {
             let closing = self.closing_for_repo(repo, None, Vec::new())?;
@@ -75,8 +79,8 @@ impl GhProject {
         &self,
         repo: &Repo,
         cursor: Option<&str>,
-        mut closing: Vec<IssueNumber>,
-    ) -> Result<Vec<IssueNumber>, GhError> {
+        mut closing: Vec<Closes>,
+    ) -> Result<Vec<Closes>, GhError> {
         let request = query::pulls_for_repo(&self.target, repo);
         let reply = self.runner.graphql(&request, &cursor_fields(cursor))?;
         let page = parse_pulls(&reply, repo)?;
@@ -87,13 +91,13 @@ impl GhProject {
         }
     }
 
-    fn write(&self, number: IssueNumber, status: Status) -> Result<(), GhError> {
+    fn write(&self, number: IssueNumber, status: &StatusName) -> Result<(), GhError> {
         let item = self.item_id(number.clone())?;
         let field = self.status_field()?;
         let option = field
-            .option_for_status(status, &self.mapping)
+            .option_for_status(status)
             .ok_or_else(|| GhError::NoStatusOption {
-                name: status.name().to_owned(),
+                name: status.to_string(),
             })?;
         self.runner
             .graphql(query::SET_STATUS, &assignment(&field, &item, option))?;
@@ -131,11 +135,43 @@ impl ProjectState for GhProject {
         })
     }
 
-    fn set_status(&mut self, number: IssueNumber, status: Status) -> Result<(), SyncError> {
+    fn set_status(&mut self, number: IssueNumber, status: &StatusName) -> Result<(), SyncError> {
         self.write(number.clone(), status)
             .map_err(|error| SyncError::Write {
                 number,
                 reason: error.to_string(),
             })
+    }
+}
+
+impl ParentResolver for GhProject {
+    /// Reads the issue from its own repository, wherever it lives. A repository
+    /// GitHub will not resolve is one the token cannot read.
+    fn fetch(&self, number: &IssueNumber) -> Result<Subject, ResolveError> {
+        let request = query::parent_issue(&self.target, number.repo(), number.value());
+        let reply = self
+            .runner
+            .graphql(&request, &[])
+            .map_err(|error| classify(&error))?;
+        parse_subject(&reply, number)
+            .map_err(|error| ResolveError::Failed(error.to_string()))?
+            .ok_or(ResolveError::NotFound)
+    }
+}
+
+/// `gh` reports a repository the token cannot see as "Could not resolve to a
+/// Repository" and a refused one as FORBIDDEN or "not accessible".
+fn classify(error: &GhError) -> ResolveError {
+    let text = error.to_string();
+    let refused = [
+        "Could not resolve to a Repository",
+        "FORBIDDEN",
+        "not accessible",
+        "HTTP 403",
+    ];
+    if refused.iter().any(|marker| text.contains(marker)) {
+        ResolveError::Forbidden
+    } else {
+        ResolveError::Failed(text)
     }
 }

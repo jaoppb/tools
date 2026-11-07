@@ -1,7 +1,8 @@
 //! An in-memory Project and repository issues for tests.
 
 use crate::application::{AuditError, ProjectState, RepositoryIssues, SyncError};
-use crate::domain::{IssueNumber, IssueTree, Snapshot, Status};
+use crate::domain::{IssueNumber, IssueTree, Snapshot, StatusName};
+use crate::workflow::{ParentResolver, ResolveError, Subject};
 
 /// Holds a snapshot and applies Status changes to it.
 ///
@@ -39,12 +40,20 @@ impl MemoryProject {
     }
 }
 
+/// A Project in memory reads no issue outside of it: every parent that is
+/// not a card is "not found".
+impl ParentResolver for MemoryProject {
+    fn fetch(&self, _number: &IssueNumber) -> Result<Subject, ResolveError> {
+        Err(ResolveError::NotFound)
+    }
+}
+
 impl ProjectState for MemoryProject {
     fn snapshot(&self) -> Result<Snapshot, SyncError> {
         Ok(self.snapshot.clone())
     }
 
-    fn set_status(&mut self, number: IssueNumber, status: Status) -> Result<(), SyncError> {
+    fn set_status(&mut self, number: IssueNumber, status: &StatusName) -> Result<(), SyncError> {
         self.refuses(&number)
             .then_some(())
             .map_or_else(|| Ok(()), |()| Err(refusal(number.clone())))?;

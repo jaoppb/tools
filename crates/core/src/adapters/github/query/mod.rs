@@ -16,6 +16,7 @@ const TEXT_PULL_COMMENTS: &str = include_str!("text_pull_comments.graphql");
 const TEXT_PULL_REVIEWS: &str = include_str!("text_pull_reviews.graphql");
 const TEXT_PULL_THREADS: &str = include_str!("text_pull_threads.graphql");
 const TEXT_THREAD_COMMENTS: &str = include_str!("text_thread_comments.graphql");
+const PARENT_ISSUE: &str = include_str!("parent_issue.graphql");
 const ITEM_OF_ISSUE: &str = include_str!("item_of_issue.graphql");
 const STATUS_FIELD: &str = include_str!("status_field.graphql");
 const REPO_LABELS: &str = include_str!("repo_labels.graphql");
@@ -122,6 +123,12 @@ pub fn item_of_issue(target: &Target, number: u64) -> String {
         .cloned()
         .unwrap_or_else(|| Repo::new(target.owner(), target.repository()));
     item_of_issue_for_repo(target, &repo, number)
+}
+
+/// One issue, wherever it lives, with what the sync reads of it.
+#[must_use]
+pub fn parent_issue(target: &Target, repo: &Repo, number: u64) -> String {
+    fill_for_repo(PARENT_ISSUE, target, repo).replace("@NUMBER@", &number.to_string())
 }
 
 /// The Project id and the Status field with its options.

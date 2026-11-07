@@ -1,23 +1,52 @@
 //! The read-only picture of the Project that the rules look at.
 
 use crate::domain::card::{Card, Cards};
-use crate::domain::issue::{IssueNumber, Status};
+use crate::domain::issue::{IssueNumber, StatusName};
 
-/// The issues that an open pull request closes.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Closing(Vec<IssueNumber>);
+/// An open pull request and the issue it closes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Closes {
+    pull: IssueNumber,
+    issue: IssueNumber,
+}
 
-impl Closing {
-    /// The issues closed by open pull requests.
+impl Closes {
+    /// The open pull request `pull` closes `issue`.
     #[must_use]
-    pub const fn new(issues: Vec<IssueNumber>) -> Self {
-        Self(issues)
+    pub const fn new(pull: IssueNumber, issue: IssueNumber) -> Self {
+        Self { pull, issue }
     }
 
-    /// Whether an open pull request closes this issue.
+    /// The pull request.
     #[must_use]
-    pub fn contains(&self, number: &IssueNumber) -> bool {
-        self.0.contains(number)
+    pub const fn pull(&self) -> &IssueNumber {
+        &self.pull
+    }
+
+    /// The issue it closes.
+    #[must_use]
+    pub const fn issue(&self) -> &IssueNumber {
+        &self.issue
+    }
+}
+
+/// The open pull requests and the issues they close.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Closing(Vec<Closes>);
+
+impl Closing {
+    /// The closing references of the open pull requests.
+    #[must_use]
+    pub const fn new(references: Vec<Closes>) -> Self {
+        Self(references)
+    }
+
+    /// The open pull requests that close this issue.
+    pub fn pulls_of<'a>(&'a self, issue: &'a IssueNumber) -> impl Iterator<Item = &'a IssueNumber> {
+        self.0
+            .iter()
+            .filter(move |closes| closes.issue == *issue)
+            .map(|closes| &closes.pull)
     }
 }
 
@@ -46,15 +75,15 @@ impl Snapshot {
         self.cards.find(number)
     }
 
-    /// Whether an open pull request closes this issue.
+    /// The open pull requests that close this issue.
     #[must_use]
-    pub fn closed_by_open_pull(&self, number: &IssueNumber) -> bool {
-        self.closing.contains(number)
+    pub fn open_pulls_closing(&self, number: &IssueNumber) -> Vec<IssueNumber> {
+        self.closing.pulls_of(number).cloned().collect()
     }
 
     /// This snapshot with the card of `number` moved to `status`.
     #[must_use]
-    pub fn with_status(self, number: &IssueNumber, status: Status) -> Self {
+    pub fn with_status(self, number: &IssueNumber, status: &StatusName) -> Self {
         Self {
             cards: self.cards.with_status(number, status),
             ..self

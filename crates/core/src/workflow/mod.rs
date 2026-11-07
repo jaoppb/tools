@@ -13,8 +13,8 @@ mod expr;
 mod schema;
 mod subject;
 
-pub use crate::workflow::config::{Workflow, WorkflowConfig};
-pub use crate::workflow::engine::{Decision, Engine, Evaluation, Violation};
+pub use crate::workflow::config::{RuleId, Workflow, WorkflowConfig};
+pub use crate::workflow::engine::{Decision, Engine, Evaluation, Outcome, Violation};
 pub use crate::workflow::error::LoadError;
 pub use crate::workflow::explain::{Explain, RuleResult};
 pub use crate::workflow::subject::{FieldValue, ParentResolver, ResolveError, Subject};
