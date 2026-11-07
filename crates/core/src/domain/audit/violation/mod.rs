@@ -35,6 +35,8 @@ pub enum Rule {
     NoMilestone,
     /// The open issue's milestone title is not a release such as `v0.1.0`.
     UnreadableMilestone,
+    /// The open issue's milestone title does not match the configured format.
+    InvalidMilestoneFormat,
     /// The open issue is not an epic and has no parent.
     NoParent,
     /// The open issue sits under this closed parent.
@@ -58,6 +60,7 @@ impl Rule {
             Self::NoArea => "no-area",
             Self::NoMilestone => "no-milestone",
             Self::UnreadableMilestone => "unreadable-milestone",
+            Self::InvalidMilestoneFormat => "invalid-milestone-format",
             Self::NoParent => "no-parent",
             Self::ClosedParent(_) => "closed-parent",
             Self::ParentEarlierRelease(_) => "parent-earlier-release",
@@ -81,6 +84,9 @@ fn describe(rule: &Rule, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         Rule::NoMilestone => formatter.write_str("no milestone"),
         Rule::UnreadableMilestone => {
             formatter.write_str("milestone is not a release such as v0.1.0 or v0.2.0")
+        }
+        Rule::InvalidMilestoneFormat => {
+            formatter.write_str("milestone does not match the configured milestone_format")
         }
         Rule::NoParent => formatter.write_str("no parent and not an epic"),
         Rule::ClosedParent(parent) => {

@@ -8,12 +8,15 @@ mod project;
 mod reconcile;
 mod settings;
 
-pub(crate) use self::reconcile::{ReconcileHandler, reconcile_by_key, validate_collection_spec};
+pub(crate) use self::reconcile::{
+    ReconcileHandler, overlay_by_key, reconcile_by_key, union_names, validate_collection_spec,
+};
 
 pub use self::coord::Repo;
-pub use self::label::{LabelDiff, RepoLabel, RepoLabelsSpec};
+pub use self::label::{LabelDiff, RepoLabel, RepoLabelsOverlay, RepoLabelsSpec};
 pub use self::milestone::{
-    MilestoneDiff, MilestoneState, RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec,
+    MilestoneDiff, MilestoneState, RepoMilestone, RepoMilestoneSpec, RepoMilestonesOverlay,
+    RepoMilestonesSpec,
 };
 pub use self::plan::{DeleteReason, RepoPlan, RepoPlanError, RepoSpec, RepoState};
 pub use self::project::{ProjectDiff, RepoProject, RepoProjectSpec};

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use tools_core::adapters::github::Target;
 use tools_core::application::RepoSyncMode;
 use tools_core::config::{Config, ConfigError, load_or_find};
-use tools_core::domain::repo::{RepoPlanError, RepoSpec};
+use tools_core::domain::repo::{Repo, RepoPlanError, RepoSpec};
 
 const PROGRAM: &str = "repo-sync";
 const CHECK: &str = "check";
@@ -101,13 +101,13 @@ pub struct Arguments {
     repos: Vec<String>,
 }
 
-/// Resolved repository target and desired configuration specification.
+/// Resolved repository target and the desired specification of each target repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedRepo {
     /// Repository target.
     pub target: Target,
-    /// Desired configuration specification.
-    pub spec: RepoSpec,
+    /// Each target repository with its desired specification, overlay applied.
+    pub repos: Vec<(Repo, RepoSpec)>,
 }
 
 impl Arguments {
@@ -207,15 +207,27 @@ impl Arguments {
             Target::single(owner, cfg.github.repository.name.clone(), project_number)
         };
 
-        let spec = cfg.try_into_repo_spec()?;
+        let repos = target
+            .repo_coords()
+            .into_iter()
+            .map(|repo| {
+                let spec = self.finalize(cfg.spec_for(repo.name())?)?;
+                Ok((repo, spec))
+            })
+            .collect::<Result<Vec<_>, RepoResolveError>>()?;
+
+        Ok(ResolvedRepo { target, repos })
+    }
+
+    /// Applies the entity filter and validates a resolved specification.
+    fn finalize(&self, spec: RepoSpec) -> Result<RepoSpec, RepoResolveError> {
         let spec = match self.explicit_entities {
             Some(filter) => filter.apply(spec)?,
             None if spec.is_empty() => return Err(RepoResolveError::EmptyConfig),
             None => spec,
         };
         spec.validate()?;
-
-        Ok(ResolvedRepo { target, spec })
+        Ok(spec)
     }
 }
 
@@ -297,6 +309,15 @@ fn command() -> Command {
 
 #[cfg(test)]
 mod tests {
+    fn spec_of<'a>(resolved: &'a ResolvedRepo, name: &str) -> &'a RepoSpec {
+        &resolved
+            .repos
+            .iter()
+            .find(|(repo, _)| repo.name() == name)
+            .expect("target repository")
+            .1
+    }
+
     use super::*;
     use tools_core::domain::repo::RepoProjectSpec;
 
@@ -408,17 +429,17 @@ mod tests {
         // When --labels is passed, settings should be None
         let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
-        assert!(resolved.spec.settings.is_none());
-        assert!(resolved.spec.labels.is_some());
-        assert!(resolved.spec.milestones.is_none());
+        assert!(spec_of(&resolved, "tools").settings.is_none());
+        assert!(spec_of(&resolved, "tools").labels.is_some());
+        assert!(spec_of(&resolved, "tools").milestones.is_none());
 
         // When no filter is passed, configured entities should be Some
         let args_all = Arguments::parse(["repo-sync".into()]).unwrap();
         let resolved_all = args_all.resolve_with_config(config).unwrap();
-        assert!(resolved_all.spec.settings.is_some());
-        assert!(resolved_all.spec.labels.is_some());
-        assert!(resolved_all.spec.milestones.is_none());
-        assert!(resolved_all.spec.project.is_none());
+        assert!(spec_of(&resolved_all, "tools").settings.is_some());
+        assert!(spec_of(&resolved_all, "tools").labels.is_some());
+        assert!(spec_of(&resolved_all, "tools").milestones.is_none());
+        assert!(spec_of(&resolved_all, "tools").project.is_none());
     }
 
     #[test]
@@ -436,11 +457,11 @@ mod tests {
 
         let args = Arguments::parse(["repo-sync".into(), "--project".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
-        assert!(resolved.spec.settings.is_none());
-        assert!(resolved.spec.labels.is_none());
-        assert!(resolved.spec.milestones.is_none());
+        assert!(spec_of(&resolved, "tools").settings.is_none());
+        assert!(spec_of(&resolved, "tools").labels.is_none());
+        assert!(spec_of(&resolved, "tools").milestones.is_none());
         assert_eq!(
-            resolved.spec.project,
+            spec_of(&resolved, "tools").project,
             Some(RepoProjectSpec::new(4, "Tools Roadmap"))
         );
     }
@@ -464,6 +485,120 @@ mod tests {
             RepoResolveError::Plan(RepoPlanError::Validation(_))
         ));
         assert!(err.to_string().contains("project number is required"));
+    }
+
+    #[test]
+    fn resolve_applies_repository_overlay_per_target() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+
+            [github.overrides.web.labels]
+            items = [{ name = "area:ssr", color = "2ea44f", description = "SSR" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        let args = Arguments::parse([
+            "repo-sync".into(),
+            "--repo".into(),
+            "web".into(),
+            "--repo".into(),
+            "api".into(),
+        ])
+        .unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        assert_eq!(
+            spec_of(&resolved, "web")
+                .labels
+                .as_ref()
+                .unwrap()
+                .items
+                .len(),
+            2
+        );
+        assert_eq!(
+            spec_of(&resolved, "api")
+                .labels
+                .as_ref()
+                .unwrap()
+                .items
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn resolve_accepts_config_defined_only_by_overlays() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github.overrides.web.labels]
+            items = [{ name = "area:ssr", color = "2ea44f", description = "SSR" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        assert_eq!(
+            spec_of(&resolved, "web")
+                .labels
+                .as_ref()
+                .unwrap()
+                .items
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn resolve_rejects_duplicate_items_introduced_by_overlay() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github.overrides.web.labels]
+            items = [
+                { name = "a", color = "111111", description = "" },
+                { name = "a", color = "222222", description = "" },
+            ]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let args = Arguments::parse(["repo-sync".into()]).unwrap();
+        let err = args.resolve_with_config(config).unwrap_err();
+        assert!(err.to_string().contains("duplicate item"));
+    }
+
+    #[test]
+    fn resolve_ignores_overlay_of_untargeted_repo() {
+        let toml_str = r#"
+            [github.repository]
+            owner = "gatuno-manga"
+            name = "web"
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
+
+            [github.overrides.infra.labels]
+            items = [{ name = "area:ci", color = "2ea44f", description = "CI" }]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let args = Arguments::parse(["repo-sync".into()]).unwrap();
+        let resolved = args.resolve_with_config(config).unwrap();
+        assert_eq!(
+            spec_of(&resolved, "web")
+                .labels
+                .as_ref()
+                .unwrap()
+                .items
+                .len(),
+            1
+        );
     }
 
     #[test]
