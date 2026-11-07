@@ -29,8 +29,8 @@ fn plan_of_with(
     closing: &[u64],
     rules: &tools_core::config::RulesConfig,
 ) -> Result<Plan, GhError> {
-    let page = parse_items(json, &Target::cosmo())?;
-    let repo = Target::cosmo().repo_coords().remove(0);
+    let page = parse_items(json, &crate::support::fixture_target())?;
+    let repo = crate::support::fixture_target().repo_coords().remove(0);
     let issues = closing
         .iter()
         .map(|raw| IssueNumber::new(repo.clone(), *raw))
@@ -41,7 +41,8 @@ fn plan_of_with(
 
 #[test]
 fn a_page_of_items_becomes_cards() {
-    let page = parse_items(LIVE, &Target::cosmo()).expect("the recorded page parses");
+    let page =
+        parse_items(LIVE, &crate::support::fixture_target()).expect("the recorded page parses");
     let numbers: Vec<u64> = page
         .cards()
         .iter()
@@ -69,7 +70,8 @@ fn a_closed_as_not_planned_issue_is_closed() {
 
 #[test]
 fn an_item_that_is_not_an_issue_is_dropped() {
-    let page = parse_items(LIVE, &Target::cosmo()).expect("the recorded page parses");
+    let page =
+        parse_items(LIVE, &crate::support::fixture_target()).expect("the recorded page parses");
     assert_eq!(page.cards().len(), 5);
 }
 
@@ -87,7 +89,7 @@ fn a_missing_priority_is_none() {
 
 #[test]
 fn an_issue_of_another_repository_is_dropped() {
-    let page = parse_items(EDGE, &Target::cosmo()).expect("the edge page parses");
+    let page = parse_items(EDGE, &crate::support::fixture_target()).expect("the edge page parses");
     assert!(
         page.cards()
             .iter()
@@ -138,15 +140,17 @@ fn a_parent_that_is_an_epic_has_the_epic_role() {
 
 #[test]
 fn the_end_cursor_of_a_page_is_read() {
-    let last = parse_items(LIVE, &Target::cosmo()).expect("the recorded page parses");
+    let last =
+        parse_items(LIVE, &crate::support::fixture_target()).expect("the recorded page parses");
     assert_eq!(last.next(), None);
-    let more = parse_items(NEXT_PAGE, &Target::cosmo()).expect("the next page parses");
+    let more =
+        parse_items(NEXT_PAGE, &crate::support::fixture_target()).expect("the next page parses");
     assert_eq!(more.next(), Some("cursor-next"));
 }
 
 #[test]
 fn a_page_of_pull_requests_lists_the_issues_they_close() {
-    let cosmo_repo = Target::cosmo().repo_coords().remove(0);
+    let cosmo_repo = crate::support::fixture_target().repo_coords().remove(0);
     let live = parse_pulls(PULLS_LIVE, &cosmo_repo).expect("the recorded pulls parse");
     let cosmo_num = |raw| IssueNumber::new(cosmo_repo.clone(), raw);
     assert_eq!(live.closing(), [cosmo_num(73)]);
@@ -186,7 +190,7 @@ fn a_pull_request_closing_an_issue_in_another_repository_is_read() {
         }
       }
     }"#;
-    let cosmo_repo = Target::cosmo().repo_coords().remove(0);
+    let cosmo_repo = crate::support::fixture_target().repo_coords().remove(0);
     let page = parse_pulls(pulls_cross, &cosmo_repo).expect("cross repo pulls parse");
     assert_eq!(
         page.closing(),
@@ -196,7 +200,8 @@ fn a_pull_request_closing_an_issue_in_another_repository_is_read() {
 
 #[test]
 fn an_unknown_status_name_is_reported_with_its_value() {
-    let failure = parse_items(UNKNOWN_STATUS, &Target::cosmo()).expect_err("Doing is unknown");
+    let failure = parse_items(UNKNOWN_STATUS, &crate::support::fixture_target())
+        .expect_err("Doing is unknown");
     assert_eq!(
         failure.to_string(),
         "the Project has a Status named Doing that this tool does not know; configure a column alias in tools.toml under [github.project.status_mapping]"
@@ -205,7 +210,7 @@ fn an_unknown_status_name_is_reported_with_its_value() {
 
 #[test]
 fn a_reply_that_is_not_json_is_a_bad_reply() {
-    let failure = parse_items("not json", &Target::cosmo()).expect_err("not json");
+    let failure = parse_items("not json", &crate::support::fixture_target()).expect_err("not json");
     assert!(
         failure
             .to_string()

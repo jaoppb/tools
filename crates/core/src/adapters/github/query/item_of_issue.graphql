@@ -1,4 +1,4 @@
-# The Project items of one issue, to find the item of the Cosmo Project.
+# The Project items of one issue, to find the item of the configured Project.
 query {
   repository(owner: "@OWNER@", name: "@REPOSITORY@") {
     issue(number: @NUMBER@) {

@@ -86,7 +86,7 @@ mod tests {
     fn repo_equality_and_hashing() {
         let repo1 = Repo::new("jaoppb", "tools");
         let repo2 = Repo::new("jaoppb", "tools");
-        let repo3 = Repo::new("jaoppb", "cosmo");
+        let repo3 = Repo::new("jaoppb", "other");
         let repo4 = Repo::new("other", "tools");
 
         assert_eq!(repo1, repo2);

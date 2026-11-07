@@ -24,7 +24,7 @@ impl fmt::Display for Cycle {
     }
 }
 
-/// A rule of `AGENTS.md` section 10 that an issue can break.
+/// An issue-workflow rule that an issue can break.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Rule {
     /// The issue does not have exactly one `type:` label.

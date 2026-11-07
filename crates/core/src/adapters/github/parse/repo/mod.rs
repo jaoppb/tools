@@ -371,7 +371,7 @@ mod tests {
                     "projectV2": {
                         "id": "PVT_kwDOA123",
                         "number": 4,
-                        "title": "Cosmo"
+                        "title": "Board"
                     }
                 }
             }
@@ -380,7 +380,7 @@ mod tests {
         let project = parse_repo_project(json).unwrap();
         assert_eq!(project.id, "PVT_kwDOA123");
         assert_eq!(project.number, 4);
-        assert_eq!(project.title, "Cosmo");
+        assert_eq!(project.title, "Board");
     }
 
     #[test]

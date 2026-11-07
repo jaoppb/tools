@@ -254,6 +254,7 @@ pub type MilestonesConfig = RepoMilestonesSpec;
 
 /// Granular boolean toggles for each issues-check rule.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RulesConfig {
     /// Cycle detection rule.
     #[serde(default = "default_true")]
@@ -270,15 +271,9 @@ pub struct RulesConfig {
     /// Parent requirement rule (every non-epic must have a parent).
     #[serde(default = "default_true", alias = "require_parent")]
     pub parent: bool,
-    /// References / text rules (deprecated; legacy Cosmo ADR/SPDD checks removed).
-    #[serde(default)]
-    pub references: bool,
     /// Release issue rules.
     #[serde(default = "default_true")]
     pub release: bool,
-    /// Text rules (deprecated; legacy Cosmo ADR/SPDD checks removed).
-    #[serde(default)]
-    pub text: bool,
     /// Priority requirement rule for Ready gate.
     #[serde(default)]
     pub priority: bool,
@@ -309,9 +304,7 @@ impl Default for RulesConfig {
             membership: true,
             milestone: true,
             parent: true,
-            references: false,
             release: true,
-            text: false,
             priority: false,
             effort: false,
             area_prefixes: default_area_prefixes(),
@@ -640,6 +633,25 @@ mod tests {
             RulesConfig::default().milestone_format,
             MilestoneFormat::Semver
         );
+    }
+
+    #[test]
+    fn rules_reject_the_removed_references_and_text_keys() {
+        for key in ["references", "text"] {
+            let toml = format!(
+                "[github.repository]\nowner = 'o'\nname = 'n'\n[github.issues.rules]\n{key} = false\n"
+            );
+            assert!(load_from_str(&toml).is_err(), "{key} should be rejected");
+        }
+    }
+
+    #[test]
+    fn rules_keep_the_require_parent_alias() {
+        let config = load_from_str(
+            "[github.repository]\nowner = 'o'\nname = 'n'\n[github.issues.rules]\nrequire_parent = false\n",
+        )
+        .expect("the alias loads");
+        assert!(!config.rules().parent);
     }
 
     #[test]
