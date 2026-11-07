@@ -182,6 +182,18 @@ impl Gaps {
     pub fn iter(&self) -> impl Iterator<Item = &Gap> {
         self.0.iter()
     }
+
+    /// How many gaps there are.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether there is no gap.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 /// Why a card is left unchanged although the rules could not decide for it.
