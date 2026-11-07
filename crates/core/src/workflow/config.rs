@@ -1,12 +1,14 @@
 //! The `[workflow]` block: parsing, preset merge and load-time validation.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::ops::Range;
 
 use cel_interpreter::Value;
 use serde::Deserialize;
 use toml::Spanned;
 
+use crate::domain::{StatusName, Statuses, StatusesError};
 use crate::workflow::error::LoadError;
 use crate::workflow::expr::Expr;
 use crate::workflow::schema::{CURRENT, ROOTS, VERSION};
@@ -167,18 +169,60 @@ impl Locator<'_> {
     }
 }
 
+/// The id of a status rule, as written in `id = "..."`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RuleId(String);
+
+impl RuleId {
+    /// The id as written.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for RuleId {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        out.write_str(&self.0)
+    }
+}
+
+impl PartialEq<str> for RuleId {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+/// What a rule does to the card when it fires.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Set {
+    /// `@current`: no change.
+    Current,
+    /// Move to this declared status.
+    Status(StatusName),
+}
+
+impl fmt::Display for Set {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Current => out.write_str(CURRENT),
+            Self::Status(status) => status.fmt(out),
+        }
+    }
+}
+
 /// One compiled status rule.
 #[derive(Debug)]
 pub(crate) struct Rule {
-    pub(crate) id: String,
+    pub(crate) id: RuleId,
     pub(crate) when: Expr,
-    pub(crate) set: String,
+    pub(crate) set: Set,
 }
 
 /// A validated workflow: every expression compiled, every status declared.
 #[derive(Debug)]
 pub struct Workflow {
-    pub(crate) default: String,
+    pub(crate) statuses: Statuses,
     pub(crate) params: Value,
     /// Derived facts in dependency order.
     pub(crate) facts: Vec<(String, Expr)>,
@@ -229,6 +273,12 @@ impl Workflow {
         file.workflow.compile(Some(toml))
     }
 
+    /// The declared statuses.
+    #[must_use]
+    pub const fn statuses(&self) -> &Statuses {
+        &self.statuses
+    }
+
     /// The ids of the status rules, in evaluation order.
     #[must_use]
     pub fn rule_ids(&self) -> Vec<&str> {
@@ -246,10 +296,6 @@ fn check_schema(block: &Block, at: Locator<'_>) -> Result<(), LoadError> {
 }
 
 fn build(block: Block, at: Locator<'_>) -> Result<Workflow, LoadError> {
-    if block.statuses.is_empty() {
-        return Err(LoadError::NoStatuses);
-    }
-    let statuses: BTreeSet<&str> = block.statuses.iter().map(String::as_str).collect();
     let default = match &block.default {
         Some(default) => default.clone(),
         None => At {
@@ -257,27 +303,19 @@ fn build(block: Block, at: Locator<'_>) -> Result<Workflow, LoadError> {
             span: None,
         },
     };
-    if !statuses.contains(default.value.as_str()) {
-        return Err(at.locate(
-            default.span.as_ref(),
-            LoadError::UndeclaredDefault(default.value),
-        ));
-    }
+    let statuses = Statuses::new(&block.statuses, &default.value).map_err(|error| match error {
+        StatusesError::Empty => LoadError::NoStatuses,
+        StatusesError::Blank => LoadError::BlankStatus,
+        StatusesError::UndeclaredDefault(name) => {
+            at.locate(default.span.as_ref(), LoadError::UndeclaredDefault(name))
+        }
+    })?;
     let mut seen = BTreeSet::new();
     for rule in &block.rules {
         if !seen.insert(rule.id.value.as_str()) {
             return Err(at.locate(
                 rule.id.span.as_ref(),
                 LoadError::DuplicateRule(rule.id.value.clone()),
-            ));
-        }
-        if rule.set.value != CURRENT && !statuses.contains(rule.set.value.as_str()) {
-            return Err(at.locate(
-                rule.set.span.as_ref(),
-                LoadError::UndeclaredStatus {
-                    rule: rule.id.value.clone(),
-                    status: rule.set.value.clone(),
-                },
             ));
         }
     }
@@ -301,15 +339,29 @@ fn build(block: Block, at: Locator<'_>) -> Result<Workflow, LoadError> {
             let origin = format!("rule {:?}", rule.id.value);
             let when = Expr::compile(&origin, &rule.when.value, &known)
                 .map_err(|error| at.locate(rule.when.span.as_ref(), error))?;
+            let set = if rule.set.value == CURRENT {
+                Set::Current
+            } else {
+                let status = statuses.parse(&rule.set.value).map_err(|_| {
+                    at.locate(
+                        rule.set.span.as_ref(),
+                        LoadError::UndeclaredStatus {
+                            rule: rule.id.value.clone(),
+                            status: rule.set.value.clone(),
+                        },
+                    )
+                })?;
+                Set::Status(status)
+            };
             Ok(Rule {
-                id: rule.id.value.clone(),
+                id: RuleId(rule.id.value.clone()),
                 when,
-                set: rule.set.value.clone(),
+                set,
             })
         })
         .collect::<Result<Vec<_>, LoadError>>()?;
     Ok(Workflow {
-        default: default.value,
+        statuses,
         params: params_value(&block.params, at)?,
         facts,
         rules,

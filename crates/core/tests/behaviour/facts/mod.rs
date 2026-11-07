@@ -1,6 +1,6 @@
 //! The small value objects of the domain.
 
-use tools_core::domain::{Blocker, Blockers, Effort, Label, Labels, Lifecycle, Status};
+use tools_core::domain::{Blocker, Blockers, Effort, Label, Labels, Lifecycle};
 
 use crate::support::number;
 
@@ -52,13 +52,4 @@ fn no_blockers_counts_as_all_closed() {
 #[test]
 fn an_issue_number_prints_with_a_hash() {
     assert_eq!(number(92).to_string(), "#92");
-}
-
-#[test]
-fn status_names_match_the_project_options() {
-    let names = ["Backlog", "Ready", "In progress", "In review", "Done"];
-    let statuses = names.map(Status::from_name);
-    assert!(statuses.iter().all(Option::is_some));
-    assert_eq!(Status::from_name("In progress"), Some(Status::InProgress));
-    assert_eq!(Status::from_name("Doing"), None);
 }

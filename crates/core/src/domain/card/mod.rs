@@ -2,20 +2,20 @@
 
 use crate::config::RulesConfig;
 use crate::domain::facts::{Facts, Missing};
-use crate::domain::issue::{IssueNumber, Lifecycle, Status};
+use crate::domain::issue::{IssueNumber, Lifecycle, StatusName};
 use crate::domain::links::Links;
 
 /// A status together with whether the issue is open.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Standing {
-    status: Status,
+    status: StatusName,
     lifecycle: Lifecycle,
 }
 
 impl Standing {
     /// A standing with this status and lifecycle.
     #[must_use]
-    pub const fn new(status: Status, lifecycle: Lifecycle) -> Self {
+    pub const fn new(status: StatusName, lifecycle: Lifecycle) -> Self {
         Self { status, lifecycle }
     }
 }
@@ -55,7 +55,7 @@ impl Card {
 
     /// This card moved to `status`.
     #[must_use]
-    pub fn with_status(self, status: Status) -> Self {
+    pub fn with_status(self, status: StatusName) -> Self {
         Self {
             standing: Standing::new(status, self.standing.lifecycle),
             ..self
@@ -70,8 +70,8 @@ impl Card {
 
     /// The current Status.
     #[must_use]
-    pub const fn status(&self) -> Status {
-        self.standing.status
+    pub const fn status(&self) -> &StatusName {
+        &self.standing.status
     }
 
     /// Whether the issue is closed.
@@ -147,7 +147,7 @@ impl Cards {
 
     /// These cards with the card of `number` moved to `status`.
     #[must_use]
-    pub fn with_status(self, number: &IssueNumber, status: Status) -> Self {
+    pub fn with_status(self, number: &IssueNumber, status: &StatusName) -> Self {
         Self(
             self.0
                 .into_iter()
@@ -157,9 +157,9 @@ impl Cards {
     }
 }
 
-fn moved_if(card: Card, number: &IssueNumber, status: Status) -> Card {
+fn moved_if(card: Card, number: &IssueNumber, status: &StatusName) -> Card {
     if card.number == *number {
-        return card.with_status(status);
+        return card.with_status(status.clone());
     }
     card
 }

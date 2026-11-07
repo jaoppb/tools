@@ -28,6 +28,7 @@ fragment ProjectItems on ProjectV2 {
           milestone { title }
           parent {
             number
+            repository { nameWithOwner }
             labels(first: 30) { nodes { name } }
           }
           blockedBy(first: 50) {

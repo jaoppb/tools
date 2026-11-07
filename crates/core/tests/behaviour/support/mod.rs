@@ -3,10 +3,10 @@
 pub mod audit;
 
 use tools_core::adapters::github::Target;
-use tools_core::config::RulesConfig;
 use tools_core::domain::{
-    Blocker, Blockers, Card, Cards, Closing, Effort, Facts, IssueNumber, Label, Labels, Lifecycle,
-    Links, Milestone, Parent, Plan, Priority, Repo, Role, Snapshot, Standing, Status,
+    Blocker, Blockers, Card, Cards, Closes, Closing, Effort, Facts, IssueNumber, Label, Labels,
+    Lifecycle, Links, Milestone, Parent, Priority, Repo, Role, Snapshot, Standing, StatusName,
+    Statuses,
 };
 
 /// The Project the recorded fixtures were taken from: project 4 of `jaoppb`,
@@ -14,6 +14,25 @@ use tools_core::domain::{
 #[must_use]
 pub fn fixture_target() -> Target {
     Target::single("jaoppb", "cosmo", Some(4))
+}
+
+/// The statuses of the board the fixtures were recorded from. The names are
+/// data of the fixtures, not of the code.
+#[must_use]
+pub fn statuses() -> Statuses {
+    Statuses::new(
+        &["Backlog", "Ready", "In progress", "In review", "Done"],
+        "Backlog",
+    )
+    .expect("the fixture board is valid")
+}
+
+/// The declared status with this name.
+#[must_use]
+pub fn status_name(name: &str) -> StatusName {
+    statuses()
+        .parse(name)
+        .expect("the fixture board declares it")
 }
 
 /// The issue with this number in the test repo.
@@ -44,40 +63,56 @@ pub fn complete_facts() -> Facts {
 
 /// An open card with complete facts and no links.
 #[must_use]
-pub fn open_card(raw: u64, status: Status) -> Card {
-    Card::new(number(raw), Standing::new(status, Lifecycle::Open)).with_facts(complete_facts())
+pub fn open_card(raw: u64, status: &str) -> Card {
+    Card::new(
+        number(raw),
+        Standing::new(status_name(status), Lifecycle::Open),
+    )
+    .with_facts(complete_facts())
 }
 
 /// An open card with complete facts in a named repository.
 #[must_use]
-pub fn repo_card(repo: &str, raw: u64, status: Status) -> Card {
+pub fn repo_card(repo: &str, raw: u64, status: &str) -> Card {
     Card::new(
         repo_number(repo, raw),
-        Standing::new(status, Lifecycle::Open),
+        Standing::new(status_name(status), Lifecycle::Open),
     )
     .with_facts(complete_facts())
 }
 
 /// A closed card with complete facts and no links.
 #[must_use]
-pub fn closed_card(raw: u64, status: Status) -> Card {
-    Card::new(number(raw), Standing::new(status, Lifecycle::Closed)).with_facts(complete_facts())
+pub fn closed_card(raw: u64, status: &str) -> Card {
+    Card::new(
+        number(raw),
+        Standing::new(status_name(status), Lifecycle::Closed),
+    )
+    .with_facts(complete_facts())
 }
 
 /// An open epic.
 #[must_use]
-pub fn epic(raw: u64, status: Status) -> Card {
+pub fn epic(raw: u64, status: &str) -> Card {
     let facts = Facts::new(labels(&["epic", "type:feat", "area:tooling"]));
-    Card::new(number(raw), Standing::new(status, Lifecycle::Open)).with_facts(facts)
+    Card::new(
+        number(raw),
+        Standing::new(status_name(status), Lifecycle::Open),
+    )
+    .with_facts(facts)
 }
 
 /// An open card that has everything but a Priority.
 #[must_use]
-pub fn without_priority(raw: u64, status: Status) -> Card {
+pub fn without_priority(raw: u64, status: &str) -> Card {
     let facts = Facts::new(labels(&["type:feat", "area:tooling"]))
         .with_milestone(Milestone::new("v1"))
         .with_effort(Effort::new(3));
-    Card::new(number(raw), Standing::new(status, Lifecycle::Open)).with_facts(facts)
+    Card::new(
+        number(raw),
+        Standing::new(status_name(status), Lifecycle::Open),
+    )
+    .with_facts(facts)
 }
 
 /// An open card with complete facts but this Effort.
@@ -87,7 +122,11 @@ pub fn with_effort(raw: u64, points: u8) -> Card {
         .with_milestone(Milestone::new("v1"))
         .with_priority(Priority::new("P1"))
         .with_effort(Effort::new(points));
-    Card::new(number(raw), Standing::new(Status::Backlog, Lifecycle::Open)).with_facts(facts)
+    Card::new(
+        number(raw),
+        Standing::new(status_name("Backlog"), Lifecycle::Open),
+    )
+    .with_facts(facts)
 }
 
 /// This card, blocked by one issue in this lifecycle.
@@ -114,37 +153,13 @@ fn child_of(card: Card, parent: u64, role: Role) -> Card {
     card.with_links(links)
 }
 
-/// A snapshot of these cards, where open pull requests close these issues.
+/// A snapshot of these cards, where an open pull request (numbered 1000 + the
+/// issue) closes each of these issues.
 #[must_use]
 pub fn snapshot(cards: Vec<Card>, closing: &[u64]) -> Snapshot {
-    let issues = closing.iter().map(|raw| number(*raw)).collect();
-    Snapshot::new(Cards::new(cards), Closing::new(issues))
-}
-
-/// The moves of a plan, as the report prints them.
-#[must_use]
-pub fn moves_of(plan: &Plan) -> Vec<String> {
-    plan.moves().iter().map(ToString::to_string).collect()
-}
-
-/// The gaps of a plan, as the report prints them.
-#[must_use]
-pub fn gaps_of(plan: &Plan) -> Vec<String> {
-    plan.gaps().iter().map(ToString::to_string).collect()
-}
-
-/// The cards a plan leaves unchanged, as the report prints them.
-#[must_use]
-pub fn frozen_of(plan: &Plan) -> Vec<String> {
-    plan.frozen().iter().map(ToString::to_string).collect()
-}
-
-/// Rules requiring Priority and Effort triage.
-#[must_use]
-pub fn strict_rules() -> RulesConfig {
-    RulesConfig {
-        priority: true,
-        effort: true,
-        ..RulesConfig::default()
-    }
+    let references = closing
+        .iter()
+        .map(|raw| Closes::new(number(1000 + *raw), number(*raw)))
+        .collect();
+    Snapshot::new(Cards::new(cards), Closing::new(references))
 }

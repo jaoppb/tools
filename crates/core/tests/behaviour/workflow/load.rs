@@ -264,7 +264,6 @@ fn every_built_in_function_the_loader_allows_also_runs_in_the_interpreter() {
     // pass into a run-time freeze: evaluate each and demand no violation.
     use crate::support::{number, open_card, snapshot};
     use crate::workflow::support::{Remote, decision, evaluate};
-    use tools_core::domain::Status;
 
     for expr in [
         "size(issue.labels) >= 0",
@@ -275,11 +274,15 @@ fn every_built_in_function_the_loader_allows_also_runs_in_the_interpreter() {
         let toml =
             format!("{BLANK}\n[[workflow.status]]\nid = \"r\"\nwhen = '{expr}'\nset = \"Done\"\n");
         let workflow = load(&toml).unwrap_or_else(|error| panic!("{expr}: {error}"));
-        let board = snapshot(vec![open_card(1, Status::Backlog)], &[]);
+        let board = snapshot(vec![open_card(1, "Backlog")], &[]);
         let evaluation = evaluate(&workflow, &board, &Remote::default());
         let result = decision(&evaluation, &number(1));
         assert_eq!(result.violation(), None, "{expr}");
-        assert_eq!(result.fired(), Some("r"), "{expr}");
+        assert_eq!(
+            result.fired().map(|rule| rule.as_str()),
+            Some("r"),
+            "{expr}"
+        );
     }
 }
 

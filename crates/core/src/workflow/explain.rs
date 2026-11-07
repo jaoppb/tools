@@ -4,7 +4,8 @@ use std::fmt;
 
 use cel_interpreter::Value;
 
-use crate::domain::IssueNumber;
+use crate::domain::{IssueNumber, StatusName};
+use crate::workflow::config::RuleId;
 use crate::workflow::engine::Violation;
 
 /// What happened to one rule for one issue.
@@ -23,7 +24,7 @@ pub enum RuleResult {
 /// One rule as evaluated for one issue.
 #[derive(Debug, Clone)]
 pub(crate) struct RuleTrace {
-    pub(crate) id: String,
+    pub(crate) id: RuleId,
     pub(crate) when: String,
     pub(crate) set: String,
     pub(crate) result: RuleResult,
@@ -33,8 +34,8 @@ pub(crate) struct RuleTrace {
 #[derive(Debug, Clone)]
 pub struct Explain {
     pub(crate) number: IssueNumber,
-    pub(crate) current: String,
-    pub(crate) destination: String,
+    pub(crate) current: StatusName,
+    pub(crate) destination: StatusName,
     pub(crate) facts: Vec<(String, Value)>,
     pub(crate) rules: Vec<RuleTrace>,
     pub(crate) violation: Option<Violation>,
@@ -46,7 +47,7 @@ impl Explain {
     pub fn result_of(&self, id: &str) -> Option<&RuleResult> {
         self.rules
             .iter()
-            .find(|rule| rule.id == id)
+            .find(|rule| rule.id == *id)
             .map(|rule| &rule.result)
     }
 }

@@ -5,13 +5,14 @@ mod shapes;
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::bad_reply;
 use crate::adapters::github::parse::items::shapes::{
-    Blocking, Content, Detail, FieldValues, Item, Names, Parented, Reply,
+    Blocking, Content, Detail, FieldValues, IssueReply, Item, Names, Parented, Reply,
 };
 use crate::adapters::github::target::Target;
 use crate::domain::{
     Blocker, Blockers, Card, Effort, Facts, IssueNumber, Label, Labels, Lifecycle, Links,
-    Milestone, Parent, Priority, Repo, Role, Standing, Status, StatusMapping,
+    Milestone, Parent, Priority, Repo, Role, Standing, Statuses,
 };
+use crate::workflow::Subject;
 
 /// The cards of one page and the cursor of the next page.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,27 +35,13 @@ impl ItemsPage {
     }
 }
 
-/// Reads one page of the Project's items using default status mapping.
+/// Reads one page of the Project's items; every Status must be one of `statuses`.
 ///
 /// # Errors
 ///
 /// Returns [`GhError::BadReply`] when the answer is not the expected JSON, and
-/// [`GhError::UnknownStatus`] when an item has a Status this tool does not know.
-pub fn parse_items(json: &str, target: &Target) -> Result<ItemsPage, GhError> {
-    parse_items_with(json, target, &StatusMapping::default())
-}
-
-/// Reads one page of the Project's items using the provided status mapping.
-///
-/// # Errors
-///
-/// Returns [`GhError::BadReply`] when the answer is not the expected JSON, and
-/// [`GhError::UnknownStatus`] when an item has a Status this tool does not know.
-pub fn parse_items_with(
-    json: &str,
-    target: &Target,
-    mapping: &StatusMapping,
-) -> Result<ItemsPage, GhError> {
+/// [`GhError::UnknownStatus`] when an item has a Status the workflow does not declare.
+pub fn parse_items(json: &str, target: &Target, statuses: &Statuses) -> Result<ItemsPage, GhError> {
     let reply: Reply = serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
     let project = reply.data.project_v2().ok_or_else(|| GhError::BadReply {
         reason: "projectV2 not found for owner".into(),
@@ -64,7 +51,7 @@ pub fn parse_items_with(
     let cards = items
         .nodes
         .iter()
-        .map(|item| card_of(item, target, mapping))
+        .map(|item| card_of(item, target, statuses))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ItemsPage {
         cards: cards.into_iter().flatten().collect(),
@@ -72,7 +59,7 @@ pub fn parse_items_with(
     })
 }
 
-fn card_of(item: &Item, target: &Target, mapping: &StatusMapping) -> Result<Option<Card>, GhError> {
+fn card_of(item: &Item, target: &Target, statuses: &Statuses) -> Result<Option<Card>, GhError> {
     let Some(content) = &item.content else {
         return Ok(None);
     };
@@ -87,25 +74,19 @@ fn card_of(item: &Item, target: &Target, mapping: &StatusMapping) -> Result<Opti
     };
     let card = Card::new(
         IssueNumber::new(repo.clone(), raw),
-        standing_of(item, content, mapping)?,
+        standing_of(item, content, statuses)?,
     )
     .with_facts(facts_of(&item.field_values, &content.detail))
     .with_links(links_of(&content.detail, &repo));
     Ok(Some(card))
 }
 
-fn standing_of(
-    item: &Item,
-    content: &Content,
-    mapping: &StatusMapping,
-) -> Result<Standing, GhError> {
+fn standing_of(item: &Item, content: &Content, statuses: &Statuses) -> Result<Standing, GhError> {
     let status = match item.field_values.select("Status") {
-        None => Status::Backlog,
-        Some(name) => mapping
-            .status_for(name)
-            .ok_or_else(|| GhError::UnknownStatus {
-                name: name.to_owned(),
-            })?,
+        None => statuses.default_status().clone(),
+        Some(name) => statuses.parse(name).map_err(|_| GhError::UnknownStatus {
+            name: name.to_owned(),
+        })?,
     };
     Ok(Standing::new(
         status,
@@ -189,5 +170,39 @@ fn blocker_of(blocking: &Blocking, repo: &Repo) -> Option<Blocker> {
 fn parent_of(parent: &Parented, repo: &Repo) -> Parent {
     let epic = parent.labels.nodes.iter().any(|named| named.name == "epic");
     let role = if epic { Role::Epic } else { Role::Story };
-    Parent::new(IssueNumber::new(repo.clone(), parent.number), role)
+    Parent::new(parent_number(parent, repo), role)
+}
+
+/// The parent lives in its own repository, which is not the child's when the
+/// link crosses repositories.
+fn parent_number(parent: &Parented, repo: &Repo) -> IssueNumber {
+    let parent_repo = parent
+        .repository
+        .as_ref()
+        .map_or_else(|| repo.clone(), |named| named.resolve_or(repo));
+    IssueNumber::new(parent_repo, parent.number)
+}
+
+/// Reads the reply of the one-issue request into what the engine knows about
+/// an issue that is not a card. `None` when the repository has no such issue.
+///
+/// # Errors
+///
+/// Returns [`GhError::BadReply`] when the answer is not the expected JSON.
+pub fn parse_subject(json: &str, asked: &IssueNumber) -> Result<Option<Subject>, GhError> {
+    let reply: IssueReply = serde_json::from_str(json).map_err(|error| bad_reply(&error))?;
+    let Some(content) = reply.data.repository.issue else {
+        return Ok(None);
+    };
+    let closed = lifecycle_of(content.head.state.as_deref())?.is_closed();
+    let facts = facts_of(&FieldValues { nodes: Vec::new() }, &content.detail);
+    let links = links_of(&content.detail, asked.repo());
+    Ok(Some(Subject::from_parts(
+        asked.clone(),
+        closed,
+        None,
+        &facts,
+        &links,
+        Vec::new(),
+    )))
 }
