@@ -286,18 +286,19 @@ impl Snapshot {
     /// The moves and the gaps the rules produce from this snapshot under `rules`.
     #[must_use]
     pub fn plan_with(&self, rules: &RulesConfig) -> Plan {
+        let frozen: Vec<Frozen> = self
+            .cards()
+            .filter(|card| on_parent_cycle(card, self))
+            .map(|card| Frozen::new(card.number().clone(), Cause::ParentCycle))
+            .collect();
         let moves = self
             .cards()
             .filter_map(|card| move_of(self, card, rules))
             .collect();
         let gaps = self
             .cards()
+            .filter(|card| !frozen.iter().any(|held| held.number() == card.number()))
             .flat_map(|card| gaps_of(self, card, rules))
-            .collect();
-        let frozen = self
-            .cards()
-            .filter(|card| frozen_by_cycle(self, card))
-            .map(|card| Frozen::new(card.number().clone(), Cause::ParentCycle))
             .collect();
         Plan::new(Moves::new(moves), Gaps::new(gaps)).with_frozen(frozen)
     }
@@ -317,18 +318,11 @@ fn move_of(snapshot: &Snapshot, card: &Card, rules: &RulesConfig) -> Option<Move
 }
 
 fn gaps_of(snapshot: &Snapshot, card: &Card, rules: &RulesConfig) -> Vec<Gap> {
-    if card.is_epic()
-        || frozen_by_cycle(snapshot, card)
-        || target_with(card, snapshot, rules) != Status::Backlog
-    {
+    if card.is_epic() || target_with(card, snapshot, rules) != Status::Backlog {
         return Vec::new();
     }
     card.missing_for(rules)
         .into_iter()
         .map(|missing| Gap::new(card.number().clone(), missing))
         .collect()
-}
-
-fn frozen_by_cycle(snapshot: &Snapshot, card: &Card) -> bool {
-    !card.is_epic() && on_parent_cycle(card, snapshot)
 }

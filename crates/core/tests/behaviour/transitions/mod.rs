@@ -3,8 +3,8 @@
 use tools_core::domain::{Cards, Closing, Lifecycle, Snapshot, Status};
 
 use crate::support::{
-    blocked_by, closed_card, complete_facts, epic, gaps_of, moves_of, open_card, repo_card,
-    repo_number, snapshot, strict_rules, without_priority,
+    blocked_by, closed_card, complete_facts, epic, frozen_of, gaps_of, moves_of, open_card,
+    repo_card, repo_number, snapshot, strict_rules, task_of, without_priority,
 };
 
 #[test]
@@ -123,4 +123,35 @@ fn multi_repo_cards_with_same_number_have_independent_lifecycle_and_moves() {
     assert!(moves.contains(&"app#1 Ready -> In review (pull request open)".to_owned()));
     assert!(moves.contains(&"web#1 Ready -> Done (closed)".to_owned()));
     assert_eq!(moves.len(), 2);
+}
+
+#[test]
+fn a_story_that_is_its_own_parent_is_unchanged_and_reported() {
+    let plan = snapshot(vec![task_of(open_card(20, Status::Backlog), 20)], &[]).plan();
+    assert!(plan.moves().is_empty());
+    assert_eq!(frozen_of(&plan), vec!["#20 left unchanged: parent cycle"]);
+}
+
+#[test]
+fn a_closed_card_on_a_parent_cycle_still_goes_done() {
+    let cards = vec![
+        task_of(closed_card(20, Status::Ready), 21),
+        task_of(open_card(21, Status::Backlog), 20),
+    ];
+    let plan = snapshot(cards, &[]).plan();
+    assert_eq!(moves_of(&plan), vec!["#20 Ready -> Done (closed)"]);
+    assert!(frozen_of(&plan).is_empty());
+}
+
+#[test]
+fn a_started_card_on_a_parent_cycle_keeps_following_its_pull_request() {
+    let cards = vec![
+        task_of(open_card(20, Status::InProgress), 21),
+        task_of(open_card(21, Status::Backlog), 20),
+    ];
+    let plan = snapshot(cards, &[20]).plan();
+    assert_eq!(
+        moves_of(&plan),
+        vec!["#20 In progress -> In review (pull request open)"]
+    );
 }
