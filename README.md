@@ -274,6 +274,31 @@ Alternatively, omit `check-*` inputs to install `issues-check`, `repo-sync`, and
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+#### Action inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `version` | `latest` | Release tag of the binaries to install. |
+| `tools` | `all` | Comma-separated tools to install. |
+| `repo` | `jaoppb/tools` | `owner/name` repository whose releases provide the binaries (use it for a fork). |
+| `config-path` | _(empty)_ | `tools.toml` passed as `--config` to every tool the action runs. Empty means upward search from the working directory. |
+| `check-issues` / `issues-check-args` | `false` / _(empty)_ | Run `issues-check` and pass extra arguments. |
+| `check-repo` / `repo-sync-args` | `false` / _(empty)_ | Run `repo-sync --check` and pass extra arguments. |
+| `sync-project` / `project-sync-args` | `false` / _(empty)_ | Run `project-sync` and pass extra arguments. |
+| `github-token` | `${{ github.token }}` | Token for release downloads and the tools. |
+
+`project-sync` applies changes unless `project-sync-args` contains `--dry-run`. Moving cards in a GitHub Project (v2) needs a personal access token or GitHub App token with project write access passed as `github-token`; the default `github.token` cannot write Projects v2. `project-sync` fails when no project number is configured (`[github.project]` in `tools.toml` or `--project`), so leave `sync-project` off in repositories without a project.
+
+```yaml
+      - name: Sync Project Status
+        uses: jaoppb/tools@v0.2.0
+        with:
+          config-path: 'config/tools.toml'
+          sync-project: 'true'
+          project-sync-args: '--dry-run'
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+```
+
 ### Binary Releases & Installation Script
 
 Pre-compiled binaries for Linux (`x86_64`, `aarch64`), macOS (`x86_64`, `apple-silicon`), and Windows (`x86_64`) are published with SHA256 checksums on [GitHub Releases](https://github.com/jaoppb/tools/releases).
