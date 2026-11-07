@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
-use tools_core::config::{ConfigError, RepoLabelsSpec, RulesConfig, load_or_find};
+use tools_core::config::{ConfigError, RulesConfig, load_or_find};
 use tools_core::domain::{CANONICAL_TYPES, canonical_type_label};
 
 use crate::cli::{CONFIG, OWNER, PROJECT, project_flag, repos_of};
@@ -113,17 +113,15 @@ impl Arguments {
         let (cfg_target, mut rules, migrations) = match loaded {
             Ok(cfg) => {
                 let target = cfg.target();
-                let migrations = cfg.github.labels.as_ref().map_or_else(
-                    RepoLabelsSpec::default_migrations,
-                    RepoLabelsSpec::resolved_migrations,
-                );
+                let migrations = cfg
+                    .github
+                    .labels
+                    .as_ref()
+                    .map(|labels| labels.migrations.clone())
+                    .unwrap_or_default();
                 (Some(target), cfg.github.issues.rules, migrations)
             }
-            Err(ConfigError::NotFound) => (
-                None,
-                RulesConfig::default(),
-                RepoLabelsSpec::default_migrations(),
-            ),
+            Err(ConfigError::NotFound) => (None, RulesConfig::default(), BTreeMap::new()),
             Err(err) => return Err(ResolveError::Config(err)),
         };
 

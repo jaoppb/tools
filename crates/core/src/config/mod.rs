@@ -599,10 +599,9 @@ mod tests {
             labels.migrations.get("legacy-bug"),
             Some(&"type:fix".to_string())
         );
-        let resolved = labels.resolved_migrations();
-        assert_eq!(resolved.get("bug"), Some(&"type:fix".to_string()));
-        assert_eq!(resolved.get("legacy-bug"), Some(&"type:fix".to_string()));
-        assert_eq!(resolved.get("ui"), Some(&"area:web".to_string()));
+        assert_eq!(labels.migrations.len(), 2);
+        assert_eq!(labels.migrations.get("ui"), Some(&"area:web".to_string()));
+        assert!(!labels.migrations.contains_key("bug"));
     }
 
     #[test]
