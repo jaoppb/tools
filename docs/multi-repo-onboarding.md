@@ -65,11 +65,17 @@ items = [
     { name = "area:infra", color = "0075ca", description = "Infrastructure and deployments" },
 ]
 
-# Legacy label migrations mapping legacy names to canonical labels
+# Legacy label migrations mapping legacy names to canonical labels.
+# There are no built-in defaults: only the mappings declared here are applied.
 [github.labels.migrations]
 bug = "type:fix"
+fix = "type:fix"
 enhancement = "type:feat"
+feature = "type:feat"
 documentation = "type:docs"
+chore = "type:chore"
+refactor = "type:refactor"
+spike = "type:spike"
 ui = "area:web"
 backend = "area:api"
 
@@ -108,7 +114,7 @@ items = [
 items = [{ title = "v1.0.0", description = "Infra GA", state = "open" }]
 ```
 
-Merge rules: `items` override by key (`name` for labels, `title` for milestones) and otherwise append; `deprecated` is a union; `renames` and label `migrations` are merged key by key; `prune_unmanaged` replaces the shared value only when set. The shared section is optional: a repository may declare its labels or milestones only through its overlay. A key not recognised inside an overlay (for example a misspelled `prune_unmanged`) is a configuration error, but an overlay keyed by a repository that is not targeted is ignored.
+Merge rules: `items` override by key (`name` for labels, `title` for milestones) and otherwise append; `deprecated` is a union; `renames` and label `migrations` are merged key by key; `prune_unmanaged` replaces the shared value only when set. The shared section is optional: a repository may declare its labels or milestones only through its overlay. `issues-check --migrate` reads only `migrations`: there is no built-in map, `renames` (which rename the label itself) are not applied to issues, and with no configuration found nothing is remapped. A key not recognised inside an overlay (for example a misspelled `prune_unmanged`) is a configuration error, but an overlay keyed by a repository that is not targeted is ignored.
 
 ---
 

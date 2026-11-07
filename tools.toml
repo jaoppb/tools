@@ -38,6 +38,17 @@ items = [
     { name = "area:docs", color = "0075ca", description = "Documentation, workflow guides, rules" },
 ]
 
+# Legacy label migrations used by `issues-check --migrate`
+[github.labels.migrations]
+bug = "type:fix"
+fix = "type:fix"
+enhancement = "type:feat"
+feature = "type:feat"
+documentation = "type:docs"
+chore = "type:chore"
+refactor = "type:refactor"
+spike = "type:spike"
+
 [github.milestones]
 renames = { "v0" = "v0.1.0", "v1" = "v0.2.0" }
 items = [

@@ -40,32 +40,6 @@ pub struct RepoLabelsSpec {
     pub items: Vec<RepoLabel>,
 }
 
-impl RepoLabelsSpec {
-    /// Returns default standard migrations for common legacy GitHub labels.
-    #[must_use]
-    pub fn default_migrations() -> BTreeMap<String, String> {
-        let mut map = BTreeMap::new();
-        map.insert("bug".to_string(), "type:fix".to_string());
-        map.insert("enhancement".to_string(), "type:feat".to_string());
-        map.insert("documentation".to_string(), "type:docs".to_string());
-        map.insert("chore".to_string(), "type:chore".to_string());
-        map.insert("refactor".to_string(), "type:refactor".to_string());
-        map.insert("spike".to_string(), "type:spike".to_string());
-        map.insert("feature".to_string(), "type:feat".to_string());
-        map.insert("fix".to_string(), "type:fix".to_string());
-        map
-    }
-
-    /// Resolves migration mappings combining standard defaults, repository renames, and explicit migration overrides.
-    #[must_use]
-    pub fn resolved_migrations(&self) -> BTreeMap<String, String> {
-        let mut migrations = Self::default_migrations();
-        migrations.extend(self.renames.clone());
-        migrations.extend(self.migrations.clone());
-        migrations
-    }
-}
-
 /// Repository-scoped labels overlay applied on top of the shared [`RepoLabelsSpec`].
 ///
 /// Items override shared items with the same name and are otherwise appended; `deprecated` is a
@@ -502,6 +476,11 @@ mod tests {
         assert_eq!(names, vec!["type:feat", "area:core", "area:ssr"]);
         assert_eq!(merged.items[0].color, "abcdef");
         assert_eq!(merged.items[0].description, "local");
+    }
+
+    #[test]
+    fn spec_has_no_built_in_migrations() {
+        assert!(RepoLabelsSpec::default().migrations.is_empty());
     }
 
     #[test]
