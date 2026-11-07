@@ -1,9 +1,12 @@
 //! Shared builders: the preset, an in-memory remote and the old oracle.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 
 use tools_core::domain::{IssueNumber, Snapshot};
-use tools_core::workflow::{Decision, Engine, Evaluation, ParentResolver, Subject, Workflow};
+use tools_core::workflow::{
+    Decision, Engine, Evaluation, ParentResolver, ResolveError, Subject, Workflow,
+};
 
 use crate::support::strict_rules;
 
@@ -13,21 +16,40 @@ pub fn cosmo() -> Workflow {
 
 /// A remote that knows the issues it was given and fails for the rest.
 #[derive(Default)]
-pub struct Remote(HashMap<IssueNumber, Subject>);
+pub struct Remote {
+    known: HashMap<IssueNumber, Subject>,
+    failing: HashMap<IssueNumber, ResolveError>,
+    asked: RefCell<Vec<IssueNumber>>,
+}
 
 impl Remote {
+    /// This issue cannot be read, for this reason.
+    pub fn failing(mut self, number: IssueNumber, error: ResolveError) -> Self {
+        self.failing.insert(number, error);
+        self
+    }
+
+    /// Every number the engine asked for, in order.
+    pub fn asked(&self) -> Vec<IssueNumber> {
+        self.asked.borrow().clone()
+    }
+
     pub fn with(mut self, subject: Subject) -> Self {
-        self.0.insert(subject.number.clone(), subject);
+        self.known.insert(subject.number.clone(), subject);
         self
     }
 }
 
 impl ParentResolver for Remote {
-    fn fetch(&self, number: &IssueNumber) -> Result<Subject, String> {
-        self.0
+    fn fetch(&self, number: &IssueNumber) -> Result<Subject, ResolveError> {
+        self.asked.borrow_mut().push(number.clone());
+        if let Some(error) = self.failing.get(number) {
+            return Err(error.clone());
+        }
+        self.known
             .get(number)
             .cloned()
-            .ok_or_else(|| format!("{number} is not readable"))
+            .ok_or(ResolveError::NotFound)
     }
 }
 

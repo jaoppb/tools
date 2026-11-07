@@ -11,7 +11,7 @@ use crate::domain::{IssueNumber, Snapshot};
 use crate::workflow::config::{Rule, Workflow};
 use crate::workflow::explain::{Explain, RuleResult, RuleTrace};
 use crate::workflow::schema::CURRENT;
-use crate::workflow::subject::{FieldValue, ParentResolver, Subject};
+use crate::workflow::subject::{FieldValue, ParentResolver, ResolveError, Subject};
 
 /// Why an issue was frozen: no status change.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,7 +23,7 @@ pub enum Violation {
         /// The parent that could not be read.
         parent: IssueNumber,
         /// Why.
-        reason: String,
+        error: ResolveError,
     },
     /// A parent is frozen, so its derived facts do not exist: the child
     /// cannot be evaluated either.
@@ -44,8 +44,8 @@ impl fmt::Display for Violation {
     fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Cycle => out.write_str("the issue is in a parent cycle"),
-            Self::ParentUnreadable { parent, reason } => {
-                write!(out, "parent {parent} cannot be read: {reason}")
+            Self::ParentUnreadable { parent, error } => {
+                write!(out, "parent {parent} cannot be read: {error}")
             }
             Self::ParentFrozen { parent } => write!(out, "parent {parent} is frozen"),
             Self::Eval { origin, message } => write!(out, "{origin} failed: {message}"),
@@ -172,7 +172,7 @@ struct Partial {
 struct Run<'a> {
     workflow: &'a Workflow,
     resolver: &'a dyn ParentResolver,
-    subjects: HashMap<IssueNumber, Result<Subject, String>>,
+    subjects: HashMap<IssueNumber, Result<Subject, ResolveError>>,
     cyclic: HashSet<IssueNumber>,
     walked: HashSet<IssueNumber>,
     nodes: HashMap<IssueNumber, Rc<Node>>,
@@ -258,8 +258,9 @@ impl<'a> Run<'a> {
         };
         let loaded = match self.subjects.get(parent) {
             Some(Ok(loaded)) => loaded.clone(),
-            Some(Err(reason)) => return Err(unreadable(parent, reason)),
-            None => return Err(unreadable(parent, "not loaded")),
+            Some(Err(error)) => return Err(unreadable(parent, error.clone())),
+            // `walk_chain` loads every parent before a node is computed.
+            None => unreachable!("parent {parent} was not loaded by walk_chain"),
         };
         let node = self.node(&loaded);
         if node.frozen() {
@@ -405,10 +406,10 @@ fn decision(
     }
 }
 
-fn unreadable(parent: &IssueNumber, reason: &str) -> Violation {
+fn unreadable(parent: &IssueNumber, error: ResolveError) -> Violation {
     Violation::ParentUnreadable {
         parent: parent.clone(),
-        reason: reason.to_owned(),
+        error,
     }
 }
 

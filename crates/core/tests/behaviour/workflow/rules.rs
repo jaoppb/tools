@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use tools_core::domain::Status;
-use tools_core::workflow::{RuleResult, Violation, Workflow};
+use tools_core::workflow::{ResolveError, RuleResult, Violation, Workflow};
 
 use crate::support::{epic, number, open_card, snapshot, task_of};
 use crate::workflow::support::{Remote, cosmo, decision, evaluate, old_destinations, outside};
@@ -163,4 +163,56 @@ fn a_thousand_issues_evaluate_in_well_under_a_second() {
     // Debug builds are ~10x slower than release; the bound only catches a
     // complexity blow-up, the real number is in the spec.
     assert!(elapsed.as_secs() < 10, "{elapsed:?}");
+}
+
+#[test]
+fn each_resolve_error_freezes_the_child_and_reaches_the_violation() {
+    for error in [
+        ResolveError::NotFound,
+        ResolveError::Forbidden,
+        ResolveError::Failed("502 bad gateway".to_owned()),
+    ] {
+        let cards = vec![task_of(open_card(11, Status::Backlog), 10)];
+        let remote = Remote::default().failing(number(10), error.clone());
+        let evaluation = evaluate(&cosmo(), &snapshot(cards, &[]), &remote);
+        let child = decision(&evaluation, &number(11));
+        assert_eq!(child.destination(), "Backlog");
+        assert_eq!(
+            child.violation(),
+            Some(&Violation::ParentUnreadable {
+                parent: number(10),
+                error
+            })
+        );
+    }
+}
+
+#[test]
+fn the_resolver_is_asked_once_per_issue_even_when_many_children_share_the_parent() {
+    let cards = vec![
+        task_of(open_card(11, Status::Backlog), 10),
+        task_of(open_card(12, Status::Backlog), 10),
+        task_of(open_card(13, Status::Backlog), 10),
+    ];
+    let remote = Remote::default().failing(number(10), ResolveError::Forbidden);
+    let evaluation = evaluate(&cosmo(), &snapshot(cards, &[]), &remote);
+    assert_eq!(remote.asked(), vec![number(10)]);
+    for raw in [11, 12, 13] {
+        assert!(decision(&evaluation, &number(raw)).violation().is_some());
+    }
+}
+
+#[test]
+fn a_child_of_a_frozen_parent_is_frozen_with_the_parent_named() {
+    // #12 -> #11 -> #10 (unreadable): #11 is frozen by the read, #12 by #11.
+    let cards = vec![
+        task_of(open_card(11, Status::Backlog), 10),
+        task_of(open_card(12, Status::Backlog), 11),
+    ];
+    let remote = Remote::default().failing(number(10), ResolveError::Forbidden);
+    let evaluation = evaluate(&cosmo(), &snapshot(cards, &[]), &remote);
+    assert_eq!(
+        decision(&evaluation, &number(12)).violation(),
+        Some(&Violation::ParentFrozen { parent: number(11) })
+    );
 }

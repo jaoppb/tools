@@ -7,6 +7,7 @@ pub use crate::domain::repo::{
     RepoLabelsOverlay, RepoLabelsSpec, RepoMilestone, RepoMilestoneSpec, RepoMilestonesOverlay,
     RepoMilestonesSpec, RepoPlanError, RepoProject, RepoProjectSpec, RepoSettings, RepoSpec,
 };
+use crate::workflow::{LoadError, Workflow, WorkflowConfig};
 mod milestone_format;
 pub use milestone_format::{MilestoneFormat, TitlePattern};
 
@@ -14,10 +15,13 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Repository configuration from `tools.toml`.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Config {
     /// GitHub configuration namespace.
     pub github: GithubConfig,
+    /// The `[workflow]` block, when the file has one.
+    #[serde(default)]
+    pub workflow: Option<WorkflowConfig>,
 }
 
 impl Config {
@@ -38,6 +42,21 @@ impl Config {
                 project,
             )
         }
+    }
+
+    /// The compiled `[workflow]` block, `None` when the file has none.
+    ///
+    /// Compiles on every call (milliseconds); call it once and keep the result.
+    ///
+    /// # Errors
+    ///
+    /// A [`LoadError`]; a file read by the `load_*` functions has been
+    /// validated already, so this only fails for a `Config` built another way.
+    pub fn workflow(&self) -> Result<Option<Workflow>, LoadError> {
+        self.workflow
+            .as_ref()
+            .map(|block| block.compile(None))
+            .transpose()
     }
 
     /// The issues-check rules configuration.
@@ -289,6 +308,15 @@ pub enum ConfigError {
         #[source]
         source: toml::de::Error,
     },
+    /// The `[workflow]` block is invalid.
+    #[error("invalid [workflow] block in {path}: {source}")]
+    Workflow {
+        /// File path.
+        path: PathBuf,
+        /// What is wrong, with its line and column.
+        #[source]
+        source: Box<LoadError>,
+    },
     /// `tools.toml` was not found.
     #[error("tools.toml not found in current directory or any parent")]
     NotFound,
@@ -314,10 +342,24 @@ pub fn find_config(start_dir: &Path) -> Option<PathBuf> {
 ///
 /// Returns [`ConfigError`] if parsing fails.
 pub fn load_from_str(contents: &str) -> Result<Config, ConfigError> {
-    toml::from_str(contents).map_err(|source| ConfigError::Parse {
-        path: PathBuf::from("<memory>"),
+    parse(contents, Path::new("<memory>"))
+}
+
+/// Parses `contents` and validates its `[workflow]` block.
+fn parse(contents: &str, path: &Path) -> Result<Config, ConfigError> {
+    let config: Config = toml::from_str(contents).map_err(|source| ConfigError::Parse {
+        path: path.to_path_buf(),
         source,
-    })
+    })?;
+    if let Some(block) = &config.workflow {
+        block
+            .compile(Some(contents))
+            .map_err(|source| ConfigError::Workflow {
+                path: path.to_path_buf(),
+                source: Box::new(source),
+            })?;
+    }
+    Ok(config)
 }
 
 /// Loads and parses configuration from the given file path.
@@ -330,10 +372,7 @@ pub fn load_from_path(path: &Path) -> Result<Config, ConfigError> {
         path: path.to_path_buf(),
         source,
     })?;
-    toml::from_str(&contents).map_err(|source| ConfigError::Parse {
-        path: path.to_path_buf(),
-        source,
-    })
+    parse(&contents, path)
 }
 
 /// Loads configuration from an explicit path or searches upwards from the current directory.

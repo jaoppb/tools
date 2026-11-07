@@ -9,11 +9,9 @@ publish.workspace = true
 [lib]
 path = "src/lib.rs"
 
-[features]
-workflow = ["dep:cel-interpreter"]
-
 [dependencies]
-cel-interpreter = { workspace = true, optional = true }
+cel-interpreter.workspace = true
+cel-parser.workspace = true
 deunicode.workspace = true
 regex.workspace = true
 serde.workspace = true
