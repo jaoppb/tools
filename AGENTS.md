@@ -8,7 +8,7 @@ This repository is a monorepo for developer tools, repository management utiliti
 - **Milestones.** Every open issue must belong to a release milestone:
   - `v0.1.0`: Bootstrap (initial monorepo setup, extraction from cosmo, tooling, Nix flake).
   - `v0.2.0`: Initial stable release (distribution, packaging, cross-repo adoption).
-  - `v0.3.0`+: Post-release iterations and enhancements.
+  - `v0.3.0`: Cleanup and refactoring of hardcoded logic.
 - **Labels.**
   - Exactly one `type:` label on every issue: `type:feat`, `type:fix`, `type:chore`, `type:docs`, `type:refactor`, or `type:spike`.
   - At least one `area:` label: `area:core`, `area:project-sync`, `area:issues-check`, `area:tooling`, or `area:docs`.
