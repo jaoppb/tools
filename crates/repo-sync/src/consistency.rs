@@ -38,40 +38,50 @@ pub fn check(root: &Path, declared: &[String]) -> Vec<String> {
 
 fn check_templates(dir: &Path, declared: &BTreeSet<&str>) -> Vec<String> {
     let mut problems = Vec::new();
-    let mut found = BTreeSet::new();
-    match fs::read_dir(dir) {
-        Ok(entries) => {
-            let mut files: Vec<_> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
-            files.sort();
-            for path in files {
-                let Some(file) = path.file_name().and_then(|name| name.to_str()) else {
-                    continue;
-                };
-                if file == TEMPLATE_CONFIG || !file.ends_with(".yml") {
-                    continue;
-                }
-                match fs::read_to_string(&path) {
-                    Ok(text) => {
-                        found.insert(file.to_owned());
-                        problems.extend(check_template(file, &text, declared));
-                    }
-                    Err(error) => {
-                        problems.push(format!("{TEMPLATE_DIR}/{file}: cannot read: {error}"))
-                    }
-                }
-            }
+    let files = match template_files(dir) {
+        Ok(files) => files,
+        Err(problem) => {
+            problems.push(problem);
+            Vec::new()
         }
-        Err(error) => problems.push(format!("{TEMPLATE_DIR}: cannot read: {error}")),
+    };
+    for (file, text) in &files {
+        problems.extend(check_template(file, text, declared));
     }
-    for label in declared.iter().filter(|name| name.starts_with(TYPE_PREFIX)) {
-        let file = format!("{}.yml", &label[TYPE_PREFIX.len()..]);
-        if !found.contains(&file) {
+    for label in declared {
+        let Some(kind) = label.strip_prefix(TYPE_PREFIX) else {
+            continue;
+        };
+        if !files
+            .iter()
+            .any(|(file, _)| file.strip_suffix(".yml") == Some(kind))
+        {
             problems.push(format!(
-                "{label} is declared but {TEMPLATE_DIR}/{file} is missing"
+                "{label} is declared but {TEMPLATE_DIR}/{kind}.yml is missing"
             ));
         }
     }
     problems
+}
+
+/// The `(file name, contents)` of every issue template, `config.yml` excluded, sorted by name.
+fn template_files(dir: &Path) -> Result<Vec<(String, String)>, String> {
+    let unreadable =
+        |path: &Path, error: std::io::Error| format!("{}: cannot read: {error}", path.display());
+    let mut files = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|error| unreadable(dir, error))? {
+        let path = entry.map_err(|error| unreadable(dir, error))?.path();
+        let Some(file) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if file == TEMPLATE_CONFIG || !file.ends_with(".yml") {
+            continue;
+        }
+        let text = fs::read_to_string(&path).map_err(|error| unreadable(&path, error))?;
+        files.push((file.to_owned(), text));
+    }
+    files.sort();
+    Ok(files)
 }
 
 fn check_template(file: &str, text: &str, declared: &BTreeSet<&str>) -> Vec<String> {
@@ -115,7 +125,7 @@ fn check_doc(doc: &str, text: &str, declared: &BTreeSet<&str>) -> Vec<String> {
         .skip(1)
         .step_by(2)
         .filter(|token| token.starts_with(TYPE_PREFIX) || token.starts_with(AREA_PREFIX))
-        .filter(|token| token.len() > TYPE_PREFIX.len())
+        .filter(|token| !token.ends_with(':'))
         .collect();
     let mut problems = Vec::new();
     for label in declared.difference(&listed) {
@@ -127,7 +137,8 @@ fn check_doc(doc: &str, text: &str, declared: &BTreeSet<&str>) -> Vec<String> {
     problems
 }
 
-/// The value of an unindented `key:` line.
+/// The value of an unindented `key:` line. Only inline values are understood, so a block-style
+/// `labels:` list reads as empty.
 fn top_level<'a>(text: &'a str, key: &str) -> Option<&'a str> {
     text.lines()
         .find_map(|line| line.strip_prefix(key)?.strip_prefix(':'))
