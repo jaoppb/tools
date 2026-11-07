@@ -3,7 +3,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::domain::repo::{DeleteReason, ReconcileHandler, RepoPlanError, reconcile_by_key};
+use crate::domain::repo::{
+    DeleteReason, ReconcileHandler, RepoPlanError, overlay_by_key, reconcile_by_key, union_names,
+};
 
 /// Repository label representation on GitHub and in configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +63,50 @@ impl RepoLabelsSpec {
         migrations.extend(self.renames.clone());
         migrations.extend(self.migrations.clone());
         migrations
+    }
+}
+
+/// Repository-scoped labels overlay applied on top of the shared [`RepoLabelsSpec`].
+///
+/// Items override shared items with the same name and are otherwise appended; `deprecated` is a
+/// union; `renames` and `migrations` are merged with overlay entries winning; `prune_unmanaged`
+/// replaces the shared value only when set.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepoLabelsOverlay {
+    /// Additional label names to prune.
+    #[serde(default)]
+    pub deprecated: Vec<String>,
+    /// Additional or overriding rename mappings.
+    #[serde(default)]
+    pub renames: BTreeMap<String, String>,
+    /// Overrides whether to prune unmanaged labels when set.
+    #[serde(default)]
+    pub prune_unmanaged: Option<bool>,
+    /// Additional or overriding migration mappings.
+    #[serde(default)]
+    pub migrations: BTreeMap<String, String>,
+    /// Additional or overriding labels.
+    #[serde(default)]
+    pub items: Vec<RepoLabel>,
+}
+
+impl RepoLabelsOverlay {
+    /// Resolves the effective labels specification for a repository.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoPlanError::Validation`] when the overlay repeats an item key.
+    pub fn apply_to(&self, base: Option<&RepoLabelsSpec>) -> Result<RepoLabelsSpec, RepoPlanError> {
+        let mut spec = base.cloned().unwrap_or_default();
+        union_names(&mut spec.deprecated, self.deprecated.clone());
+        spec.renames.extend(self.renames.clone());
+        spec.migrations.extend(self.migrations.clone());
+        if let Some(prune) = self.prune_unmanaged {
+            spec.prune_unmanaged = prune;
+        }
+        overlay_by_key(&mut spec.items, self.items.clone(), |label| &label.name)?;
+        Ok(spec)
     }
 }
 
@@ -423,5 +469,55 @@ mod tests {
         let err = RepoLabel::diff(&[], &desired, &[], &renames, false).unwrap_err();
         assert!(matches!(err, RepoPlanError::Validation(_)));
         assert!(err.to_string().contains("cycle or chain"));
+    }
+
+    #[test]
+    fn overlay_overrides_by_name_appends_and_merges() {
+        let base = RepoLabelsSpec {
+            deprecated: vec!["bug".into()],
+            renames: BTreeMap::from([("a".into(), "x".into())]),
+            prune_unmanaged: true,
+            migrations: BTreeMap::new(),
+            items: vec![
+                RepoLabel::new("type:feat", "111111", "shared"),
+                RepoLabel::new("area:core", "222222", "core"),
+            ],
+        };
+        let overlay = RepoLabelsOverlay {
+            deprecated: vec!["bug".into(), "wontfix".into()],
+            renames: BTreeMap::from([("b".into(), "y".into())]),
+            prune_unmanaged: None,
+            migrations: BTreeMap::from([("ui".into(), "area:ssr".into())]),
+            items: vec![
+                RepoLabel::new("type:feat", "#ABCDEF", "local"),
+                RepoLabel::new("area:ssr", "333333", "ssr"),
+            ],
+        };
+        let merged = overlay.apply_to(Some(&base)).unwrap();
+        assert_eq!(merged.deprecated, vec!["bug", "wontfix"]);
+        assert_eq!(merged.renames.len(), 2);
+        assert_eq!(merged.migrations.get("ui"), Some(&"area:ssr".to_string()));
+        assert!(merged.prune_unmanaged);
+        let names: Vec<_> = merged.items.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, vec!["type:feat", "area:core", "area:ssr"]);
+        assert_eq!(merged.items[0].color, "abcdef");
+        assert_eq!(merged.items[0].description, "local");
+    }
+
+    #[test]
+    fn overlay_can_override_prune_and_works_without_base() {
+        let overlay = RepoLabelsOverlay {
+            prune_unmanaged: Some(false),
+            items: vec![RepoLabel::new("area:db", "444444", "db")],
+            ..RepoLabelsOverlay::default()
+        };
+        let base = RepoLabelsSpec {
+            prune_unmanaged: true,
+            ..RepoLabelsSpec::default()
+        };
+        assert!(!overlay.apply_to(Some(&base)).unwrap().prune_unmanaged);
+        let alone = overlay.apply_to(None).unwrap();
+        assert_eq!(alone.items.len(), 1);
+        assert!(!alone.prune_unmanaged);
     }
 }

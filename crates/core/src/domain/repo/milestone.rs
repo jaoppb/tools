@@ -3,7 +3,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::domain::repo::{DeleteReason, ReconcileHandler, RepoPlanError, reconcile_by_key};
+use crate::domain::repo::{
+    DeleteReason, ReconcileHandler, RepoPlanError, overlay_by_key, reconcile_by_key, union_names,
+};
 
 /// Repository milestone state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -53,6 +55,49 @@ pub struct RepoMilestonesSpec {
     /// Desired milestones to enforce.
     #[serde(default)]
     pub items: Vec<RepoMilestoneSpec>,
+}
+
+/// Repository-scoped milestones overlay applied on top of the shared [`RepoMilestonesSpec`].
+///
+/// Items override shared items with the same title and are otherwise appended; `deprecated` is a
+/// union; `renames` are merged with overlay entries winning; `prune_unmanaged` replaces the shared
+/// value only when set.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepoMilestonesOverlay {
+    /// Additional milestone titles to close/prune.
+    #[serde(default)]
+    pub deprecated: Vec<String>,
+    /// Additional or overriding rename mappings.
+    #[serde(default)]
+    pub renames: BTreeMap<String, String>,
+    /// Overrides whether to prune unmanaged milestones when set.
+    #[serde(default)]
+    pub prune_unmanaged: Option<bool>,
+    /// Additional or overriding milestones.
+    #[serde(default)]
+    pub items: Vec<RepoMilestoneSpec>,
+}
+
+impl RepoMilestonesOverlay {
+    /// Resolves the effective milestones specification for a repository.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoPlanError::Validation`] when the overlay repeats an item key.
+    pub fn apply_to(
+        &self,
+        base: Option<&RepoMilestonesSpec>,
+    ) -> Result<RepoMilestonesSpec, RepoPlanError> {
+        let mut spec = base.cloned().unwrap_or_default();
+        union_names(&mut spec.deprecated, self.deprecated.clone());
+        spec.renames.extend(self.renames.clone());
+        if let Some(prune) = self.prune_unmanaged {
+            spec.prune_unmanaged = prune;
+        }
+        overlay_by_key(&mut spec.items, self.items.clone(), |item| &item.title)?;
+        Ok(spec)
+    }
 }
 
 /// Repository milestone entity on GitHub.
@@ -451,5 +496,43 @@ mod tests {
         assert!(matches!(err, RepoPlanError::Collision(_)));
         assert!(err.to_string().contains("v0.9"));
         assert!(err.to_string().contains("v1.0"));
+    }
+
+    #[test]
+    fn overlay_overrides_by_title_and_unions_deprecated() {
+        let base = RepoMilestonesSpec {
+            deprecated: vec!["v0".into()],
+            renames: BTreeMap::new(),
+            prune_unmanaged: false,
+            items: vec![RepoMilestoneSpec {
+                title: "v1".into(),
+                description: "shared".into(),
+                state: MilestoneState::Open,
+            }],
+        };
+        let overlay = RepoMilestonesOverlay {
+            deprecated: vec!["v0".into(), "v9".into()],
+            prune_unmanaged: Some(true),
+            items: vec![
+                RepoMilestoneSpec {
+                    title: "v1".into(),
+                    description: "local".into(),
+                    state: MilestoneState::Closed,
+                },
+                RepoMilestoneSpec {
+                    title: "v2".into(),
+                    description: "extra".into(),
+                    state: MilestoneState::Open,
+                },
+            ],
+            ..RepoMilestonesOverlay::default()
+        };
+        let merged = overlay.apply_to(Some(&base)).unwrap();
+        assert_eq!(merged.deprecated, vec!["v0", "v9"]);
+        assert!(merged.prune_unmanaged);
+        assert_eq!(merged.items.len(), 2);
+        assert_eq!(merged.items[0].description, "local");
+        assert_eq!(merged.items[0].state, MilestoneState::Closed);
+        assert_eq!(merged.items[1].title, "v2");
     }
 }

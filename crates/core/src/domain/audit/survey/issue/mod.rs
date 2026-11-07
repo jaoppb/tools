@@ -135,16 +135,16 @@ impl TreeIssue {
         self.placement.milestone.is_some()
     }
 
+    /// The milestone of the issue, if it has one.
+    #[must_use]
+    pub const fn milestone(&self) -> Option<&Milestone> {
+        self.placement.milestone.as_ref()
+    }
+
     /// The release the milestone names, if the issue has one and it is a release.
     #[must_use]
     pub fn release(&self) -> Option<Release> {
         self.placement.milestone.as_ref().and_then(Release::of)
-    }
-
-    /// Whether the issue has a milestone that is not a release.
-    #[must_use]
-    pub fn has_unreadable_release(&self) -> bool {
-        self.has_milestone() && self.release().is_none()
     }
 
     /// The parent, if the issue has one.
