@@ -1,6 +1,6 @@
 # Workflow engine: config-driven rules, no cosmo assumptions
 
-Status: spike #54 done. Prototype in `crates/core/src/workflow/` (feature `workflow`), findings below. Target milestone: `v0.3.0` (spike + project-sync), `v0.4.0` (issues-check).
+Status: spike #54 done; the engine core, `[workflow]` config and presets landed in #56 (`crates/core/src/workflow/`, no feature gate). Findings below. Target milestone: `v0.3.0` (spike + project-sync), `v0.4.0` (issues-check).
 
 ## Problem
 
@@ -81,7 +81,12 @@ message = 'exactly one "type:" label is required'
 - **Missing field.** `issue.fields` holds only fields that are set; presets guard with `has(issue.fields.X)`.
 - **Eval error.** A runtime error in a `when` freezes that issue: no change, a violation, the rule marked `error` in the trace. Never aborts the run, never falls through to later rules.
 - **Reason = firing rule `id`.** The oracle compares `(card, destination)` only; old pair-derived reason text is not reproduced.
-- **Prototype location.** Cargo feature `workflow` on `tools-core`, module `crates/core/src/workflow/` outside `domain` (domain stays std-only); `cel-interpreter` optional.
+- **Location.** Module `crates/core/src/workflow/` outside `domain` (domain stays std-only); `cel-interpreter` and `cel-parser` are regular dependencies. The `workflow` cargo feature of the prototype is gone (#56).
+- **Config shape (#56).** `Config` holds the raw, serde-typed `[workflow]` block (`WorkflowConfig`, so `Config` keeps Clone/PartialEq/Eq). `load_from_str`/`load_from_path` compile it and fail with `ConfigError::Workflow`; `Config::workflow()` returns the compiled `Workflow` (`None` without a block). Fields are `toml::Spanned`: undeclared status/default, unknown schema or preset, duplicate id, reserved or cyclic fact, bad param and CEL compile or unknown-name errors report `line N, column M` of the file. Errors inside a builtin preset carry no location. Unknown keys are plain TOML errors with their own location. `[github.issues.rules]` and `status_mapping` stay until #58.
+- **Reference analysis (#56).** Load-time name checks parse each expression with `cel-parser` and walk the AST. Free identifiers are those not bound by an enclosing comprehension (scopes are respected, so a name bound in one macro does not excuse the same spelling elsewhere); operators and parser-expanded macros (`exists`, `all`, `filter`, `map`, `has`) are not function calls. Called functions must be built in or in the fixed helper set.
+- **Frozen parent (#56).** A frozen parent (cycle, unreadable, eval error) freezes its whole subtree: the child gets no change and `Violation::ParentFrozen` naming it. Exposing partial facts was rejected: a frozen parent has no derived facts, any rule reading `issue.parent.<fact>` would error at run time anyway, and "no change" is the safe answer.
+- **`ParentResolver` contract (#56).** Synchronous, object-safe (`&dyn`). `fetch` returns `Result<Subject, ResolveError>` with `NotFound`, `Forbidden` (token cannot read the repository) or `Failed(String)`. The engine asks once per issue number per run and caches the answer, errors included; only for parent-chain issues the Project lacks. Every error freezes the child (`Violation::ParentUnreadable { parent, error }`). The engine never retries; a transient failure costs that issue one run. Implementations must not panic.
+- **`builtin:tools` (#56).** Same five statuses and `type_prefix`/`area_prefix`/`started` params as cosmo. Gate: exactly one type label, an area label, a milestone, all blockers closed. No Priority/Effort, parent, epic or membership; a stray parent link is ignored. Cosmo's closed/started/pull-request rules are otherwise identical. Tested with hand-built scenarios (`tests/behaviour/workflow/tools.rs`).
 - Increment 1 = spike doc + engine driving **project-sync only**. issues-check keeps the current rule code until increment 2.
 
 ## Non-goals (v0.3.0)
@@ -107,7 +112,7 @@ message = 'exactly one "type:" label is required'
 
 - Works: `exists`/`all`/`filter` macros, `has()`, ternary, `in`, `startsWith`, `size`, `null` comparison, custom functions (`fold`), child scopes. `default-features = false` is enough (no `regex`, no `chrono`).
 - Compile errors are syntax only, with a position: `ERROR: <input>:1:33: Syntax error: missing ')'`. **There is no type checker**: `issue.fields.Effort <= "8"`, a missing key and an unknown identifier are *runtime* errors. The engine therefore validates names at load and treats runtime errors as a frozen issue.
-- `Program::references()` lists free variables and functions, but (a) includes macro-bound names (`l`) and (b) lists operators as functions (`_&&_`, `!_`, `@in`). The prototype subtracts bound names by reading the identifier after `.exists(`-style openers and skips names starting with `_`, `!`, `@`. Fragile; the real engine should parse with `cel-parser` and walk the AST (`IdedExpr` is public).
+- `Program::references()` lists free variables and functions, but (a) includes macro-bound names (`l`) and (b) lists operators as functions (`_&&_`, `!_`, `@in`). The prototype subtracted bound names by reading the identifier after `.exists(`-style openers. Replaced in #56 by an AST walk over `cel-parser` (see Decisions).
 - Speed: 1000 issues, 12 facts and 7 rules each, parent chains included: **84 ms release, ~490 ms debug**. A child scope per issue over one shared root context matters (building `Context::default()` per issue was 2.7x slower in debug).
 - Alternative (`rhai`, home-grown) not needed.
 
@@ -175,8 +180,8 @@ Every expression sees `issue`, `params`, `repo`, the derived facts by name, and 
 ### Open questions, resolved or re-stated
 
 - Resolved: schema versioning (`schema = 1`), plan reasons (rule id), missing fields (absent key).
-- Re-stated: `issue.prs` as a list (needs PR numbers in `Snapshot`); parse with `cel-parser` instead of the regex-free scan; `repo` is only a name today, not a map; gaps; `extends` from file/URL.
-- New: should a frozen parent freeze its whole subtree (prototype) or only expose `next = current` with partial facts? The prototype takes the safe side.
+- Re-stated: `issue.prs` as a list (needs PR numbers in `Snapshot`); `repo` is only a name today, not a map; gaps; `extends` from file/URL.
+- Resolved in #56: a frozen parent freezes its whole subtree (see Decisions).
 
 ## Risks
 
@@ -190,17 +195,17 @@ Every expression sees `issue`, `params`, `repo`, the derived facts by name, and 
 
 ## Issue map
 
-Scope is what each issue inherits from the spike. Spike / engine (`area:core`, `v0.3.0`):
-1. ~~Spike #54~~ done: this document and `crates/core/src/workflow/`.
-2. feat: `[workflow]` config in `tools.toml`, `[workflow.params]`, the two presets (`builtin:tools` still to write), load-time validation with TOML locations (the prototype's `from_toml` takes a stand-alone TOML string). Replace the macro-variable scan with an AST walk over `cel-parser`. Promote the module out of the feature gate. Take over the `ParentResolver` contract.
-3. feat: project-sync driven by the engine: a `ParentResolver` backed by the GitHub adapter (cross-repo, parent chain only, unreadable repo = frozen issue), `--explain <issue>` printing `Explain`, `Violation` reporting, Project statuses as strings instead of the `Status` enum. Decide what moves with the new strict gate (changelog).
-4. feat: config migration command for `[github.issues.rules]` and `status_mapping`; map `priority`/`effort` toggles to the strict gate and `area_prefixes` to `params.area_prefix` (the toggles-off case needs a documented override or a rule shadow).
-5. feat (`v0.4.0`): issues-check driven by `[[workflow.audit]]`; decide where triage gaps live; delete `domain/audit/rules`, violation text, `Status` enum, `domain/plan` reasons.
+Spike / engine (`area:core`, `v0.3.0` unless noted):
+1. ~~#54~~ spike, done: this document and the prototype (#55).
+2. #56 feat: `[workflow]` config in `tools.toml`, `[workflow.params]`, both presets, location-bearing load errors, AST-based reference analysis, feature gate removed, `ParentResolver` contract. Done by this issue.
+3. #57 feat: project-sync driven by the engine: a `ParentResolver` backed by the GitHub adapter (cross-repo, parent chain only; every `ResolveError` freezes the child), `--explain <issue>` printing `Explain`, `Violation` reporting, Project statuses as strings instead of the `Status` enum. Decide what moves with the new strict gate (changelog).
+4. #58 feat: config migration for `[github.issues.rules]` and `status_mapping`; map `priority`/`effort` toggles to the strict gate and `area_prefixes` to `params.area_prefix` (the toggles-off case needs a documented override or a rule shadow). Removes the old keys.
+5. #59 feat (`v0.4.0`): issues-check driven by `[[workflow.audit]]`; decide where triage gaps live; delete `domain/audit/rules`, violation text, `Status` enum, `domain/plan` reasons.
 
-Independent of the engine (unchanged by the findings):
-6. chore: remove `Target::cosmo()`, "Cosmo" wording, dead `references`/`text` flags and `domain/audit/text`.
-7. refactor: label `default_migrations` becomes config only.
-8. refactor: `--default-type` validates against `[github.labels.items]`, not `CANONICAL_TYPES`.
-9. feat: action.yml `config-path` input, project-sync step, `REPO` input.
-10. chore: generate or check issue templates and docs label/milestone lists against `tools.toml`.
-11. (new, from the spike) fix: story cycle overflows the stack in `domain/target` today. Independent of the engine, small; worth fixing before v0.3.0 if the engine slips.
+Independent of the engine:
+6. #60 chore: remove `Target::cosmo()`, "Cosmo" wording, dead `references`/`text` flags and `domain/audit/text`.
+7. #61 refactor: label `default_migrations` becomes config only.
+8. #62 refactor: `--default-type` validates against `[github.labels.items]`, not `CANONICAL_TYPES`; configured prefixes.
+9. #63 feat: action.yml `config-path` input, project-sync step, `REPO` input.
+10. #64 chore: single source of truth for issue templates and docs label/milestone lists against `tools.toml`.
+11. #65 fix: story cycle overflows the stack in `domain/target`. Independent of the engine, small.
