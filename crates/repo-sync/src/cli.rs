@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
 use tools_core::application::RepoSyncMode;
-use tools_core::config::{Config, ConfigError, load_or_find};
+use tools_core::config::{Config, ConfigError, find_config, load_or_find};
 use tools_core::domain::repo::{Repo, RepoPlanError, RepoSpec};
 
 const PROGRAM: &str = "repo-sync";
@@ -160,6 +160,31 @@ impl Arguments {
     #[must_use]
     pub const fn mode(&self) -> RepoSyncMode {
         self.mode
+    }
+
+    /// Whether the offline template and doc consistency check applies: a plain `--check` of this
+    /// repository, or one that includes `--labels`.
+    #[must_use]
+    pub fn checks_files(&self) -> bool {
+        self.mode == RepoSyncMode::Check
+            && self.owner.is_none()
+            && self.repos.is_empty()
+            && self.explicit_entities.is_none_or(|filter| filter.labels)
+    }
+
+    /// The directory holding `tools.toml`, where the templates and docs live.
+    #[must_use]
+    pub fn root(&self) -> PathBuf {
+        let cwd = || PathBuf::from(".");
+        let found = self.config_path.clone().or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .and_then(|dir| find_config(&dir))
+        });
+        found
+            .and_then(|path| path.parent().map(PathBuf::from))
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .unwrap_or_else(cwd)
     }
 
     /// Repositories specified on the command line.

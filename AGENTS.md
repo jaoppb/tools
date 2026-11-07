@@ -5,17 +5,16 @@ This repository is a monorepo for developer tools, repository management utiliti
 ## 1. Issue workflow
 
 - **Hierarchy.** Standalone issues under release milestones. Native GitHub sub-issues are supported when breaking down a task into constituent steps.
-- **Milestones.** Every open issue must belong to a release milestone:
-  - `v0.1.0`: Bootstrap (initial monorepo setup, extraction from cosmo, tooling, Nix flake).
-  - `v0.2.0`: Initial stable release (distribution, packaging, cross-repo adoption).
-  - `v0.3.0`: Cleanup and refactoring of hardcoded logic.
-- **Labels.**
+- **Milestones.** Every open issue must belong to a release milestone declared in `tools.toml` `[github.milestones]`, the single source of truth (`just repo-check` compares it with GitHub). Docs and templates do not list milestones.
+- **Labels.** `tools.toml` `[github.labels]` is the single source of truth. The hand-written issue templates and the lists below must agree with it; `just repo-check` (offline step of `repo-sync --check`, also run by CI) fails on drift: a `type:*` label without its template, a template whose `labels:` or `title:` prefix is not its type, an undeclared label, or a list out of step.
+<!-- labels:start -->
   - Exactly one `type:` label on every issue: `type:feat`, `type:fix`, `type:chore`, `type:docs`, `type:refactor`, or `type:spike`.
   - At least one `area:` label: `area:core`, `area:project-sync`, `area:issues-check`, `area:tooling`, or `area:docs`.
+<!-- labels:end -->
 - **Creation and Triage.** File issues using the corresponding template from `.github/ISSUE_TEMPLATE/`. Upon creation or triage:
   - Select the template matching the issue type (which applies the `type:` label).
   - Set the appropriate `area:` label.
-  - Assign the target milestone (`v0.1.0`, `v0.2.0`, etc.).
+  - Assign the target release milestone.
   - Link dependencies using native GitHub blocked-by links and list them under `Dependencies` if needed.
 - **Branches, Commits, and Pull Requests.**
   - Branch naming: `<type>/<issue>` (e.g., `feat/7`, `chore/1`, `docs/31`).
