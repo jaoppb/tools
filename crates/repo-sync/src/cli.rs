@@ -162,17 +162,19 @@ impl Arguments {
         self.mode
     }
 
-    /// Whether the offline template and doc consistency check applies: a plain `--check` of this
-    /// repository, or one that includes `--labels`.
+    /// Whether the offline template and doc consistency check applies to `resolved`: a `--check`
+    /// of the configured repository alone (no `--org` or `--repo` override), plain or with
+    /// `--labels`.
     #[must_use]
-    pub fn checks_files(&self) -> bool {
+    pub fn checks_files(&self, resolved: &ResolvedRepo) -> bool {
         self.mode == RepoSyncMode::Check
             && self.owner.is_none()
             && self.repos.is_empty()
+            && resolved.repos.len() == 1
             && self.explicit_entities.is_none_or(|filter| filter.labels)
     }
 
-    /// The directory holding `tools.toml`, where the templates and docs live.
+    /// The directory holding `tools.toml` (found the way [`load_or_find`] finds it), where the templates and docs live.
     #[must_use]
     pub fn root(&self) -> PathBuf {
         let cwd = || PathBuf::from(".");

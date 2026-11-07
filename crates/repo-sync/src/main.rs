@@ -35,7 +35,7 @@ fn run() -> Result<String, Exit> {
         text: err.to_string(),
         code: 2,
     })?;
-    if arguments.checks_files() && resolved.repos.len() == 1 {
+    if arguments.checks_files(&resolved) {
         let problems = file_problems(&arguments, &resolved);
         if !problems.is_empty() {
             return Err(Exit {
@@ -91,13 +91,20 @@ fn run() -> Result<String, Exit> {
 }
 
 /// Problems between `tools.toml` and the local templates and docs, checked from its directory.
+/// They are reported alone, before any GitHub drift, so the two kinds never share a run.
 fn file_problems(arguments: &Arguments, resolved: &ResolvedRepo) -> Vec<String> {
     let names: Vec<String> = resolved
         .repos
-        .iter()
-        .filter_map(|(_, spec)| spec.labels.as_ref())
-        .flat_map(|labels| labels.items.iter().map(|label| label.name.clone()))
-        .collect();
+        .first()
+        .and_then(|(_, spec)| spec.labels.as_ref())
+        .map(|labels| {
+            labels
+                .items
+                .iter()
+                .map(|label| label.name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
     consistency::check(&arguments.root(), &names)
 }
 
