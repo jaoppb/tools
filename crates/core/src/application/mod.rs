@@ -2,8 +2,6 @@
 
 use std::fmt;
 
-use crate::config::RulesConfig;
-
 pub mod audit;
 pub mod migration;
 pub mod repo;
@@ -16,7 +14,8 @@ pub use crate::application::repo::{
     RepoPort, RepoSync, RepoSyncError, RepoSyncMode, RepoSyncOutcome,
 };
 
-use crate::domain::{IssueNumber, Move, Plan, Snapshot, Status};
+use crate::domain::{IssueNumber, Snapshot, StatusName};
+use crate::workflow::{Decision, Engine, Evaluation, Outcome as Decided, ParentResolver, Workflow};
 
 /// Why a sync failed.
 #[derive(Debug, thiserror::Error)]
@@ -55,111 +54,139 @@ pub trait ProjectState {
     /// # Errors
     ///
     /// Returns [`SyncError::Write`] when the Status cannot be set.
-    fn set_status(&mut self, number: IssueNumber, status: Status) -> Result<(), SyncError>;
+    fn set_status(&mut self, number: IssueNumber, status: &StatusName) -> Result<(), SyncError>;
 }
 
 /// Whether a run writes its moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
-    /// Plan and report, write nothing.
+    /// Evaluate and report, write nothing.
     Preview,
-    /// Plan, report and write each move.
+    /// Evaluate, report and write each move.
     Apply,
 }
 
-/// What a run planned, and whether it wrote it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What a run decided for every card, and whether it wrote the moves.
+#[derive(Debug, Clone)]
 pub struct Outcome {
-    plan: Plan,
+    evaluation: Evaluation,
     mode: Mode,
 }
 
 impl Outcome {
     /// The outcome of a run in this mode.
     #[must_use]
-    pub const fn new(plan: Plan, mode: Mode) -> Self {
-        Self { plan, mode }
+    pub const fn new(evaluation: Evaluation, mode: Mode) -> Self {
+        Self { evaluation, mode }
     }
 
-    /// The plan the run produced.
+    /// The decision of every card, with its trace.
     #[must_use]
-    pub const fn plan(&self) -> &Plan {
-        &self.plan
+    pub const fn evaluation(&self) -> &Evaluation {
+        &self.evaluation
     }
 
-    fn summary(&self) -> String {
-        let count = self.plan.moves().len();
-        match (count, self.mode) {
-            (0, _) => "nothing to do".to_owned(),
-            (1, Mode::Apply) => "1 move applied".to_owned(),
-            (1, Mode::Preview) => "1 move (dry run, nothing written)".to_owned(),
-            (_, Mode::Apply) => format!("{count} moves applied"),
-            (_, Mode::Preview) => format!("{count} moves (dry run, nothing written)"),
-        }
+    /// The cards that change Status.
+    #[must_use]
+    pub fn moved(&self) -> usize {
+        self.count(|decided| matches!(decided, Decided::Move { .. }))
+    }
+
+    /// The cards that stay.
+    #[must_use]
+    pub fn kept(&self) -> usize {
+        self.count(|decided| matches!(decided, Decided::Keep { .. }))
+    }
+
+    /// The cards that could not be evaluated.
+    #[must_use]
+    pub fn frozen(&self) -> usize {
+        self.count(|decided| matches!(decided, Decided::Frozen { .. }))
+    }
+
+    /// Whether anything needs attention: a card to move or a card frozen.
+    #[must_use]
+    pub fn pending(&self) -> bool {
+        self.moved() + self.frozen() > 0
+    }
+
+    fn count(&self, wanted: impl Fn(&Decided) -> bool) -> usize {
+        self.evaluation
+            .iter()
+            .filter(|decision| wanted(&decision.outcome()))
+            .count()
     }
 }
 
 impl fmt::Display for Outcome {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.plan
-            .moves()
-            .iter()
-            .try_for_each(|planned| writeln!(formatter, "{planned}"))?;
-        self.plan
-            .gaps()
-            .iter()
-            .try_for_each(|gap| writeln!(formatter, "{gap}"))?;
-        self.plan
-            .frozen()
-            .iter()
-            .try_for_each(|frozen| writeln!(formatter, "{frozen}"))?;
-        writeln!(formatter, "{}", self.summary())
+        for decision in self.evaluation.iter() {
+            match decision.outcome() {
+                Decided::Move { from, to, rule } => {
+                    writeln!(formatter, "{} {from} -> {to} ({rule})", decision.number())?;
+                }
+                Decided::Frozen { cause } => {
+                    writeln!(formatter, "{} frozen: {cause}", decision.number())?;
+                }
+                Decided::Keep { .. } => (),
+            }
+        }
+        let suffix = match self.mode {
+            Mode::Apply => "",
+            Mode::Preview => " (check, nothing written)",
+        };
+        writeln!(
+            formatter,
+            "{} kept, {} moved, {} frozen{suffix}",
+            self.kept(),
+            self.moved(),
+            self.frozen()
+        )
     }
 }
 
-/// Plans the moves from the current state and, in [`Mode::Apply`], writes them.
+/// Evaluates the workflow over the Project and, in [`Mode::Apply`], writes the moves.
 #[derive(Debug)]
 pub struct Sync<S> {
     state: S,
-    rules: RulesConfig,
+    workflow: Workflow,
 }
 
-impl<S: ProjectState> Sync<S> {
-    /// A sync over this Project with default rules.
+/// The Project is also the [`ParentResolver`] of its cards: a parent outside it
+/// is read through the same adapter.
+impl<S: ProjectState + ParentResolver> Sync<S> {
+    /// A sync of this Project under this workflow.
     #[must_use]
-    pub fn new(state: S) -> Self {
-        Self::with_rules(state, RulesConfig::default())
+    pub const fn new(state: S, workflow: Workflow) -> Self {
+        Self { state, workflow }
     }
 
-    /// A sync over this Project with explicit rules.
-    #[must_use]
-    pub const fn with_rules(state: S, rules: RulesConfig) -> Self {
-        Self { state, rules }
-    }
-
-    /// Reads the Project, plans, and writes the moves in [`Mode::Apply`],
-    /// stopping at the first move that cannot be written.
+    /// Reads the Project, evaluates every card, and writes the moves in
+    /// [`Mode::Apply`], stopping at the first move that cannot be written.
     ///
     /// # Errors
     ///
     /// Returns [`SyncError`] when the Project cannot be read or a Status cannot
     /// be set. Moves written before a failure stay written.
     pub fn run(&mut self, mode: Mode) -> Result<Outcome, SyncError> {
-        let plan = self.state.snapshot()?.plan_with(&self.rules);
-        match mode {
-            Mode::Apply => self.apply(&plan)?,
-            Mode::Preview => (),
+        let snapshot = self.state.snapshot()?;
+        let evaluation = Engine::new(&self.workflow, &self.state).evaluate(&snapshot);
+        if mode == Mode::Apply {
+            self.apply(&evaluation)?;
         }
-        Ok(Outcome::new(plan, mode))
+        Ok(Outcome::new(evaluation, mode))
     }
 
-    fn apply(&mut self, plan: &Plan) -> Result<(), SyncError> {
-        plan.moves()
+    fn apply(&mut self, evaluation: &Evaluation) -> Result<(), SyncError> {
+        evaluation
             .iter()
-            .try_for_each(|planned| write(&mut self.state, planned))
+            .try_for_each(|decision| write(&mut self.state, decision))
     }
 }
 
-fn write<S: ProjectState>(state: &mut S, planned: &Move) -> Result<(), SyncError> {
-    state.set_status(planned.number().clone(), planned.destination())
+fn write<S: ProjectState>(state: &mut S, decision: &Decision) -> Result<(), SyncError> {
+    match decision.outcome() {
+        Decided::Move { to, .. } => state.set_status(decision.number().clone(), &to),
+        Decided::Keep { .. } | Decided::Frozen { .. } => Ok(()),
+    }
 }

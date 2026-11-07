@@ -4,19 +4,19 @@ use serde::Deserialize;
 
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::{PageCursor, RepositoryRef, bad_reply};
-use crate::domain::{IssueNumber, Repo};
+use crate::domain::{Closes, IssueNumber, Repo};
 
-/// The issues closed by the pull requests of one page, and the next cursor.
+/// The closing references of the pull requests of one page, and the next cursor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullsPage {
-    closing: Vec<IssueNumber>,
+    closing: Vec<Closes>,
     next: Option<String>,
 }
 
 impl PullsPage {
-    /// The issues that the pull requests of this page close.
+    /// Each open pull request of this page with the issue it closes.
     #[must_use]
-    pub fn closing(&self) -> &[IssueNumber] {
+    pub fn closing(&self) -> &[Closes] {
         &self.closing
     }
 
@@ -53,6 +53,7 @@ struct Pulls {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Pull {
+    number: u64,
     closing_issues_references: Issues,
 }
 
@@ -79,13 +80,21 @@ pub fn parse_pulls(json: &str, repo: &Repo) -> Result<PullsPage, GhError> {
     let closing = pulls
         .nodes
         .iter()
-        .flat_map(|pull| &pull.closing_issues_references.nodes)
-        .map(|issue| {
+        .flat_map(|pull| {
+            pull.closing_issues_references
+                .nodes
+                .iter()
+                .map(move |issue| (pull.number, issue))
+        })
+        .map(|(pull, issue)| {
             let issue_repo = issue
                 .repository
                 .as_ref()
                 .map_or_else(|| repo.clone(), |r| r.resolve_or(repo));
-            IssueNumber::new(issue_repo, issue.number)
+            Closes::new(
+                IssueNumber::new(repo.clone(), pull),
+                IssueNumber::new(issue_repo, issue.number),
+            )
         })
         .collect();
     Ok(PullsPage {

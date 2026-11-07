@@ -25,7 +25,7 @@ set  = "Done"
 
 [[workflow.status]]
 id   = "started-with-pull-request"
-when = 'issue.status in params.started && issue.closed_by_open_pr'
+when = 'issue.status in params.started && issue.prs.size() > 0'
 set  = "In review"
 
 [[workflow.status]]
@@ -40,7 +40,7 @@ set  = "Backlog"
 
 [[workflow.status]]
 id   = "pull-request-open"
-when = 'issue.closed_by_open_pr'
+when = 'issue.prs.size() > 0'
 set  = "In review"
 
 [[workflow.status]]

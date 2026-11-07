@@ -1,14 +1,12 @@
-//! Shared builders: the preset, an in-memory remote and the old oracle.
+//! Shared builders: the preset, an in-memory remote and the destination checks.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 
-use tools_core::domain::{IssueNumber, Snapshot};
+use tools_core::domain::{IssueNumber, Repo, Snapshot};
 use tools_core::workflow::{
     Decision, Engine, Evaluation, ParentResolver, ResolveError, Subject, Workflow,
 };
-
-use crate::support::strict_rules;
 
 pub fn cosmo() -> Workflow {
     Workflow::from_toml("[workflow]\nextends = \"builtin:cosmo\"\n").expect("the preset loads")
@@ -64,7 +62,7 @@ pub fn outside(number: IssueNumber, labels: &[&str]) -> Subject {
         fields: BTreeMap::new(),
         blockers: Vec::new(),
         parent: None,
-        closed_by_open_pr: false,
+        prs: Vec::new(),
     }
 }
 
@@ -78,38 +76,35 @@ pub fn decision<'a>(evaluation: &'a Evaluation, number: &IssueNumber) -> &'a Dec
         .expect("the card is in the snapshot")
 }
 
-/// The status each card gets from the current state machine under the strict
-/// rules, which is what `builtin:cosmo` reproduces.
-pub fn old_destinations(snapshot: &Snapshot) -> Vec<(IssueNumber, String)> {
-    let plan = snapshot.plan_with(&strict_rules());
-    snapshot
-        .cards()
-        .map(|card| {
-            let moved = plan
-                .moves()
-                .iter()
-                .find(|planned| planned.number() == card.number())
-                .map(|planned| planned.destination().name().to_owned());
-            (
-                card.number().clone(),
-                moved.unwrap_or_else(|| card.status().name().to_owned()),
-            )
-        })
-        .collect()
+/// The issue of the recorded fixtures, which live in `jaoppb/cosmo`.
+pub fn cosmo_issue(raw: u64) -> IssueNumber {
+    IssueNumber::new(Repo::new("jaoppb", "cosmo"), raw)
 }
 
-/// The engine and the state machine agree on every card.
-pub fn assert_parity(snapshot: &Snapshot, remote: &Remote) {
+/// The parents of the recorded fixtures that are not cards of the Project.
+pub fn fixture_remote() -> Remote {
+    Remote::default()
+        .with(outside(cosmo_issue(2), &["epic"]))
+        .with(outside(cosmo_issue(91), &["type:feat"]))
+        .with(outside(cosmo_issue(107), &["epic"]))
+}
+
+/// Under `builtin:cosmo` every card of `snapshot`, in order, gets exactly
+/// these destinations. The expectations were recorded from the state machine
+/// of `domain/target` under the strict rules before it was deleted (#57).
+pub fn assert_destinations(snapshot: &Snapshot, remote: &Remote, expected: &[&str]) {
     let evaluation = evaluate(&cosmo(), snapshot, remote);
-    for (number, expected) in old_destinations(snapshot) {
-        let decision = decision(&evaluation, &number);
-        assert_eq!(
-            decision.destination(),
-            expected,
-            "{number}: fired {:?}, violation {:?}\n{}",
-            decision.fired(),
-            decision.violation(),
-            decision.explain()
-        );
-    }
+    let got: Vec<String> = evaluation
+        .iter()
+        .map(|decision| decision.destination().to_string())
+        .collect();
+    assert_eq!(got, expected, "{}", trace_of(&evaluation));
+}
+
+fn trace_of(evaluation: &Evaluation) -> String {
+    evaluation
+        .iter()
+        .map(|decision| decision.explain().to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
 }

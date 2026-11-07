@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::adapters::github::error::GhError;
 use crate::adapters::github::parse::bad_reply;
-use crate::domain::{Status, StatusMapping};
+use crate::domain::StatusName;
 
 /// The ids needed to set a Status: the Project, the field, and its options.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,19 +43,10 @@ impl StatusField {
             .map(|option| option.identifier.as_str())
     }
 
-    /// Resolves the option identifier for `status`, checking exact match, case-insensitive match,
-    /// and configured alias fallbacks.
+    /// The id of the option named exactly like `status`.
     #[must_use]
-    pub fn option_for_status(&self, status: Status, mapping: &StatusMapping) -> Option<&str> {
-        self.options
-            .iter()
-            .find(|o| o.name.trim().eq_ignore_ascii_case(status.name()))
-            .or_else(|| {
-                self.options
-                    .iter()
-                    .find(|o| mapping.status_for(&o.name) == Some(status))
-            })
-            .map(|o| o.identifier.as_str())
+    pub fn option_for_status(&self, status: &StatusName) -> Option<&str> {
+        self.option(status.as_str())
     }
 }
 

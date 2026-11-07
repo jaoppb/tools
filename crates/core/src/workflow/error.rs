@@ -34,6 +34,9 @@ pub enum LoadError {
     /// Neither the block nor its preset declares a status.
     #[error("no statuses are declared: list them in `statuses` or extend a preset")]
     NoStatuses,
+    /// A status name is blank.
+    #[error("a status name is blank")]
+    BlankStatus,
     /// `default` is not a declared status.
     #[error("default status {0:?} is not declared")]
     UndeclaredDefault(String),

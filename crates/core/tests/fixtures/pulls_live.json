@@ -8,6 +8,7 @@
         },
         "nodes": [
           {
+            "number": 74,
             "closingIssuesReferences": {
               "nodes": [
                 {

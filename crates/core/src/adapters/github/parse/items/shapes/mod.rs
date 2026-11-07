@@ -111,6 +111,7 @@ pub(super) struct Milestoned {
 #[derive(Debug, Deserialize)]
 pub(super) struct Parented {
     pub(super) number: u64,
+    pub(super) repository: Option<RepositoryRef>,
     pub(super) labels: Names,
 }
 
@@ -164,4 +165,20 @@ impl FieldValues {
 fn whole(number: &serde_json::Number) -> Option<u8> {
     let text = number.to_string();
     text.strip_suffix(".0").unwrap_or(&text).parse().ok()
+}
+
+/// The reply of the one-issue request: `data.repository.issue`.
+#[derive(Debug, Deserialize)]
+pub(super) struct IssueReply {
+    pub(super) data: IssueAnswer,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct IssueAnswer {
+    pub(super) repository: IssueRepository,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct IssueRepository {
+    pub(super) issue: Option<Content>,
 }

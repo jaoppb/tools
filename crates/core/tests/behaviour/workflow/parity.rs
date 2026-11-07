@@ -1,158 +1,166 @@
-//! `builtin:cosmo` against the state machine: same destination for every card.
+//! `builtin:cosmo` against the recorded behaviour of the old state machine:
+//! the same destination for every card.
 
 use tools_core::adapters::github::parse::parse_items;
-use tools_core::domain::{Cards, Closing, IssueNumber, Lifecycle, Snapshot, Status};
+use tools_core::domain::{Cards, Closes, Closing, Lifecycle, Snapshot};
 
 use crate::support::{
-    blocked_by, child_of_epic, closed_card, epic, open_card, snapshot, task_of, with_effort,
-    without_priority,
+    blocked_by, child_of_epic, closed_card, epic, open_card, snapshot, statuses, task_of,
+    with_effort, without_priority,
 };
-use crate::workflow::support::{Remote, assert_parity, cosmo, decision, evaluate, outside};
+use crate::workflow::support::{
+    Remote, assert_destinations, cosmo, cosmo_issue, decision, evaluate, fixture_remote,
+};
 
 const LIVE: &str = include_str!("../../fixtures/items_live.json");
 const EDGE: &str = include_str!("../../fixtures/items_edge.json");
 
-fn cosmo_issue(raw: u64) -> IssueNumber {
-    IssueNumber::new(tools_core::domain::Repo::new("jaoppb", "cosmo"), raw)
-}
-
 fn recorded(json: &str, closing: &[u64]) -> Snapshot {
-    let page =
-        parse_items(json, &crate::support::fixture_target()).expect("the recorded page parses");
-    let issues = closing.iter().map(|raw| cosmo_issue(*raw)).collect();
-    Snapshot::new(Cards::new(page.cards().to_vec()), Closing::new(issues))
-}
-
-/// The parents of the fixtures that are not cards of the Project.
-fn fixture_remote() -> Remote {
-    Remote::default()
-        .with(outside(cosmo_issue(2), &["epic"]))
-        .with(outside(cosmo_issue(91), &["type:feat"]))
-        .with(outside(cosmo_issue(107), &["epic"]))
+    let page = parse_items(json, &crate::support::fixture_target(), &statuses())
+        .expect("the recorded page parses");
+    let references = closing
+        .iter()
+        .map(|raw| Closes::new(cosmo_issue(1000 + *raw), cosmo_issue(*raw)))
+        .collect();
+    Snapshot::new(Cards::new(page.cards().to_vec()), Closing::new(references))
 }
 
 #[test]
 fn the_recorded_live_page_matches() {
-    assert_parity(&recorded(LIVE, &[92, 20]), &fixture_remote());
-    assert_parity(&recorded(LIVE, &[]), &fixture_remote());
+    assert_destinations(
+        &recorded(LIVE, &[92, 20]),
+        &fixture_remote(),
+        &["Done", "Backlog", "Backlog", "Backlog", "In review"],
+    );
+    assert_destinations(
+        &recorded(LIVE, &[]),
+        &fixture_remote(),
+        &["Done", "Backlog", "Backlog", "Backlog", "In progress"],
+    );
 }
 
 #[test]
 fn the_recorded_edge_page_matches() {
-    assert_parity(&recorded(EDGE, &[]), &fixture_remote());
+    assert_destinations(
+        &recorded(EDGE, &[]),
+        &fixture_remote(),
+        &[
+            "Ready", "Done", "Ready", "Backlog", "Ready", "Backlog", "Ready",
+        ],
+    );
 }
 
 #[test]
 fn the_edge_page_with_every_blocker_open_matches() {
     let open = EDGE.replace("\"state\": \"CLOSED\"", "\"state\": \"OPEN\"");
-    assert_parity(&recorded(&open, &[]), &fixture_remote());
+    assert_destinations(
+        &recorded(&open, &[]),
+        &fixture_remote(),
+        &[
+            "Ready", "Ready", "Backlog", "Backlog", "Ready", "Backlog", "Ready",
+        ],
+    );
 }
 
 #[test]
 fn transitions_match() {
-    let scenarios: Vec<(Vec<_>, &[u64])> = vec![
-        (vec![epic(5, Status::Backlog), epic(6, Status::Done)], &[5]),
-        (vec![closed_card(20, Status::Ready)], &[]),
-        (vec![closed_card(20, Status::Done)], &[]),
-        (vec![open_card(20, Status::Ready)], &[20]),
-        (vec![open_card(20, Status::InProgress)], &[20]),
-        (vec![open_card(20, Status::InReview)], &[]),
-        (vec![open_card(20, Status::InProgress)], &[]),
-        (vec![without_priority(20, Status::Done)], &[]),
-        (vec![open_card(20, Status::Done)], &[]),
+    let open_blocker = |card| blocked_by(card, 21, Lifecycle::Open);
+    let scenarios: Vec<(Vec<_>, &[u64], &[&str])> = vec![
         (
-            vec![blocked_by(
-                open_card(20, Status::Ready),
-                21,
-                Lifecycle::Open,
-            )],
-            &[],
+            vec![epic(5, "Backlog"), epic(6, "Done")],
+            &[5],
+            &["Backlog", "Done"],
         ),
-        (vec![without_priority(20, Status::Ready)], &[]),
+        (vec![closed_card(20, "Ready")], &[], &["Done"]),
+        (vec![closed_card(20, "Done")], &[], &["Done"]),
+        (vec![open_card(20, "Ready")], &[20], &["In review"]),
+        (vec![open_card(20, "In progress")], &[20], &["In review"]),
+        (vec![open_card(20, "In review")], &[], &["In progress"]),
+        (vec![open_card(20, "In progress")], &[], &["In progress"]),
+        (vec![without_priority(20, "Done")], &[], &["Backlog"]),
+        (vec![open_card(20, "Done")], &[], &["Ready"]),
         (
-            vec![blocked_by(
-                open_card(20, Status::InProgress),
-                21,
-                Lifecycle::Open,
-            )],
+            vec![open_blocker(open_card(20, "Ready"))],
             &[],
+            &["Backlog"],
         ),
-        (vec![open_card(20, Status::Backlog)], &[]),
-        (vec![without_priority(20, Status::Backlog)], &[]),
-        (vec![with_effort(25, 13)], &[]),
-        (vec![with_effort(25, 8)], &[]),
+        (vec![without_priority(20, "Ready")], &[], &["Backlog"]),
         (
-            vec![blocked_by(
-                open_card(20, Status::Backlog),
-                21,
-                Lifecycle::Open,
-            )],
+            vec![open_blocker(open_card(20, "In progress"))],
             &[],
+            &["In progress"],
+        ),
+        (vec![open_card(20, "Backlog")], &[], &["Ready"]),
+        (vec![without_priority(20, "Backlog")], &[], &["Backlog"]),
+        (vec![with_effort(25, 13)], &[], &["Backlog"]),
+        (vec![with_effort(25, 8)], &[], &["Ready"]),
+        (
+            vec![open_blocker(open_card(20, "Backlog"))],
+            &[],
+            &["Backlog"],
         ),
         (
-            vec![blocked_by(
-                open_card(20, Status::Backlog),
-                21,
-                Lifecycle::Closed,
-            )],
+            vec![blocked_by(open_card(20, "Backlog"), 21, Lifecycle::Closed)],
             &[],
+            &["Ready"],
         ),
-        (vec![open_card(20, Status::Backlog)], &[20]),
+        (vec![open_card(20, "Backlog")], &[20], &["In review"]),
     ];
-    for (cards, closing) in scenarios {
-        assert_parity(&snapshot(cards, closing), &Remote::default());
+    for (cards, closing, expected) in scenarios {
+        assert_destinations(&snapshot(cards, closing), &Remote::default(), expected);
     }
 }
 
 #[test]
 fn hierarchy_matches() {
-    let scenarios: Vec<(Vec<_>, &[u64])> = vec![
+    let scenarios: Vec<(Vec<_>, &[&str])> = vec![
         (
             vec![
-                open_card(10, Status::Ready),
-                task_of(open_card(11, Status::Backlog), 10),
+                open_card(10, "Ready"),
+                task_of(open_card(11, "Backlog"), 10),
             ],
-            &[],
+            &["Ready", "Backlog"],
         ),
         (
             vec![
-                open_card(10, Status::InProgress),
-                task_of(open_card(11, Status::Backlog), 10),
+                open_card(10, "In progress"),
+                task_of(open_card(11, "Backlog"), 10),
             ],
-            &[],
+            &["In progress", "Ready"],
         ),
         (
             vec![
-                open_card(10, Status::Ready),
-                task_of(open_card(11, Status::Backlog), 10),
+                open_card(10, "Ready"),
+                task_of(open_card(11, "Backlog"), 10),
             ],
-            &[10],
+            &["In review", "Ready"],
         ),
         (
             vec![
-                closed_card(10, Status::Done),
-                task_of(open_card(11, Status::Backlog), 10),
+                closed_card(10, "Done"),
+                task_of(open_card(11, "Backlog"), 10),
             ],
-            &[],
+            &["Done", "Ready"],
         ),
         (
             vec![
-                epic(5, Status::Backlog),
-                child_of_epic(open_card(6, Status::Backlog), 5),
+                epic(5, "Backlog"),
+                child_of_epic(open_card(6, "Backlog"), 5),
             ],
-            &[],
+            &["Backlog", "Ready"],
         ),
         (
             vec![
-                open_card(10, Status::Backlog),
-                task_of(open_card(11, Status::Backlog), 10),
-                task_of(open_card(12, Status::Backlog), 11),
+                open_card(10, "Backlog"),
+                task_of(open_card(11, "Backlog"), 10),
+                task_of(open_card(12, "Backlog"), 11),
             ],
-            &[],
+            &["Ready", "Backlog", "Backlog"],
         ),
     ];
-    for (cards, closing) in scenarios {
-        assert_parity(&snapshot(cards, closing), &Remote::default());
+    let closing: [&[u64]; 6] = [&[], &[], &[10], &[], &[], &[]];
+    for ((cards, expected), closing) in scenarios.into_iter().zip(closing) {
+        assert_destinations(&snapshot(cards, closing), &Remote::default(), expected);
     }
 }
 

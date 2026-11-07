@@ -1,6 +1,6 @@
 # Workflow engine: config-driven rules, no cosmo assumptions
 
-Status: spike #54 done; the engine core, `[workflow]` config and presets landed in #56 (`crates/core/src/workflow/`, no feature gate). Findings below. Target milestone: `v0.3.0` (spike + project-sync), `v0.4.0` (issues-check).
+Status: spike #54 done; the engine core, `[workflow]` config and presets landed in #56 (`crates/core/src/workflow/`, no feature gate); `tools project check|sync` runs on the engine since #57. Findings below. Target milestone: `v0.3.0` (spike + project-sync), `v0.4.0` (issues-check).
 
 ## Problem
 
@@ -12,15 +12,15 @@ Status: spike #54 done; the engine core, `[workflow]` config and presets landed 
 | `area:` ignoring `area_prefixes` | `domain/facts/mod.rs:92`, `domain/issue/migration.rs:90-91` |
 | `epic` label (contradicted by `tools.toml` `deprecated`) | `domain/facts/mod.rs:108`, `parse/items/mod.rs:190` |
 | epic > story > task, "task waits for story" | `domain/issue/mod.rs:168`, `domain/links/mod.rs:92`, `domain/target/mod.rs` |
-| 5-state `Status` enum + aliases | `domain/issue/mod.rs:74-130`, `status_mapping.rs:10` |
-| State machine and reasons | `domain/target/mod.rs`, `domain/plan/mod.rs:32-68` |
-| Project field names `Status`/`Priority`/`Effort`, default Backlog | `parse/items/mod.rs:102,148,156`, `query/status_field.graphql:4` |
+| ~~5-state `Status` enum + aliases~~ done in #57: `StatusName`/`Statuses` value objects, `status_mapping` no longer read | `domain/issue/mod.rs:74-130`, `status_mapping.rs:10` |
+| ~~State machine and reasons~~ done in #57: `domain/target` and `domain/plan` deleted | `domain/target/mod.rs`, `domain/plan/mod.rs:32-68` |
+| Project field names `Status`/`Priority`/`Effort` (read by name) | `parse/items/mod.rs`, `query/status_field.graphql:4`; the default status is now `[workflow].default` (#57) |
 | Ready gate `Effort <= 8`, "split the story" | `domain/facts/mod.rs:~145,~187` |
 | Release = `v<N>.<N>.<N>` regardless of `milestone_format` | `domain/audit/release/mod.rs:5-41`, `rules/release/mod.rs` |
 | Violation text (`v0.1.0`, `type:`, `epic`, "AGENTS.md section 10") | `domain/audit/violation/mod.rs:143-221` |
 | Legacy label migrations (bug→type:fix, …) always merged | `domain/repo/label.rs:46-66` |
 | `CANONICAL_TYPES` for `--default-type` | `domain/issue/mod.rs:17-27`, `issues-check/src/cli.rs:267` |
-| `Target::cosmo()` (`jaoppb/cosmo`, project 4) | `adapters/github/target/mod.rs:67-71` + behaviour tests |
+| ~~`Target::cosmo()` (`jaoppb/cosmo`, project 4)~~ done in #60 | `adapters/github/target/mod.rs:67-71` + behaviour tests |
 | Dead `references`/`text` flags, unused `domain/audit/text` | `config/mod.rs:221-228` |
 | "Cosmo" wording | `adapters/github/project/mod.rs:1`, `query/item_of_issue.graphql:1` |
 | Type set duplicated in issue templates, AGENTS.md, CONTRIBUTING.md, README | `.github/ISSUE_TEMPLATE/*.yml`, docs |
@@ -87,6 +87,26 @@ message = 'exactly one "type:" label is required'
 - **Frozen parent (#56).** A frozen parent (cycle, unreadable, eval error) freezes its whole subtree: the child gets no change and `Violation::ParentFrozen` naming it. Exposing partial facts was rejected: a frozen parent has no derived facts, any rule reading `issue.parent.<fact>` would error at run time anyway, and "no change" is the safe answer.
 - **`ParentResolver` contract (#56).** Synchronous, object-safe (`&dyn`). `fetch` returns `Result<Subject, ResolveError>` with `NotFound`, `Forbidden` (token cannot read the repository) or `Failed(String)`. The engine asks once per issue number per run and caches the answer, errors included; only for parent-chain issues the Project lacks. Every error freezes the child (`Violation::ParentUnreadable { parent, error }`). The engine never retries; a transient failure costs that issue one run. Implementations must not panic.
 - **`builtin:tools` (#56).** Same five statuses and `type_prefix`/`area_prefix`/`started` params as cosmo. Gate: exactly one type label, an area label, a milestone, all blockers closed. No Priority/Effort, parent, epic or membership; a stray parent link is ignored. Cosmo's closed/started/pull-request rules are otherwise identical. Tested with hand-built scenarios (`tests/behaviour/workflow/tools.rs`).
+- **Project sync on the engine (#57).** `tools project check|sync` evaluates `Engine` over the Project snapshot; `domain/target`, `domain/plan` (`Moves`/`Gaps`/`Frozens`), the `Status` enum and `StatusMapping` are deleted. `[github.project.status_mapping]` is no longer read; board columns must equal `[workflow].statuses` exactly (trimmed, case-sensitive); #58 removes the key.
+- **Value objects, not strings (#57).** `StatusName` exists only through `Statuses::parse` (the declared names plus the default); `RuleId` comes from the compiled block. A rule's `set` is `Set::Current` or `Set::Status(StatusName)`, checked at load. `Statuses::undeclared()` exists for readers that only need membership (the audit's `GhProject::new`), never for writing.
+- **One decision per card (#57).** `Outcome::Move { from, to, rule } | Keep { rule: Option } | Frozen { cause }`, derived from the trace by `Decision::outcome()`. `Keep.rule` is `None` when no rule fired. Diagnostics (the `Explain` trace) are orthogonal. Summary line: `N kept, M moved, K frozen`; a move prints `<issue> A -> B (<rule-id>)`, a frozen card `<issue> frozen: <cause>`. Gaps are not printed (#59).
+- **Exit codes (#57).** `check` exits 1 when any card moves **or** is frozen (an unreadable parent or a cycle needs a human); `sync` exits 0 after writing, frozen cards are reported. `check --explain <issue>` (`57` or `repo#57`) prints the `Explain` trace and exits 0. `--format json` is a follow-up.
+- **No `[workflow]` block (#57).** `project check|sync` fail with a message naming what to add; there is no implicit preset. The target (owner/repo/project) is validated first.
+- **GitHub `ParentResolver` (#57).** `GhProject` implements it: one GraphQL read of the issue in its own repository (`parent_issue.graphql`: labels, milestone, blockers, its own parent). A repository GitHub will not resolve ("Could not resolve to a Repository"), `FORBIDDEN`, "not accessible" and HTTP 403 map to `Forbidden`; an existing repository without that issue is `NotFound`; anything else is `Failed` with `gh`'s words. A parent outside the Project has no fields, no status and no pull requests. The items query now reads the parent's repository, so a cross-repo parent is no longer attributed to the child's repository.
+- **`issue.prs` (#57).** The pulls query reads each pull request's number; `Snapshot` holds `Closes { pull, issue }` pairs and `issue.prs` is a list of `{number, repo}`. `closed_by_open_pr` is gone; the presets use `issue.prs.size() > 0`.
+- **Parity oracle retired (#57).** The old state machine is deleted, so `tests/behaviour/workflow/parity.rs` pins the destinations it produced (recorded before deletion) as literal tables.
+
+## Changelog: what moves under the strict `builtin:cosmo` gate (v0.3.0)
+
+For adopters of `project-sync` with the old default `[github.issues.rules]` (priority and effort off). Interim home until a CHANGELOG exists.
+
+- A card is **Ready only with Priority and Effort set** and Effort <= 8 (`params.effort_limit`); before, a card with type, area and milestone was Ready. Cards missing them stay in Backlog (no gap line is printed any more; `tools issues check` still reports them).
+- A task whose **story is outside the Project** now waits for that story (fetched on demand); before, it was never held.
+- A parent cycle, an unreadable parent or a parent in a repository the token cannot read **freezes** the card and exits 1 on `check`; before, a story cycle overflowed the stack.
+- **Board columns must equal `[workflow].statuses`**; `status_mapping` aliases and case-insensitive matching are gone. An unknown column is an error naming it.
+- Without a `[workflow]` block the command refuses to run.
+- Reason text is the firing rule id (`gate-holds`), not "gate holds".
+
 - Increment 1 = spike doc + engine driving **project-sync only**. issues-check keeps the current rule code until increment 2.
 
 ## Non-goals (v0.3.0)
@@ -140,10 +160,10 @@ facts:
 rules:
   [no         ] epic-is-untouched: is_epic => @current
   [no         ] closed-is-done: issue.state == "closed" => Done
-  [no         ] started-with-pull-request: issue.status in params.started && issue.closed_by_open_pr => In review
+  [no         ] started-with-pull-request: issue.status in params.started && issue.prs.size() > 0 => In review
   [no         ] started-keeps-going: issue.status in params.started => In progress
   [FIRED      ] gate-closed: !gate_holds => Backlog
-  [not reached] pull-request-open: issue.closed_by_open_pr => In review
+  [not reached] pull-request-open: issue.prs.size() > 0 => In review
   [not reached] gate-holds: true => Ready
 ```
 
@@ -169,7 +189,7 @@ Every expression sees `issue`, `params`, `repo`, the derived facts by name, and 
 | `issue.milestone` | string or null | title |
 | `issue.fields` | map | only fields that are set; `has(issue.fields.X)` guards |
 | `issue.blockers` | list of `{number, state}` | cross-repo blockers as the adapter reads them |
-| `issue.closed_by_open_pr` | bool | stands in for `issue.prs` until the adapter carries PR numbers |
+| `issue.prs` | list of `{number, repo}` | the open pull requests that close the issue; `closed_by_open_pr` is gone (#57) |
 | `issue.parent` | null or the parent's `issue` map | plus `next` and the parent's derived facts; recursive up the chain |
 | `params.*` | scalar or list | opaque |
 | `repo` | string | repository name |
@@ -180,7 +200,8 @@ Every expression sees `issue`, `params`, `repo`, the derived facts by name, and 
 ### Open questions, resolved or re-stated
 
 - Resolved: schema versioning (`schema = 1`), plan reasons (rule id), missing fields (absent key).
-- Re-stated: `issue.prs` as a list (needs PR numbers in `Snapshot`); `repo` is only a name today, not a map; gaps; `extends` from file/URL.
+- Resolved in #57: `issue.prs` is a list (PR numbers travel through `Snapshot` as `Closes`).
+- Re-stated: `repo` is only a name today, not a map; gaps; `extends` from file/URL.
 - Resolved in #56: a frozen parent freezes its whole subtree (see Decisions).
 
 ## Risks
@@ -198,7 +219,7 @@ Every expression sees `issue`, `params`, `repo`, the derived facts by name, and 
 Spike / engine (`area:core`, `v0.3.0` unless noted):
 1. ~~#54~~ spike, done: this document and the prototype (#55).
 2. #56 feat: `[workflow]` config in `tools.toml`, `[workflow.params]`, both presets, location-bearing load errors, AST-based reference analysis, feature gate removed, `ParentResolver` contract. Done by this issue.
-3. #57 feat: project-sync driven by the engine: a `ParentResolver` backed by the GitHub adapter (cross-repo, parent chain only; every `ResolveError` freezes the child), `--explain <issue>` printing `Explain`, `Violation` reporting, Project statuses as strings instead of the `Status` enum. Decide what moves with the new strict gate (changelog).
+3. ~~#57~~ feat, done: project-sync driven by the engine: a `ParentResolver` backed by the GitHub adapter (cross-repo, parent chain only; every `ResolveError` freezes the child), `--explain <issue>` printing `Explain`, `Violation` reporting, Project statuses as strings instead of the `Status` enum. Decide what moves with the new strict gate (changelog).
 4. #58 feat: config migration for `[github.issues.rules]` and `status_mapping`; map `priority`/`effort` toggles to the strict gate and `area_prefixes` to `params.area_prefix` (the toggles-off case needs a documented override or a rule shadow). Removes the old keys.
 5. #59 feat (`v0.4.0`): issues-check driven by `[[workflow.audit]]`; decide where triage gaps live; delete `domain/audit/rules`, violation text, `Status` enum, `domain/plan` reasons.
 
@@ -208,4 +229,4 @@ Independent of the engine:
 8. #62 refactor: `--default-type` validates against `[github.labels.items]`, not `CANONICAL_TYPES`; configured prefixes.
 9. #63 feat: action.yml `config-path` input, project-sync step, `REPO` input.
 10. #64 chore: single source of truth for issue templates and docs label/milestone lists against `tools.toml`.
-11. #65 fix: story cycle overflows the stack in `domain/target`. Independent of the engine, small.
+11. ~~#65~~ fix, done: story cycle overflows the stack in `domain/target` (the path was deleted by #57; the engine freezes cycles).

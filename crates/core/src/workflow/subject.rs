@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::domain::{Card, IssueNumber, Snapshot};
+use crate::domain::{Card, IssueNumber, Snapshot, StatusName};
 
 /// A Project field value: a select option or a number.
 #[derive(Debug, Clone, PartialEq)]
@@ -22,7 +22,7 @@ pub struct Subject {
     /// Whether the issue is closed.
     pub closed: bool,
     /// The board column; `None` when the issue is not a Project card.
-    pub status: Option<String>,
+    pub status: Option<StatusName>,
     /// The label names.
     pub labels: Vec<String>,
     /// The milestone title.
@@ -33,8 +33,8 @@ pub struct Subject {
     pub blockers: Vec<(IssueNumber, bool)>,
     /// The parent issue.
     pub parent: Option<IssueNumber>,
-    /// Whether an open pull request closes the issue.
-    pub closed_by_open_pr: bool,
+    /// The open pull requests that close the issue.
+    pub prs: Vec<IssueNumber>,
 }
 
 impl Subject {
@@ -52,7 +52,7 @@ impl Subject {
         Self {
             number: card.number().clone(),
             closed: card.is_closed(),
-            status: Some(card.status().name().to_owned()),
+            status: Some(card.status().clone()),
             labels: facts.labels().names().map(str::to_owned).collect(),
             milestone: facts.milestone_title(),
             fields,
@@ -63,7 +63,7 @@ impl Subject {
                 .map(|(number, closed)| (number.clone(), closed))
                 .collect(),
             parent: card.links().parent_number().cloned(),
-            closed_by_open_pr: snapshot.closed_by_open_pull(card.number()),
+            prs: snapshot.open_pulls_closing(card.number()),
         }
     }
 }

@@ -1,12 +1,12 @@
 //! The command line of `tools project check|sync`, parsed with clap.
 
-use clap::{ArgMatches, Command};
+use clap::{Arg, ArgMatches, Command};
 use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
 use tools_core::application::Mode;
-use tools_core::config::{ConfigError, RulesConfig, load_or_find};
-use tools_core::domain::{StatusMapping, StatusMappingError};
+use tools_core::config::{ConfigError, load_or_find};
+use tools_core::workflow::{LoadError, Workflow};
 
 use crate::cli::{CONFIG, OWNER, PROJECT, project_flag, repos_of};
 
@@ -14,14 +14,20 @@ use crate::cli::{CONFIG, OWNER, PROJECT, project_flag, repos_of};
 pub const CHECK: &str = "check";
 /// The verb that writes the planned moves.
 pub const SYNC: &str = "sync";
+/// `--explain <ISSUE>`: print the trace of one issue instead of the run report.
+pub const EXPLAIN: &str = "explain";
 
 /// An error resolving project synchronization configuration.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveError {
     #[error(transparent)]
     Config(#[from] ConfigError),
-    #[error("invalid status mapping configuration: {0}")]
-    StatusMapping(#[from] StatusMappingError),
+    #[error("invalid [workflow] block: {0}")]
+    Workflow(#[from] LoadError),
+    #[error(
+        "no [workflow] block in tools.toml: add `[workflow]` with `extends = \"builtin:cosmo\"` or `\"builtin:tools\"`, or declare your own statuses and rules"
+    )]
+    MissingWorkflow,
     #[error("owner is required (specify via --owner or in tools.toml)")]
     MissingOwner,
     #[error("repository is required (specify via --repo or in tools.toml)")]
@@ -38,6 +44,7 @@ pub struct Arguments {
     owner: Option<String>,
     repos: Vec<String>,
     project: Option<u32>,
+    explain: Option<String>,
 }
 
 impl Arguments {
@@ -57,6 +64,11 @@ impl Arguments {
             project: matches
                 .get_one::<String>(PROJECT)
                 .and_then(|p| p.parse().ok()),
+            explain: matches
+                .try_get_one::<String>(EXPLAIN)
+                .ok()
+                .flatten()
+                .cloned(),
         }
     }
 
@@ -66,25 +78,23 @@ impl Arguments {
         self.mode
     }
 
-    /// Resolves target and configuration (status mapping, rules) from tools.toml and CLI overrides.
+    /// The issue `--explain` names, as typed: `57` or `repo#57`.
+    #[must_use]
+    pub fn explain(&self) -> Option<&str> {
+        self.explain.as_deref()
+    }
+
+    /// Resolves target and workflow from tools.toml and CLI overrides.
     ///
     /// # Errors
     ///
-    /// Fails when configuration cannot be found or read, or target lacks owner/repo/project,
-    /// or status mapping configuration is invalid.
-    pub fn resolve(&self) -> Result<(Target, StatusMapping, RulesConfig), ResolveError> {
+    /// Fails when configuration cannot be found or read, when the target lacks
+    /// owner/repo/project, or when there is no valid `[workflow]` block.
+    pub fn resolve(&self) -> Result<(Target, Workflow), ResolveError> {
         let loaded = load_or_find(self.config_path.as_deref());
-        let (cfg_target, mapping, rules) = match loaded {
-            Ok(cfg) => {
-                let mapping = cfg
-                    .project()
-                    .map(|p| p.status_mapping())
-                    .transpose()?
-                    .unwrap_or_default();
-                let rules = cfg.rules().clone();
-                (Some(cfg.target()), mapping, rules)
-            }
-            Err(ConfigError::NotFound) => (None, StatusMapping::default(), RulesConfig::default()),
+        let (cfg_target, workflow) = match loaded {
+            Ok(cfg) => (Some(cfg.target()), cfg.workflow()?),
+            Err(ConfigError::NotFound) => (None, None),
             Err(err) => return Err(ResolveError::Config(err)),
         };
 
@@ -116,7 +126,8 @@ impl Arguments {
             return Err(ResolveError::MissingRepository);
         };
 
-        Ok((target, mapping, rules))
+        let workflow = workflow.ok_or(ResolveError::MissingWorkflow)?;
+        Ok((target, workflow))
     }
 }
 
@@ -128,8 +139,16 @@ pub fn command() -> Command {
         .arg_required_else_help(true)
         .subcommand(
             Command::new(CHECK)
-                .about("Print the planned moves and write nothing; exits 1 when there are any")
-                .arg(project_flag()),
+                .about(
+                    "Print the planned moves and frozen cards and write nothing; exits 1 when there are any",
+                )
+                .arg(project_flag())
+                .arg(
+                    Arg::new(EXPLAIN)
+                        .long(EXPLAIN)
+                        .value_name("ISSUE")
+                        .help("Print the facts and rules of one issue (`57` or `repo#57`) and exit"),
+                ),
         )
         .subcommand(
             Command::new(SYNC)

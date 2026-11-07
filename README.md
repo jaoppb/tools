@@ -102,9 +102,12 @@ tools issues migrate --default-area core --default-type chore
 
 **`tools project`**: GitHub Projects V2 board Status synchronization from issue states, blocked-by relationships, and native sub-issues.
 ```bash
-tools project check              # print the planned moves, write nothing (exit 1 when there are any)
-tools project sync               # write them
+tools project check              # print the planned moves and frozen cards, write nothing (exit 1 when there are any)
+tools project check --explain 57 # the facts and rules behind one issue (`57` or `repo#57`)
+tools project sync               # write the moves
 ```
+
+Both need a `[workflow]` block in `tools.toml` (for example `extends = "builtin:cosmo"`); the board's Status columns must match its `statuses`. See [the workflow engine spec](docs/workflow-engine-spec.md).
 
 During development use `cargo run -q -p tools -- <group> <verb>`, or the `just` recipes below.
 

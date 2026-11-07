@@ -3,9 +3,9 @@
 use std::fmt;
 
 pub mod migration;
-pub mod status_mapping;
+pub mod status;
 pub use migration::{IssueMigrationAction, IssueMigrationPlan};
-pub use status_mapping::{StatusMapping, StatusMappingError};
+pub use status::{StatusName, Statuses, StatusesError, UnknownStatus};
 
 /// Canonical issue types in the repository taxonomy.
 pub const CANONICAL_TYPES: &[&str] = &["feat", "fix", "chore", "docs", "refactor", "spike"];
@@ -66,83 +66,6 @@ impl fmt::Display for IssueNumber {
         } else {
             write!(formatter, "{}#{}", self.repo.name(), self.number)
         }
-    }
-}
-
-/// Where an issue is in its life, as the Project's Status field says.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Status {
-    /// Not ready to start.
-    Backlog,
-    /// Triaged and unblocked.
-    Ready,
-    /// The analysis has started.
-    InProgress,
-    /// A pull request that closes the issue is open.
-    InReview,
-    /// The issue is closed.
-    Done,
-}
-
-impl Status {
-    const ALL: [Self; 5] = [
-        Self::Backlog,
-        Self::Ready,
-        Self::InProgress,
-        Self::InReview,
-        Self::Done,
-    ];
-
-    /// The name of the option in the Project's Status field.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Backlog => "Backlog",
-            Self::Ready => "Ready",
-            Self::InProgress => "In progress",
-            Self::InReview => "In review",
-            Self::Done => "Done",
-        }
-    }
-
-    /// The status the Project option `name` stands for, if any.
-    #[must_use]
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|status| status.name() == name)
-    }
-
-    /// The status matching `name` case-insensitively, supporting space, hyphen, or underscore separators.
-    #[must_use]
-    pub fn from_name_case_insensitive(name: &str) -> Option<Self> {
-        let trimmed = name.trim();
-        Self::ALL.into_iter().find(|status| {
-            status.name().eq_ignore_ascii_case(trimmed)
-                || match status {
-                    Self::InProgress => {
-                        trimmed.eq_ignore_ascii_case("in_progress")
-                            || trimmed.eq_ignore_ascii_case("in-progress")
-                            || trimmed.eq_ignore_ascii_case("inprogress")
-                    }
-                    Self::InReview => {
-                        trimmed.eq_ignore_ascii_case("in_review")
-                            || trimmed.eq_ignore_ascii_case("in-review")
-                            || trimmed.eq_ignore_ascii_case("inreview")
-                    }
-                    _ => false,
-                }
-        })
-    }
-
-    /// Whether work has started: the issue is In progress or In review.
-    #[must_use]
-    pub const fn started(self) -> bool {
-        matches!(self, Self::InProgress | Self::InReview)
-    }
-}
-
-impl fmt::Display for Status {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.name())
     }
 }
 

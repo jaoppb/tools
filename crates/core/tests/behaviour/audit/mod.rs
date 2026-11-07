@@ -3,7 +3,7 @@
 use tools_core::adapters::memory::{MemoryIssues, MemoryProject};
 use tools_core::application::{Audit, ProjectState, SyncError};
 use tools_core::config::RulesConfig;
-use tools_core::domain::{IssueNumber, IssueTree, Snapshot, Status, TreeIssue};
+use tools_core::domain::{IssueNumber, IssueTree, Snapshot, StatusName, TreeIssue};
 
 use crate::support::audit::{epic, labelled, story};
 use crate::support::{number, open_card, snapshot};
@@ -13,7 +13,7 @@ const ANSWERS: &str = "the in-memory sources answer";
 fn project_of(issues: &[TreeIssue]) -> MemoryProject {
     let cards = issues
         .iter()
-        .map(|issue| open_card(issue.number().value(), Status::Backlog))
+        .map(|issue| open_card(issue.number().value(), "Backlog"))
         .collect();
     MemoryProject::new(snapshot(cards, &[]))
 }
@@ -82,7 +82,7 @@ fn prints_the_same_lines_on_every_run() {
 #[test]
 fn reports_an_issue_missing_from_the_project() {
     let issues = clean();
-    let project = MemoryProject::new(snapshot(vec![open_card(1, Status::Backlog)], &[]));
+    let project = MemoryProject::new(snapshot(vec![open_card(1, "Backlog")], &[]));
     let audit = Audit::new(
         MemoryIssues::new(IssueTree::new(issues)),
         Some(project),
@@ -119,7 +119,7 @@ impl ProjectState for BrokenProject {
         })
     }
 
-    fn set_status(&mut self, number: IssueNumber, _status: Status) -> Result<(), SyncError> {
+    fn set_status(&mut self, number: IssueNumber, _status: &StatusName) -> Result<(), SyncError> {
         Err(SyncError::Write {
             number,
             reason: "read only".to_owned(),

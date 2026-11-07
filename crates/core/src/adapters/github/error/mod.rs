@@ -32,7 +32,7 @@ pub enum GhError {
     },
     /// The Project has a Status this tool does not know.
     #[error(
-        "the Project has a Status named {name} that this tool does not know; configure a column alias in tools.toml under [github.project.status_mapping]"
+        "the Project has a Status named {name} that the workflow does not declare; list it in `statuses` under [workflow] or rename the column"
     )]
     UnknownStatus {
         /// The unknown Status name.
@@ -40,7 +40,7 @@ pub enum GhError {
     },
     /// The Project's Status field lacks an option the tool must set.
     #[error(
-        "the Project has no Status option matching '{name}'; configure a column alias in tools.toml under [github.project.status_mapping]"
+        "the Project has no Status option named '{name}'; the workflow's statuses must match the board columns"
     )]
     NoStatusOption {
         /// The missing option name.
