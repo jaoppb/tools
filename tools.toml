@@ -32,8 +32,8 @@ items = [
     { name = "type:refactor", color = "5319e7", description = "Restructure without changing behaviour" },
     { name = "type:spike", color = "fbca04", description = "Time-boxed research that answers a question" },
     { name = "area:core", color = "2ea44f", description = "crates/core: domain models, github client, config" },
-    { name = "area:project-sync", color = "0e8a16", description = "crates/project-sync: status synchronization tool" },
-    { name = "area:issues-check", color = "5319e7", description = "crates/issues-check: issue rules and integrity auditor" },
+    { name = "area:project-sync", color = "0e8a16", description = "crates/cli/src/project: project status synchronization" },
+    { name = "area:issues-check", color = "5319e7", description = "crates/cli/src/issues: issue rules and integrity auditor" },
     { name = "area:tooling", color = "2ea44f", description = "Flake, Nix, Just, CI, Cargo workspace" },
     { name = "area:docs", color = "0075ca", description = "Documentation, workflow guides, rules" },
 ]
