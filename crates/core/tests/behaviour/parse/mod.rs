@@ -12,6 +12,7 @@ const LIVE: &str = include_str!("../../fixtures/items_live.json");
 const EDGE: &str = include_str!("../../fixtures/items_edge.json");
 const UNKNOWN_STATUS: &str = include_str!("../../fixtures/items_unknown_status.json");
 const NEXT_PAGE: &str = include_str!("../../fixtures/items_next_page.json");
+const PARENT_CYCLE: &str = include_str!("../../fixtures/items_parent_cycle.json");
 const PULLS_LIVE: &str = include_str!("../../fixtures/pulls_live.json");
 const PULLS_MANY: &str = include_str!("../../fixtures/pulls_many.json");
 const ITEM_OF_ISSUE: &str = include_str!("../../fixtures/item_of_issue.json");
@@ -266,8 +267,6 @@ fn the_status_field_of_an_organization_project_parses() {
     assert_eq!(field.option("Doing"), None);
     assert_eq!(field.project(), "PVT_kwDOEHF8jM4BVBtl");
 }
-
-const PARENT_CYCLE: &str = include_str!("../../fixtures/items_parent_cycle.json");
 
 #[test]
 fn a_parent_cycle_between_stories_leaves_its_cards_unchanged_and_reported() {

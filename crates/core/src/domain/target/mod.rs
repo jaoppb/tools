@@ -19,19 +19,19 @@ pub fn target(card: &Card, snapshot: &Snapshot) -> Status {
 /// The Status `card` should have, given everything in `snapshot` under `rules`.
 #[must_use]
 pub fn target_with(card: &Card, snapshot: &Snapshot, rules: &RulesConfig) -> Status {
+    if waits(card) {
+        if on_parent_cycle(card, snapshot) {
+            return card.status();
+        }
+        return when_waiting(card, snapshot, rules);
+    }
     if card.is_epic() {
         return card.status();
     }
     if card.is_closed() {
         return Status::Done;
     }
-    if card.status().started() {
-        return when_started(card, snapshot);
-    }
-    if on_parent_cycle(card, snapshot) {
-        return card.status();
-    }
-    when_waiting(card, snapshot, rules)
+    when_started(card, snapshot)
 }
 
 /// An In progress or In review card follows its pull request, and is never
@@ -97,6 +97,8 @@ pub(crate) fn on_parent_cycle(card: &Card, snapshot: &Snapshot) -> bool {
     false
 }
 
+/// Whether the target of `card` is decided by the gate, and so by its story.
+/// [`target_with`] branches on it first; every other card settles alone.
 fn waits(card: &Card) -> bool {
     !card.is_epic() && !card.is_closed() && !card.status().started()
 }
