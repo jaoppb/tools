@@ -2,7 +2,7 @@
 //! recorded and hand-written replies.
 
 use tools_core::adapters::github::parse::{IssuesPage, parse_issues};
-use tools_core::adapters::github::{Gathered, GhError, Target};
+use tools_core::adapters::github::{Gathered, GhError};
 use tools_core::domain::{BlockedBy, IssueNumber, Lifecycle, Milestone, Repo, TreeIssue};
 
 use crate::support::audit::labels;
@@ -26,7 +26,7 @@ const TRUNCATED: &str = include_str!("../../fixtures/issues_truncated_blockers.j
 const RECORDED: &str = "the recorded reply parses";
 
 fn page(json: &str) -> Result<IssuesPage, GhError> {
-    parse_issues(json, &Target::cosmo())
+    parse_issues(json, &crate::support::fixture_target())
 }
 
 fn tooling(raw: u64, lifecycle: Lifecycle) -> TreeIssue {

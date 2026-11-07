@@ -85,9 +85,7 @@ labels = true
 membership = false
 milestone = true
 parent = false
-references = false
 release = true
-text = false
 ```
 
 ### Per-Repository Overrides

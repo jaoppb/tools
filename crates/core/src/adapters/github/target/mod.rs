@@ -64,12 +64,6 @@ impl Target {
         Self::single(owner, repository, project)
     }
 
-    /// The Cosmo Project: project 4 of `jaoppb`, linked to `jaoppb/cosmo`.
-    #[must_use]
-    pub fn cosmo() -> Self {
-        Self::single("jaoppb", "cosmo", Some(4))
-    }
-
     /// The login of the Project's owner.
     #[must_use]
     pub fn owner(&self) -> &str {

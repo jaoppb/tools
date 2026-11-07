@@ -2,11 +2,19 @@
 
 pub mod audit;
 
+use tools_core::adapters::github::Target;
 use tools_core::config::RulesConfig;
 use tools_core::domain::{
     Blocker, Blockers, Card, Cards, Closing, Effort, Facts, IssueNumber, Label, Labels, Lifecycle,
     Links, Milestone, Parent, Plan, Priority, Repo, Role, Snapshot, Standing, Status,
 };
+
+/// The Project the recorded fixtures were taken from: project 4 of `jaoppb`,
+/// linked to `jaoppb/cosmo`. The name is data of the fixtures, not of the code.
+#[must_use]
+pub fn fixture_target() -> Target {
+    Target::single("jaoppb", "cosmo", Some(4))
+}
 
 /// The issue with this number in the test repo.
 #[must_use]

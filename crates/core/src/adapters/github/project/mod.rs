@@ -1,4 +1,4 @@
-//! The real [`ProjectState`]: the Cosmo Project read and written through `gh`.
+//! The real [`ProjectState`]: the Project read and written through `gh`.
 
 use crate::adapters::github::cursor_fields;
 use crate::adapters::github::error::GhError;

@@ -1,6 +1,5 @@
 //! Tests for status mapping and case tolerance.
 
-use tools_core::adapters::github::Target;
 use tools_core::adapters::github::parse::{parse_items_with, parse_status_field};
 use tools_core::config::Config;
 use tools_core::domain::{Status, StatusMapping};
@@ -49,7 +48,7 @@ fn custom_column_aliases_map_to_canonical_statuses() {
 fn parses_items_with_custom_mapping() {
     // UNKNOWN_STATUS fixture contains status "Doing"
     let mapping = StatusMapping::from_pairs([("Doing", "In progress")]).expect("valid mapping");
-    let page = parse_items_with(UNKNOWN_STATUS, &Target::cosmo(), &mapping)
+    let page = parse_items_with(UNKNOWN_STATUS, &crate::support::fixture_target(), &mapping)
         .expect("parses with mapped Doing status");
 
     let card = page.cards().first().expect("contains parsed card");

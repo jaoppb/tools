@@ -1,4 +1,4 @@
-//! The audit of the issue structure: the rules of `AGENTS.md` section 10 over a
+//! The audit of the issue structure: the issue-workflow rules over a
 //! survey of the repository's issues and the Project's items.
 //!
 //! Like the rest of `domain`, it imports only `std`: it never sees `gh`, JSON

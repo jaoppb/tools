@@ -1,11 +1,10 @@
 //! The GraphQL requests, read from their files and filled in.
 
-use tools_core::adapters::github::Target;
 use tools_core::adapters::github::query;
 
 #[test]
 fn every_filled_query_has_no_placeholder_left() {
-    let target = Target::cosmo();
+    let target = crate::support::fixture_target();
     let queries = [
         query::items(&target),
         query::pulls(&target),
@@ -20,7 +19,7 @@ fn every_filled_query_has_no_placeholder_left() {
 
 #[test]
 fn a_filled_query_names_the_owner_and_the_project() {
-    let target = Target::cosmo();
+    let target = crate::support::fixture_target();
     assert!(query::items(&target).contains("login: \"jaoppb\""));
     assert!(query::items(&target).contains("projectV2(number: 4)"));
     assert!(query::pulls(&target).contains("name: \"cosmo\""));

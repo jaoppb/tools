@@ -1,6 +1,5 @@
 //! `builtin:cosmo` against the state machine: same destination for every card.
 
-use tools_core::adapters::github::Target;
 use tools_core::adapters::github::parse::parse_items;
 use tools_core::domain::{Cards, Closing, IssueNumber, Lifecycle, Snapshot, Status};
 
@@ -18,7 +17,8 @@ fn cosmo_issue(raw: u64) -> IssueNumber {
 }
 
 fn recorded(json: &str, closing: &[u64]) -> Snapshot {
-    let page = parse_items(json, &Target::cosmo()).expect("the recorded page parses");
+    let page =
+        parse_items(json, &crate::support::fixture_target()).expect("the recorded page parses");
     let issues = closing.iter().map(|raw| cosmo_issue(*raw)).collect();
     Snapshot::new(Cards::new(page.cards().to_vec()), Closing::new(issues))
 }
