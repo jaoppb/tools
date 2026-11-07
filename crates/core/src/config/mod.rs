@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Repository configuration from `tools.toml`.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Config {
     /// GitHub configuration namespace.
     pub github: GithubConfig,
@@ -45,6 +45,8 @@ impl Config {
     }
 
     /// The compiled `[workflow]` block, `None` when the file has none.
+    ///
+    /// Compiles on every call (milliseconds); call it once and keep the result.
     ///
     /// # Errors
     ///

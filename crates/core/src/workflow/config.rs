@@ -46,10 +46,6 @@ pub struct WorkflowConfig {
     status: Vec<RawRule>,
 }
 
-// A param may hold a TOML float, and `NaN != NaN`. Params are compared only to
-// tell two configs apart, never as keys, so the reflexive case does not matter.
-impl Eq for WorkflowConfig {}
-
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawRule {
@@ -152,10 +148,6 @@ impl Block {
 struct Locator<'a>(Option<&'a str>);
 
 impl Locator<'_> {
-    fn at<T>(self, span: Option<&Range<usize>>, error: LoadError) -> Result<T, LoadError> {
-        Err(self.locate(span, error))
-    }
-
     fn locate(self, span: Option<&Range<usize>>, error: LoadError) -> LoadError {
         let (Some(source), Some(span)) = (self.0, span) else {
             return error;
@@ -226,7 +218,8 @@ impl WorkflowConfig {
 }
 
 impl Workflow {
-    /// Loads the `[workflow]` block of a stand-alone `toml` string.
+    /// Loads the `[workflow]` block of a stand-alone `toml` string. Public so
+    /// a block can be checked without a whole `tools.toml` around it.
     ///
     /// # Errors
     ///
@@ -246,13 +239,16 @@ impl Workflow {
 fn check_schema(block: &Block, at: Locator<'_>) -> Result<(), LoadError> {
     match &block.schema {
         Some(schema) if schema.value != VERSION => {
-            at.at(schema.span.as_ref(), LoadError::Schema(schema.value))
+            Err(at.locate(schema.span.as_ref(), LoadError::Schema(schema.value)))
         }
         _ => Ok(()),
     }
 }
 
 fn build(block: Block, at: Locator<'_>) -> Result<Workflow, LoadError> {
+    if block.statuses.is_empty() {
+        return Err(LoadError::NoStatuses);
+    }
     let statuses: BTreeSet<&str> = block.statuses.iter().map(String::as_str).collect();
     let default = match &block.default {
         Some(default) => default.clone(),
@@ -262,27 +258,27 @@ fn build(block: Block, at: Locator<'_>) -> Result<Workflow, LoadError> {
         },
     };
     if !statuses.contains(default.value.as_str()) {
-        return at.at(
+        return Err(at.locate(
             default.span.as_ref(),
             LoadError::UndeclaredDefault(default.value),
-        );
+        ));
     }
     let mut seen = BTreeSet::new();
     for rule in &block.rules {
         if !seen.insert(rule.id.value.as_str()) {
-            return at.at(
+            return Err(at.locate(
                 rule.id.span.as_ref(),
                 LoadError::DuplicateRule(rule.id.value.clone()),
-            );
+            ));
         }
         if rule.set.value != CURRENT && !statuses.contains(rule.set.value.as_str()) {
-            return at.at(
+            return Err(at.locate(
                 rule.set.span.as_ref(),
                 LoadError::UndeclaredStatus {
                     rule: rule.id.value.clone(),
                     status: rule.set.value.clone(),
                 },
-            );
+            ));
         }
     }
     if let Some((name, fact)) = block
@@ -290,7 +286,7 @@ fn build(block: Block, at: Locator<'_>) -> Result<Workflow, LoadError> {
         .iter()
         .find(|(name, _)| ROOTS.contains(&name.as_str()))
     {
-        return at.at(fact.span.as_ref(), LoadError::ReservedFact(name.clone()));
+        return Err(at.locate(fact.span.as_ref(), LoadError::ReservedFact(name.clone())));
     }
     let known: BTreeSet<String> = ROOTS
         .iter()
@@ -333,15 +329,18 @@ fn order_facts(
         compiled.insert(name.clone(), expr);
     }
     let mut ordered: Vec<String> = Vec::new();
+    let mut done = BTreeSet::new();
     let mut visiting = BTreeSet::new();
     for name in compiled.keys() {
-        visit(name, &compiled, &mut visiting, &mut ordered).map_err(|error| match error {
-            LoadError::FactCycle(fact) => {
-                let span = sources.get(&fact).and_then(|source| source.span.clone());
-                at.locate(span.as_ref(), LoadError::FactCycle(fact))
-            }
-            other => other,
-        })?;
+        visit(name, &compiled, &mut visiting, &mut done, &mut ordered).map_err(
+            |error| match error {
+                LoadError::FactCycle(fact) => {
+                    let span = sources.get(&fact).and_then(|source| source.span.clone());
+                    at.locate(span.as_ref(), LoadError::FactCycle(fact))
+                }
+                other => other,
+            },
+        )?;
     }
     Ok(ordered
         .into_iter()
@@ -353,9 +352,10 @@ fn visit(
     name: &str,
     compiled: &BTreeMap<String, Expr>,
     visiting: &mut BTreeSet<String>,
+    done: &mut BTreeSet<String>,
     ordered: &mut Vec<String>,
 ) -> Result<(), LoadError> {
-    if ordered.iter().any(|done| done == name) {
+    if done.contains(name) {
         return Ok(());
     }
     if !visiting.insert(name.to_owned()) {
@@ -367,10 +367,11 @@ fn visit(
             .iter()
             .filter(|read| compiled.contains_key(*read))
         {
-            visit(read, compiled, visiting, ordered)?;
+            visit(read, compiled, visiting, done, ordered)?;
         }
     }
     visiting.remove(name);
+    done.insert(name.to_owned());
     ordered.push(name.to_owned());
     Ok(())
 }

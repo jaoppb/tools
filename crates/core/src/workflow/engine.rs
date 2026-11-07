@@ -259,12 +259,8 @@ impl<'a> Run<'a> {
         let loaded = match self.subjects.get(parent) {
             Some(Ok(loaded)) => loaded.clone(),
             Some(Err(error)) => return Err(unreadable(parent, error.clone())),
-            None => {
-                return Err(unreadable(
-                    parent,
-                    ResolveError::Failed("not loaded".to_owned()),
-                ));
-            }
+            // `walk_chain` loads every parent before a node is computed.
+            None => unreachable!("parent {parent} was not loaded by walk_chain"),
         };
         let node = self.node(&loaded);
         if node.frozen() {

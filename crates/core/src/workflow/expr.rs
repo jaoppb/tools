@@ -30,6 +30,8 @@ impl Expr {
         source: &str,
         known: &BTreeSet<String>,
     ) -> Result<Self, LoadError> {
+        // `Program` keeps its AST private, so the source is parsed a second
+        // time here to walk it; expressions are short and this runs at load.
         let program = Program::compile(source).map_err(|errors| compile_error(origin, &errors))?;
         let tree = Parser::default()
             .parse(source)
@@ -92,15 +94,32 @@ fn compile_error(origin: &str, errors: &impl std::fmt::Display) -> LoadError {
 /// (`exists`, `all`, `filter`, `map`, `exists_one`) and `has()` are expanded by
 /// the parser and never show up as calls.
 fn is_builtin(name: &str) -> bool {
-    if name.starts_with(['_', '!', '@']) {
-        return true;
-    }
     const BUILTINS: &[&str] = &[
+        // Operators, as the parser names their calls.
+        "_?_:_",
+        "_&&_",
+        "_||_",
+        "!_",
+        "-_",
+        "_-_",
+        "_+_",
+        "_*_",
+        "_/_",
+        "_%_",
+        "_==_",
+        "_!=_",
+        "_>=_",
+        "_<=_",
+        "_>_",
+        "_<_",
+        "_[_]",
+        "@in",
+        "@not_strictly_false",
+        // Functions of the interpreter.
         "size",
         "startsWith",
         "endsWith",
         "contains",
-        "matches",
         "int",
         "uint",
         "double",

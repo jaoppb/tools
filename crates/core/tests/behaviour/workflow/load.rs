@@ -246,3 +246,45 @@ mod config {
         assert!(error.to_string().contains("statuss"), "{error}");
     }
 }
+
+#[test]
+fn an_underscore_function_is_not_mistaken_for_an_operator() {
+    let error = load(&format!(
+        "{BLANK}\n[[workflow.status]]\nid = \"r\"\nwhen = '_nope(issue.number) == 1'\nset = \"Done\"\n"
+    ))
+    .expect_err("not a helper");
+    assert!(
+        matches!(error.root(), LoadError::Unknown { kind: "function", name, .. } if name == "_nope")
+    );
+}
+
+#[test]
+fn every_built_in_function_the_loader_allows_also_runs_in_the_interpreter() {
+    // A drift between the allow-list and the interpreter would turn a load-time
+    // pass into a run-time freeze: evaluate each and demand no violation.
+    use crate::support::{number, open_card, snapshot};
+    use crate::workflow::support::{Remote, decision, evaluate};
+    use tools_core::domain::Status;
+
+    for expr in [
+        "size(issue.labels) >= 0",
+        "\"ab\".startsWith(\"a\") && \"ab\".endsWith(\"b\") && \"ab\".contains(\"a\")",
+        "max(1, 2) == 2 && min(1, 2) == 1",
+        "int(\"3\") == 3 && double(1) == 1.0 && string(1) == \"1\"",
+    ] {
+        let toml =
+            format!("{BLANK}\n[[workflow.status]]\nid = \"r\"\nwhen = '{expr}'\nset = \"Done\"\n");
+        let workflow = load(&toml).unwrap_or_else(|error| panic!("{expr}: {error}"));
+        let board = snapshot(vec![open_card(1, Status::Backlog)], &[]);
+        let evaluation = evaluate(&workflow, &board, &Remote::default());
+        let result = decision(&evaluation, &number(1));
+        assert_eq!(result.violation(), None, "{expr}");
+        assert_eq!(result.fired(), Some("r"), "{expr}");
+    }
+}
+
+#[test]
+fn a_workflow_without_statuses_or_a_preset_says_so() {
+    let error = load("[workflow]\n").expect_err("nothing declared");
+    assert!(matches!(error.root(), LoadError::NoStatuses));
+}
