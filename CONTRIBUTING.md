@@ -68,7 +68,7 @@ Local overrides can be added to `lefthook-local.yml` (ignored by git).
 - Open issues must belong to a target release milestone:
   - `v0.1.0`: Bootstrap (initial monorepo setup, extraction, tooling, Nix flake).
   - `v0.2.0`: Initial stable release (distribution, packaging, cross-repo adoption).
-  - `v0.3.0`+: Post-release iterations and enhancements.
+  - `v0.3.0`+: Cleanup and refactoring of hardcoded logic, then post-release iterations and enhancements.
 - Native GitHub sub-issues are supported when decomposing complex tasks into discrete steps.
 
 ### Label Taxonomy
