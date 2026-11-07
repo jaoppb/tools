@@ -61,6 +61,31 @@ jobs:
       - name: Run issues-check
         run: just issues-check
 
+  repo-check:
+    name: Audit Repository Configuration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Install Just
+        uses: extractions/setup-just@v2
+
+      - name: Run repo-check
+        run: just repo-check
+
   nix:
     name: Flake Check
     runs-on: ubuntu-latest
