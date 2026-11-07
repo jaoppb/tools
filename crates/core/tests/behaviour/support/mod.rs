@@ -125,6 +125,12 @@ pub fn gaps_of(plan: &Plan) -> Vec<String> {
     plan.gaps().iter().map(ToString::to_string).collect()
 }
 
+/// The cards a plan leaves unchanged, as the report prints them.
+#[must_use]
+pub fn frozen_of(plan: &Plan) -> Vec<String> {
+    plan.frozen().map(ToString::to_string).collect()
+}
+
 /// Rules requiring Priority and Effort triage.
 #[must_use]
 pub fn strict_rules() -> RulesConfig {

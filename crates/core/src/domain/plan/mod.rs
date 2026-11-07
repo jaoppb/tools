@@ -7,7 +7,7 @@ use crate::domain::card::Card;
 use crate::domain::facts::Missing;
 use crate::domain::issue::{IssueNumber, Status};
 use crate::domain::snapshot::Snapshot;
-use crate::domain::target::target_with;
+use crate::domain::target::{on_parent_cycle, target_with};
 
 /// Why a card moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,18 +184,83 @@ impl Gaps {
     }
 }
 
-/// What the sync would do, and what it cannot do for lack of triage.
+/// Why a card is left unchanged although the rules could not decide for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cause {
+    /// Its story chain loops, on a cycle or into one.
+    ParentCycle,
+}
+
+impl fmt::Display for Cause {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ParentCycle => formatter.write_str("parent cycle"),
+        }
+    }
+}
+
+/// A card the sync leaves unchanged, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Frozen {
+    number: IssueNumber,
+    cause: Cause,
+}
+
+impl Frozen {
+    /// This issue, left unchanged for this cause.
+    #[must_use]
+    pub const fn new(number: IssueNumber, cause: Cause) -> Self {
+        Self { number, cause }
+    }
+
+    /// The issue left unchanged.
+    #[must_use]
+    pub const fn number(&self) -> &IssueNumber {
+        &self.number
+    }
+
+    /// Why it is left unchanged.
+    #[must_use]
+    pub const fn cause(&self) -> Cause {
+        self.cause
+    }
+}
+
+impl fmt::Display for Frozen {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} left unchanged: {}", self.number, self.cause)
+    }
+}
+
+/// What the sync would do, what it cannot do for lack of triage, and what it
+/// leaves unchanged.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Plan {
     moves: Moves,
     gaps: Gaps,
+    frozen: Vec<Frozen>,
 }
 
 impl Plan {
     /// A plan of these moves and gaps.
     #[must_use]
     pub const fn new(moves: Moves, gaps: Gaps) -> Self {
-        Self { moves, gaps }
+        Self {
+            moves,
+            gaps,
+            frozen: Vec::new(),
+        }
+    }
+
+    /// This plan, leaving these cards unchanged.
+    #[must_use]
+    pub fn with_frozen(self, frozen: Vec<Frozen>) -> Self {
+        Self { frozen, ..self }
+    }
+
+    /// The cards left unchanged, in Project order.
+    pub fn frozen(&self) -> impl Iterator<Item = &Frozen> {
+        self.frozen.iter()
     }
 
     /// The moves.
@@ -229,7 +294,12 @@ impl Snapshot {
             .cards()
             .flat_map(|card| gaps_of(self, card, rules))
             .collect();
-        Plan::new(Moves::new(moves), Gaps::new(gaps))
+        let frozen = self
+            .cards()
+            .filter(|card| frozen_by_cycle(self, card))
+            .map(|card| Frozen::new(card.number().clone(), Cause::ParentCycle))
+            .collect();
+        Plan::new(Moves::new(moves), Gaps::new(gaps)).with_frozen(frozen)
     }
 }
 
@@ -247,11 +317,18 @@ fn move_of(snapshot: &Snapshot, card: &Card, rules: &RulesConfig) -> Option<Move
 }
 
 fn gaps_of(snapshot: &Snapshot, card: &Card, rules: &RulesConfig) -> Vec<Gap> {
-    if card.is_epic() || target_with(card, snapshot, rules) != Status::Backlog {
+    if card.is_epic()
+        || frozen_by_cycle(snapshot, card)
+        || target_with(card, snapshot, rules) != Status::Backlog
+    {
         return Vec::new();
     }
     card.missing_for(rules)
         .into_iter()
         .map(|missing| Gap::new(card.number().clone(), missing))
         .collect()
+}
+
+fn frozen_by_cycle(snapshot: &Snapshot, card: &Card) -> bool {
+    !card.is_epic() && on_parent_cycle(card, snapshot)
 }

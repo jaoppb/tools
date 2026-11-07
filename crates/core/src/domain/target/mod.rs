@@ -19,7 +19,7 @@ pub fn target(card: &Card, snapshot: &Snapshot) -> Status {
 /// The Status `card` should have, given everything in `snapshot` under `rules`.
 #[must_use]
 pub fn target_with(card: &Card, snapshot: &Snapshot, rules: &RulesConfig) -> Status {
-    if card.is_epic() {
+    if card.is_epic() || on_parent_cycle(card, snapshot) {
         return card.status();
     }
     if card.is_closed() {
@@ -67,4 +67,22 @@ fn story_has_started(card: &Card, snapshot: &Snapshot, rules: &RulesConfig) -> b
         return true;
     };
     story.is_closed() || target_with(story, snapshot, rules).started()
+}
+
+/// Whether the story chain above `card` loops, on a cycle or into one.
+///
+/// Such a card has no target: its story's target depends on itself. The sync
+/// leaves it unchanged and reports it.
+#[must_use]
+pub fn on_parent_cycle(card: &Card, snapshot: &Snapshot) -> bool {
+    let mut seen = vec![card.number()];
+    let mut current = card;
+    while let Some(story) = current.story().and_then(|number| snapshot.card(number)) {
+        if seen.contains(&story.number()) {
+            return true;
+        }
+        seen.push(story.number());
+        current = story;
+    }
+    false
 }

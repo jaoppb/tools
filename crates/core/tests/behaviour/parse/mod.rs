@@ -6,7 +6,7 @@ use tools_core::adapters::github::parse::{
 use tools_core::adapters::github::{GhError, GhRunner, Target};
 use tools_core::domain::{Cards, Closing, IssueNumber, Plan, Repo, Snapshot};
 
-use crate::support::{gaps_of, moves_of, number, strict_rules};
+use crate::support::{frozen_of, gaps_of, moves_of, number, strict_rules};
 
 const LIVE: &str = include_str!("../../fixtures/items_live.json");
 const EDGE: &str = include_str!("../../fixtures/items_edge.json");
@@ -265,4 +265,24 @@ fn the_status_field_of_an_organization_project_parses() {
     assert_eq!(field.option("In review"), Some("opt_review"));
     assert_eq!(field.option("Doing"), None);
     assert_eq!(field.project(), "PVT_kwDOEHF8jM4BVBtl");
+}
+
+const PARENT_CYCLE: &str = include_str!("../../fixtures/items_parent_cycle.json");
+
+#[test]
+fn a_parent_cycle_between_stories_leaves_its_cards_unchanged_and_reported() {
+    let plan = plan_of(PARENT_CYCLE, &[]).expect("the fixture parses");
+    assert_eq!(
+        moves_of(&plan),
+        vec!["cosmo#204 Backlog -> Ready (gate holds)"]
+    );
+    assert_eq!(
+        frozen_of(&plan),
+        vec![
+            "cosmo#201 left unchanged: parent cycle",
+            "cosmo#202 left unchanged: parent cycle",
+            "cosmo#203 left unchanged: parent cycle",
+        ]
+    );
+    assert!(gaps_of(&plan).is_empty());
 }
