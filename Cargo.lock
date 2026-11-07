@@ -394,7 +394,7 @@ checksum = "7655c9839580ee829dfacba1d1278c2b7883e50a277ff7541299489d6bdfdc45"
 
 [[package]]
 name = "issues-check"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "thiserror",
@@ -525,7 +525,7 @@ dependencies = [
 
 [[package]]
 name = "project-sync"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "thiserror",
@@ -592,7 +592,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "repo-sync"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "thiserror",
@@ -876,14 +876,14 @@ checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "tools-architecture-tests"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arch-lint",
 ]
 
 [[package]]
 name = "tools-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "deunicode",
  "serde",
