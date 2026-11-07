@@ -115,6 +115,13 @@ jobs:
             echo "::error::expected project-sync to fail without [github.project], got '$OUTCOME'"
             exit 1
           fi
+          # The action step only proves it failed; confirm the reason with the installed binary.
+          if output="$(project-sync --config tools.toml --dry-run 2>&1)"; then
+            echo "::error::project-sync unexpectedly succeeded without [github.project]"
+            exit 1
+          fi
+          echo "$output"
+          grep -q "project number is required" <<<"$output"
 
       - name: Verify installed binaries on PATH
         run: |

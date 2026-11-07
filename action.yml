@@ -135,7 +135,6 @@ runs:
         repo-sync --check ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
 
     - name: Run project-sync
-      id: project-sync
       if: inputs.sync-project == 'true'
       shell: bash
       env:
