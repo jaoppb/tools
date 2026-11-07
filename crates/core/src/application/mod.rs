@@ -111,6 +111,7 @@ impl fmt::Display for Outcome {
             .try_for_each(|gap| writeln!(formatter, "{gap}"))?;
         self.plan
             .frozen()
+            .iter()
             .try_for_each(|frozen| writeln!(formatter, "{frozen}"))?;
         writeln!(formatter, "{}", self.summary())
     }

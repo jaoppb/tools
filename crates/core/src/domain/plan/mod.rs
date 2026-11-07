@@ -232,35 +232,53 @@ impl fmt::Display for Frozen {
     }
 }
 
+/// The cards a plan leaves unchanged.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Frozens(Vec<Frozen>);
+
+impl Frozens {
+    /// The cards a plan leaves unchanged.
+    #[must_use]
+    pub const fn new(frozen: Vec<Frozen>) -> Self {
+        Self(frozen)
+    }
+
+    /// The cards in order.
+    pub fn iter(&self) -> impl Iterator<Item = &Frozen> {
+        self.0.iter()
+    }
+
+    /// How many cards there are.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether no card is left unchanged.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// What the sync would do, what it cannot do for lack of triage, and what it
 /// leaves unchanged.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Plan {
     moves: Moves,
     gaps: Gaps,
-    frozen: Vec<Frozen>,
+    frozen: Frozens,
 }
 
 impl Plan {
-    /// A plan of these moves and gaps.
+    /// A plan of these moves, gaps and unchanged cards.
     #[must_use]
-    pub const fn new(moves: Moves, gaps: Gaps) -> Self {
+    pub const fn new(moves: Moves, gaps: Gaps, frozen: Frozens) -> Self {
         Self {
             moves,
             gaps,
-            frozen: Vec::new(),
+            frozen,
         }
-    }
-
-    /// This plan, leaving these cards unchanged.
-    #[must_use]
-    pub fn with_frozen(self, frozen: Vec<Frozen>) -> Self {
-        Self { frozen, ..self }
-    }
-
-    /// The cards left unchanged, in Project order.
-    pub fn frozen(&self) -> impl Iterator<Item = &Frozen> {
-        self.frozen.iter()
     }
 
     /// The moves.
@@ -273,6 +291,12 @@ impl Plan {
     #[must_use]
     pub const fn gaps(&self) -> &Gaps {
         &self.gaps
+    }
+
+    /// The cards left unchanged.
+    #[must_use]
+    pub const fn frozen(&self) -> &Frozens {
+        &self.frozen
     }
 }
 
@@ -303,7 +327,7 @@ impl Snapshot {
             .filter(|card| !on_parent_cycle(card, self))
             .flat_map(|card| gaps_of(self, card, rules))
             .collect();
-        Plan::new(Moves::new(moves), Gaps::new(gaps)).with_frozen(frozen)
+        Plan::new(Moves::new(moves), Gaps::new(gaps), Frozens::new(frozen))
     }
 }
 
