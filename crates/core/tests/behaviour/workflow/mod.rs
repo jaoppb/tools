@@ -5,3 +5,4 @@ mod load;
 mod parity;
 mod rules;
 mod support;
+mod tools;

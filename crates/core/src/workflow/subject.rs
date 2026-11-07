@@ -1,6 +1,7 @@
 //! The input of the engine: one issue as the fact schema sees it.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use crate::domain::{Card, IssueNumber, Snapshot};
 
@@ -67,14 +68,49 @@ impl Subject {
     }
 }
 
+/// Why a [`ParentResolver`] could not return an issue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolveError {
+    /// The issue does not exist (deleted, transferred).
+    NotFound,
+    /// The token cannot read the repository the issue lives in.
+    Forbidden,
+    /// Anything else, a transient network failure included.
+    Failed(String),
+}
+
+impl fmt::Display for ResolveError {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound => out.write_str("not found"),
+            Self::Forbidden => out.write_str("the token cannot read its repository"),
+            Self::Failed(message) => out.write_str(message),
+        }
+    }
+}
+
 /// Fetches an issue that is not a Project card, on demand: a parent in another
 /// repository or outside the Project. Only the parent chain is ever asked for.
+///
+/// # Contract
+///
+/// - Synchronous and object-safe: the engine holds a `&dyn ParentResolver`.
+/// - The engine asks for each issue number at most once per run and caches the
+///   answer, an error included, so an implementation needs no cache of its own
+///   for a single run.
+/// - Only issues on the parent chain of a card that the Project does not hold
+///   are requested; never a subtree, never a child.
+/// - Every [`ResolveError`] freezes the child that needed the parent (no status
+///   change, a `Violation::ParentUnreadable` carrying the error) and, because a
+///   frozen issue has no derived facts, its own children too. The engine never
+///   retries: a transient failure costs that issue one run, and the next run
+///   evaluates it again.
+/// - Must not panic; report every failure as a [`ResolveError`].
 pub trait ParentResolver {
     /// The subject of `number`.
     ///
     /// # Errors
     ///
-    /// A message when the issue cannot be read (a repository the token cannot
-    /// see, a deleted issue). The engine freezes the child that needed it.
-    fn fetch(&self, number: &IssueNumber) -> Result<Subject, String>;
+    /// A [`ResolveError`] when the issue cannot be read.
+    fn fetch(&self, number: &IssueNumber) -> Result<Subject, ResolveError>;
 }

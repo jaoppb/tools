@@ -1,0 +1,49 @@
+# builtin:tools — standalone issues: no parent, no epic, no membership.
+# The engine knows none of these words; they live in params, facts and rules.
+
+[workflow]
+schema   = 1
+statuses = ["Backlog", "Ready", "In progress", "In review", "Done"]
+default  = "Backlog"
+
+[workflow.params]
+type_prefix = "type:"
+area_prefix = "area:"
+started     = ["In progress", "In review"]
+
+[workflow.facts]
+has_type   = 'issue.labels.filter(l, l.startsWith(params.type_prefix)).size() == 1'
+has_area   = 'issue.labels.exists(l, fold(l).startsWith(fold(params.area_prefix)))'
+triaged    = 'has_type && has_area && issue.milestone != null'
+unblocked  = 'issue.blockers.all(b, b.state == "closed")'
+gate_holds = 'triaged && unblocked'
+
+[[workflow.status]]
+id   = "closed-is-done"
+when = 'issue.state == "closed"'
+set  = "Done"
+
+[[workflow.status]]
+id   = "started-with-pull-request"
+when = 'issue.status in params.started && issue.closed_by_open_pr'
+set  = "In review"
+
+[[workflow.status]]
+id   = "started-keeps-going"
+when = 'issue.status in params.started'
+set  = "In progress"
+
+[[workflow.status]]
+id   = "gate-closed"
+when = '!gate_holds'
+set  = "Backlog"
+
+[[workflow.status]]
+id   = "pull-request-open"
+when = 'issue.closed_by_open_pr'
+set  = "In review"
+
+[[workflow.status]]
+id   = "gate-holds"
+when = 'true'
+set  = "Ready"

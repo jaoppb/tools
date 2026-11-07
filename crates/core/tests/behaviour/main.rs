@@ -17,5 +17,4 @@ mod status_mapping;
 mod texts_parse;
 mod transitions;
 mod violation;
-#[cfg(feature = "workflow")]
 mod workflow;

@@ -18,6 +18,7 @@ publish = false
 [workspace.dependencies]
 arch-lint = "0.11"
 cel-interpreter = { version = "0.10.0", default-features = false }
+cel-parser = "0.10.1"
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 deunicode = "1.6.0"
 regex = "1.12.3"

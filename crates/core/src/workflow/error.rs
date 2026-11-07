@@ -4,6 +4,16 @@
 /// their own line and column.
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
+    /// Another error, found at this place of the TOML source.
+    #[error("line {line}, column {column}: {error}")]
+    At {
+        /// 1-based line.
+        line: usize,
+        /// 1-based column.
+        column: usize,
+        /// What is wrong there.
+        error: Box<LoadError>,
+    },
     /// The TOML does not parse or has an unknown key.
     #[error("invalid [workflow] block: {0}")]
     Toml(#[from] toml::de::Error),
@@ -54,4 +64,24 @@ pub enum LoadError {
     /// A param holds a value CEL cannot carry.
     #[error("param {0:?} holds a value that is neither a scalar nor a list of scalars")]
     Param(String),
+}
+
+impl LoadError {
+    /// The error without its location.
+    #[must_use]
+    pub fn root(&self) -> &Self {
+        match self {
+            Self::At { error, .. } => error.root(),
+            other => other,
+        }
+    }
+
+    /// The 1-based `(line, column)` of the TOML source, when known.
+    #[must_use]
+    pub const fn location(&self) -> Option<(usize, usize)> {
+        match self {
+            Self::At { line, column, .. } => Some((*line, *column)),
+            _ => None,
+        }
+    }
 }

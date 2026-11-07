@@ -3,6 +3,8 @@
 use std::collections::BTreeSet;
 
 use cel_interpreter::Program;
+use cel_parser::Parser;
+use cel_parser::ast::{EntryExpr, Expr as Node, IdedExpr};
 
 use crate::workflow::error::LoadError;
 use crate::workflow::schema::HELPERS;
@@ -28,25 +30,19 @@ impl Expr {
         source: &str,
         known: &BTreeSet<String>,
     ) -> Result<Self, LoadError> {
-        let program = Program::compile(source).map_err(|errors| LoadError::Compile {
-            origin: origin.to_owned(),
-            message: errors.to_string(),
-        })?;
-        let bound = macro_variables(source);
-        let references = program.references();
-        let reads: BTreeSet<String> = references
-            .variables()
-            .into_iter()
-            .filter(|name| !bound.contains(*name))
-            .map(str::to_owned)
-            .collect();
+        let program = Program::compile(source).map_err(|errors| compile_error(origin, &errors))?;
+        let tree = Parser::default()
+            .parse(source)
+            .map_err(|errors| compile_error(origin, &errors))?;
+        let mut walk = Walk::default();
+        walk.visit(&tree, &mut Vec::new());
+        let Walk { reads, functions } = walk;
         if let Some(name) = reads.iter().find(|name| !known.contains(*name)) {
             return Err(unknown(origin, "identifier", name));
         }
-        let unknown_function = references
-            .functions()
-            .into_iter()
-            .find(|name| !is_builtin(name) && !HELPERS.contains(name));
+        let unknown_function = functions
+            .iter()
+            .find(|name| !is_builtin(name) && !HELPERS.contains(&name.as_str()));
         if let Some(name) = unknown_function {
             return Err(unknown(origin, "function", name));
         }
@@ -84,23 +80,27 @@ fn unknown(origin: &str, kind: &'static str, name: &str) -> LoadError {
     }
 }
 
-/// Operators (`_&&_`, `!_`, `@in`) show up in `references()` as functions; so
-/// do the functions and macros `cel-interpreter` ships and the schema allows.
+fn compile_error(origin: &str, errors: &impl std::fmt::Display) -> LoadError {
+    LoadError::Compile {
+        origin: origin.to_owned(),
+        message: errors.to_string(),
+    }
+}
+
+/// Operators (`_&&_`, `!_`, `@in`) are calls in the AST; so are the functions
+/// `cel-interpreter` ships and the schema allows. Comprehension macros
+/// (`exists`, `all`, `filter`, `map`, `exists_one`) and `has()` are expanded by
+/// the parser and never show up as calls.
 fn is_builtin(name: &str) -> bool {
     if name.starts_with(['_', '!', '@']) {
         return true;
     }
     const BUILTINS: &[&str] = &[
-        "has",
         "size",
         "startsWith",
         "endsWith",
         "contains",
-        "exists",
-        "all",
-        "filter",
-        "map",
-        "exists_one",
+        "matches",
         "int",
         "uint",
         "double",
@@ -111,27 +111,74 @@ fn is_builtin(name: &str) -> bool {
     BUILTINS.contains(&name)
 }
 
-/// The variables that comprehension macros bind in `source`.
+/// What an expression uses: the free identifiers and the functions it calls.
 ///
-/// `references()` cannot tell a bound `l` from a free identifier, and the AST
-/// is private to `cel-interpreter`; reading the identifier after `.exists(` and
-/// its siblings is the spike's stand-in for walking the AST. The set is global
-/// to the expression, so a free identifier spelled like a bound one escapes
-/// the load check and fails at run time.
-fn macro_variables(source: &str) -> BTreeSet<String> {
-    const MACROS: &[&str] = &[".exists(", ".exists_one(", ".all(", ".filter(", ".map("];
-    let mut bound = BTreeSet::new();
-    for opener in MACROS {
-        for (at, _) in source.match_indices(opener) {
-            let rest = source[at + opener.len()..].trim_start();
-            let name: String = rest
-                .chars()
-                .take_while(|c| c.is_alphanumeric() || *c == '_')
-                .collect();
-            if !name.is_empty() && rest[name.len()..].trim_start().starts_with(',') {
-                bound.insert(name);
+/// The walk follows scopes: a comprehension binds its iteration variables
+/// (and the macro accumulator) for its loop and result expressions only, so a
+/// name bound in one place does not hide a free identifier spelled the same
+/// somewhere else.
+#[derive(Default)]
+struct Walk {
+    reads: BTreeSet<String>,
+    functions: BTreeSet<String>,
+}
+
+impl Walk {
+    fn visit(&mut self, node: &IdedExpr, scope: &mut Vec<String>) {
+        match &node.expr {
+            Node::Unspecified | Node::Literal(_) => {}
+            Node::Ident(name) => {
+                if !scope.contains(name) {
+                    self.reads.insert(name.clone());
+                }
+            }
+            Node::Select(select) => self.visit(&select.operand, scope),
+            Node::Call(call) => {
+                self.functions.insert(call.func_name.clone());
+                if let Some(target) = &call.target {
+                    self.visit(target, scope);
+                }
+                for argument in &call.args {
+                    self.visit(argument, scope);
+                }
+            }
+            Node::List(list) => {
+                for element in &list.elements {
+                    self.visit(element, scope);
+                }
+            }
+            Node::Map(map) => {
+                for entry in &map.entries {
+                    self.entry(&entry.expr, scope);
+                }
+            }
+            Node::Struct(literal) => {
+                for entry in &literal.entries {
+                    self.entry(&entry.expr, scope);
+                }
+            }
+            Node::Comprehension(comprehension) => {
+                self.visit(&comprehension.iter_range, scope);
+                self.visit(&comprehension.accu_init, scope);
+                let depth = scope.len();
+                scope.push(comprehension.iter_var.clone());
+                scope.extend(comprehension.iter_var2.clone());
+                scope.push(comprehension.accu_var.clone());
+                self.visit(&comprehension.loop_cond, scope);
+                self.visit(&comprehension.loop_step, scope);
+                self.visit(&comprehension.result, scope);
+                scope.truncate(depth);
             }
         }
     }
-    bound
+
+    fn entry(&mut self, entry: &EntryExpr, scope: &mut Vec<String>) {
+        match entry {
+            EntryExpr::StructField(field) => self.visit(&field.value, scope),
+            EntryExpr::MapEntry(pair) => {
+                self.visit(&pair.key, scope);
+                self.visit(&pair.value, scope);
+            }
+        }
+    }
 }
