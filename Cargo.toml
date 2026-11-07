@@ -2,9 +2,7 @@
 resolver = "3"
 members = [
     "crates/core",
-    "crates/project-sync",
-    "crates/issues-check",
-    "crates/repo-sync",
+    "crates/cli",
     "tests/architecture",
 ]
 

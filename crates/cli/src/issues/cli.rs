@@ -1,38 +1,24 @@
-//! The command line of `issues-check`.
+//! The command line of `tools issues check|migrate`.
 
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
-use tools_core::application::IssueMigrationMode;
 use tools_core::config::{ConfigError, RepoLabelsSpec, RulesConfig, load_or_find};
 use tools_core::domain::{CANONICAL_TYPES, canonical_type_label};
 
-const PROGRAM: &str = "issues-check";
-const CONFIG: &str = "config";
-const OWNER: &str = "owner";
-const REPO: &str = "repo";
+use crate::cli::{CONFIG, OWNER, REPO};
+
+/// The verb that audits issues and previews the label migrations without writing.
+pub const CHECK: &str = "check";
+/// The verb that rewrites issue labels to the configured taxonomy.
+pub const MIGRATE: &str = "migrate";
 const PROJECT: &str = "project";
 const NO_PARENT: &str = "no-parent";
 const NO_MEMBERSHIP: &str = "no-membership";
-const MIGRATE: &str = "migrate";
-const APPLY: &str = "apply";
 const DEFAULT_AREA: &str = "default-area";
 const DEFAULT_TYPE: &str = "default-type";
-
-/// A command line that was not run: an argument clap rejected, or `--help`.
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct UsageError(#[from] clap::Error);
-
-impl UsageError {
-    /// The exit code clap gives it: 0 for `--help` and 2 for a rejected argument.
-    #[must_use]
-    pub fn exit_code(&self) -> u8 {
-        u8::try_from(self.0.exit_code()).unwrap_or(2)
-    }
-}
 
 /// An error resolving issue audit configuration.
 #[derive(Debug, thiserror::Error)]
@@ -45,7 +31,7 @@ pub enum ResolveError {
     MissingRepository,
 }
 
-/// The parsed arguments for `issues-check`.
+/// The parsed arguments of `tools issues check|migrate`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
     config_path: Option<PathBuf>,
@@ -55,7 +41,6 @@ pub struct Arguments {
     no_parent: bool,
     no_membership: bool,
     migrate: bool,
-    apply: bool,
     default_area: Option<String>,
     default_type: Option<String>,
 }
@@ -72,54 +57,42 @@ pub struct ResolvedCheck {
 }
 
 impl Arguments {
-    /// Reads the whole command line, program name first.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`UsageError`] for an argument the tool does not know, and for
-    /// `--help`, which asks for the usage and is not a failure.
-    pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, UsageError> {
-        let matches = command().try_get_matches_from(arguments)?;
+    /// Reads the arguments of the `check` or `migrate` verb; the global flags travel with `matches`.
+    #[must_use]
+    pub fn from_matches(verb: &str, matches: &ArgMatches) -> Self {
         let repos: Vec<String> = matches
             .get_many::<String>(REPO)
             .map(|values| values.cloned().collect())
             .unwrap_or_default();
-        Ok(Self {
+        let flag =
+            |name: &str| matches.try_get_one::<bool>(name).ok().flatten().copied() == Some(true);
+        Self {
             config_path: matches.get_one::<String>(CONFIG).map(PathBuf::from),
             owner: matches.get_one::<String>(OWNER).cloned(),
             repos,
             project: matches
                 .get_one::<String>(PROJECT)
                 .and_then(|p| p.parse().ok()),
-            no_parent: matches.get_flag(NO_PARENT),
-            no_membership: matches.get_flag(NO_MEMBERSHIP),
-            migrate: matches.get_flag(MIGRATE),
-            apply: matches.get_flag(APPLY),
-            default_area: matches.get_one::<String>(DEFAULT_AREA).cloned(),
-            default_type: matches.get_one::<String>(DEFAULT_TYPE).cloned(),
-        })
-    }
-
-    /// Whether issue migration mode is enabled.
-    #[must_use]
-    pub const fn is_migrate(&self) -> bool {
-        self.migrate
-    }
-
-    /// Execution mode for issue label migration.
-    #[must_use]
-    pub const fn migration_mode(&self) -> IssueMigrationMode {
-        if self.apply {
-            IssueMigrationMode::Apply
-        } else {
-            IssueMigrationMode::Preview
+            no_parent: flag(NO_PARENT),
+            no_membership: flag(NO_MEMBERSHIP),
+            migrate: verb == MIGRATE,
+            default_area: matches
+                .try_get_one::<String>(DEFAULT_AREA)
+                .ok()
+                .flatten()
+                .cloned(),
+            default_type: matches
+                .try_get_one::<String>(DEFAULT_TYPE)
+                .ok()
+                .flatten()
+                .cloned(),
         }
     }
 
-    /// Whether to apply issue migrations directly to GitHub.
+    /// Whether the verb is `migrate`, which writes, rather than `check`.
     #[must_use]
-    pub const fn is_apply(&self) -> bool {
-        self.apply
+    pub const fn is_migrate(&self) -> bool {
+        self.migrate
     }
 
     /// Default area label to assign if an issue has none.
@@ -196,77 +169,54 @@ impl Arguments {
     }
 }
 
-fn command() -> Command {
-    Command::new(PROGRAM)
+/// The `issues` noun with its `check` and `migrate` verbs.
+pub fn command() -> Command {
+    Command::new("issues")
         .about("Audits and migrates the structure and labels of repository issues")
-        .arg(
-            Arg::new(CONFIG)
-                .long(CONFIG)
-                .value_name("FILE")
-                .help("Path to tools.toml configuration file"),
-        )
-        .arg(
-            Arg::new(OWNER)
-                .long(OWNER)
-                .visible_alias("org")
-                .value_name("OWNER")
-                .help("GitHub repository owner or organization override"),
-        )
-        .arg(
-            Arg::new(REPO)
-                .long(REPO)
-                .value_name("REPO")
-                .action(ArgAction::Append)
-                .help("GitHub repository name override"),
-        )
-        .arg(
-            Arg::new(PROJECT)
-                .long(PROJECT)
-                .value_name("NUMBER")
-                .help("GitHub Project number override"),
-        )
-        .arg(
-            Arg::new(NO_PARENT)
-                .long(NO_PARENT)
-                .action(ArgAction::SetTrue)
-                .help("Disable parent requirement for open issues"),
-        )
-        .arg(
-            Arg::new(NO_MEMBERSHIP)
-                .long(NO_MEMBERSHIP)
-                .action(ArgAction::SetTrue)
-                .help("Disable Project membership audit"),
-        )
-        .arg(
-            Arg::new(MIGRATE)
-                .long(MIGRATE)
-                .action(ArgAction::SetTrue)
-                .help("Plan or apply issue label migrations to match standard taxonomy"),
-        )
-        .arg(
-            Arg::new(APPLY)
-                .long(APPLY)
-                .action(ArgAction::SetTrue)
-                .requires(MIGRATE)
-                .help(
-                    "Apply issue label migrations directly to GitHub (defaults to dry-run preview)",
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(
+            Command::new(CHECK)
+                .about("Audit issues against the workflow rules and preview label migrations")
+                .arg(project_flag())
+                .arg(
+                    Arg::new(NO_PARENT)
+                        .long(NO_PARENT)
+                        .action(ArgAction::SetTrue)
+                        .help("Disable parent requirement for open issues"),
+                )
+                .arg(
+                    Arg::new(NO_MEMBERSHIP)
+                        .long(NO_MEMBERSHIP)
+                        .action(ArgAction::SetTrue)
+                        .help("Disable Project membership audit"),
                 ),
         )
-        .arg(
-            Arg::new(DEFAULT_AREA)
-                .long(DEFAULT_AREA)
-                .value_name("AREA")
-                .requires(MIGRATE)
-                .help("Fallback area label for issues missing an area: label"),
+        .subcommand(
+            Command::new(MIGRATE)
+                .about("Rewrite issue labels to match the configured taxonomy")
+                .arg(project_flag())
+                .arg(
+                    Arg::new(DEFAULT_AREA)
+                        .long(DEFAULT_AREA)
+                        .value_name("AREA")
+                        .help("Fallback area label for issues missing an area: label"),
+                )
+                .arg(
+                    Arg::new(DEFAULT_TYPE)
+                        .long(DEFAULT_TYPE)
+                        .value_name("TYPE")
+                        .value_parser(validate_default_type)
+                        .help("Fallback type label for issues missing a type: label"),
+                ),
         )
-        .arg(
-            Arg::new(DEFAULT_TYPE)
-                .long(DEFAULT_TYPE)
-                .value_name("TYPE")
-                .requires(MIGRATE)
-                .value_parser(validate_default_type)
-                .help("Fallback type label for issues missing a type: label"),
-        )
+}
+
+fn project_flag() -> Arg {
+    Arg::new(PROJECT)
+        .long(PROJECT)
+        .value_name("NUMBER")
+        .help("GitHub Project number override")
 }
 
 fn validate_default_type(value: &str) -> Result<String, String> {

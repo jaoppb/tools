@@ -1,8 +1,9 @@
 //! The real templates and docs of this repository agree with its `tools.toml`.
+#![cfg(feature = "repo")]
 
 use std::path::Path;
 
-use repo_sync::consistency;
+use tools::repo::consistency;
 use tools_core::config::load_from_path;
 
 #[test]

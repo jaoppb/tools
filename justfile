@@ -13,6 +13,14 @@ check:
     cargo check --workspace
     cargo clippy --workspace -- -D warnings
     cargo test --workspace
+    just check-features
+
+# Build every cargo feature group alone, and with none, to keep partial builds compiling
+check-features:
+    cargo clippy -p tools --no-default-features --all-targets -- -D warnings
+    cargo clippy -p tools --no-default-features --features issues --all-targets -- -D warnings
+    cargo clippy -p tools --no-default-features --features repo --all-targets -- -D warnings
+    cargo clippy -p tools --no-default-features --features project --all-targets -- -D warnings
 
 # Run workspace architecture rules validation via arch-lint
 arch-check:
@@ -20,38 +28,46 @@ arch-check:
 
 # Audit open GitHub issues against repository workflow rules
 issues-check:
-    cargo run -q -p issues-check
+    cargo run -q -p tools -- issues check
 
 # Audit GitHub repository settings, labels, and milestones against tools.toml
 repo-check:
-    cargo run -q -p repo-sync -- --check
+    cargo run -q -p tools -- repo check
 
 # Synchronize all GitHub repository configuration (settings, labels, milestones) to match tools.toml
 repo-sync:
-    cargo run -q -p repo-sync
+    cargo run -q -p tools -- repo sync
 
 # Synchronize GitHub repository settings only to match tools.toml
 settings-sync:
-    cargo run -q -p repo-sync -- --settings
+    cargo run -q -p tools -- repo sync --settings
 
 # Synchronize GitHub repository labels only to match tools.toml
 labels-sync:
-    cargo run -q -p repo-sync -- --labels
+    cargo run -q -p tools -- repo sync --labels
 
 # Synchronize GitHub repository milestones only to match tools.toml
 milestones-sync:
-    cargo run -q -p repo-sync -- --milestones
+    cargo run -q -p tools -- repo sync --milestones
 
 # Bootstrap and reconcile all repository configuration (settings, labels, milestones)
 repo-bootstrap: repo-sync
 
 # Synchronize all GitHub repository configuration across an organization (or override owner)
 org-sync org="":
-    cargo run -q -p repo-sync -- {{ if org != "" { "--org " + org } else { "" } }}
+    cargo run -q -p tools -- repo sync {{ if org != "" { "--org " + org } else { "" } }}
 
-# Audit and migrate legacy issue labels to canonical type:* and area:* taxonomy (dry-run by default)
+# Rewrite legacy issue labels to the configured taxonomy (writes; preview with `just issues-check`)
 issues-migrate *args:
-    cargo run -q -p issues-check -- --migrate {{ args }}
+    cargo run -q -p tools -- issues migrate {{ args }}
+
+# Print the planned Project Status moves without writing (exits 1 when there are any)
+project-check:
+    cargo run -q -p tools -- project check
+
+# Write the planned Project Status moves
+project-sync:
+    cargo run -q -p tools -- project sync
 
 # Bump workspace package version (major, minor, patch, or X.Y.Z), refresh Cargo.lock, commit, tag, and push
 bump-version target:

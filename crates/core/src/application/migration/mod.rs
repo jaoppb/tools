@@ -87,7 +87,7 @@ impl fmt::Display for IssueMigrationOutcome {
                 for action in self.plan.actions() {
                     writeln!(f, "  {action}")?;
                 }
-                write!(f, "Run with --apply to execute these changes.")
+                write!(f, "Run `tools issues migrate` to execute these changes.")
             }
             IssueMigrationMode::Apply => {
                 writeln!(f, "Applied label migrations to {count} {issues_str}:")?;
@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(outcome.mode(), IssueMigrationMode::Preview);
         assert_eq!(outcome.plan().len(), 1);
         assert!(port.recorded_calls().is_empty());
-        assert!(outcome.to_string().contains("Run with --apply"));
+        assert!(outcome.to_string().contains("tools issues migrate"));
     }
 
     #[test]

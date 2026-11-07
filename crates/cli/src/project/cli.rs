@@ -1,6 +1,6 @@
-//! The command line: `project-sync [--dry-run]`, parsed with clap.
+//! The command line of `tools project check|sync`, parsed with clap.
 
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgMatches, Command};
 use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
@@ -8,25 +8,13 @@ use tools_core::application::Mode;
 use tools_core::config::{ConfigError, RulesConfig, load_or_find};
 use tools_core::domain::{StatusMapping, StatusMappingError};
 
-const PROGRAM: &str = "project-sync";
-const DRY_RUN: &str = "dry-run";
-const CONFIG: &str = "config";
-const OWNER: &str = "owner";
-const REPO: &str = "repo";
+use crate::cli::{CONFIG, OWNER, REPO};
+
+/// The verb that prints the planned moves and writes nothing.
+pub const CHECK: &str = "check";
+/// The verb that writes the planned moves.
+pub const SYNC: &str = "sync";
 const PROJECT: &str = "project";
-
-/// A command line that was not run: an argument clap rejected, or `--help`.
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct UsageError(#[from] clap::Error);
-
-impl UsageError {
-    /// The exit code clap gives it: 0 for `--help` and 2 for a rejected argument.
-    #[must_use]
-    pub fn exit_code(&self) -> u8 {
-        u8::try_from(self.0.exit_code()).unwrap_or(2)
-    }
-}
 
 /// An error resolving project synchronization configuration.
 #[derive(Debug, thiserror::Error)]
@@ -43,7 +31,7 @@ pub enum ResolveError {
     MissingProject,
 }
 
-/// The parsed command line for `project-sync`.
+/// The parsed command line of `tools project check|sync`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
     mode: Mode,
@@ -54,26 +42,26 @@ pub struct Arguments {
 }
 
 impl Arguments {
-    /// Parses the arguments.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`UsageError`] on invalid syntax or `--help`.
-    pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, UsageError> {
-        let matches = command().try_get_matches_from(arguments)?;
+    /// Reads the arguments of the `check` or `sync` verb; the global flags travel with `matches`.
+    #[must_use]
+    pub fn from_matches(verb: &str, matches: &ArgMatches) -> Self {
         let repos: Vec<String> = matches
             .get_many::<String>(REPO)
             .map(|values| values.cloned().collect())
             .unwrap_or_default();
-        Ok(Self {
-            mode: mode_of(&matches),
+        Self {
+            mode: if verb == CHECK {
+                Mode::Preview
+            } else {
+                Mode::Apply
+            },
             config_path: matches.get_one::<String>(CONFIG).map(PathBuf::from),
             owner: matches.get_one::<String>(OWNER).cloned(),
             repos,
             project: matches
                 .get_one::<String>(PROJECT)
                 .and_then(|p| p.parse().ok()),
-        })
+        }
     }
 
     /// Whether the run writes its moves.
@@ -136,45 +124,27 @@ impl Arguments {
     }
 }
 
-fn command() -> Command {
-    Command::new(PROGRAM)
-        .about("Moves the Status of GitHub Project cards according to workflow rules")
-        .arg(
-            Arg::new(DRY_RUN)
-                .long(DRY_RUN)
-                .action(ArgAction::SetTrue)
-                .help("Print the moves and write nothing"),
+/// The `project` noun with its `check` and `sync` verbs.
+pub fn command() -> Command {
+    Command::new("project")
+        .about("Checks or moves the Status of GitHub Project cards according to workflow rules")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(
+            Command::new(CHECK)
+                .about("Print the planned moves and write nothing; exits 1 when there are any")
+                .arg(project_flag()),
         )
-        .arg(
-            Arg::new(CONFIG)
-                .long(CONFIG)
-                .value_name("FILE")
-                .help("Path to tools.toml configuration file"),
-        )
-        .arg(
-            Arg::new(OWNER)
-                .long(OWNER)
-                .value_name("OWNER")
-                .help("GitHub repository owner override"),
-        )
-        .arg(
-            Arg::new(REPO)
-                .long(REPO)
-                .value_name("REPO")
-                .action(ArgAction::Append)
-                .help("GitHub repository name override"),
-        )
-        .arg(
-            Arg::new(PROJECT)
-                .long(PROJECT)
-                .value_name("NUMBER")
-                .help("GitHub Project number override"),
+        .subcommand(
+            Command::new(SYNC)
+                .about("Write the planned moves to the Project")
+                .arg(project_flag()),
         )
 }
 
-fn mode_of(matches: &ArgMatches) -> Mode {
-    if matches.get_flag(DRY_RUN) {
-        return Mode::Preview;
-    }
-    Mode::Apply
+fn project_flag() -> Arg {
+    Arg::new(PROJECT)
+        .long(PROJECT)
+        .value_name("NUMBER")
+        .help("GitHub Project number override")
 }
