@@ -139,7 +139,13 @@ fn a_closed_card_on_a_parent_cycle_still_goes_done() {
         task_of(open_card(21, Status::Backlog), 20),
     ];
     let plan = snapshot(cards, &[]).plan();
-    assert_eq!(moves_of(&plan), vec!["#20 Ready -> Done (closed)"]);
+    assert_eq!(
+        moves_of(&plan),
+        vec![
+            "#20 Ready -> Done (closed)",
+            "#21 Backlog -> Ready (gate holds)",
+        ]
+    );
     assert!(frozen_of(&plan).is_empty());
 }
 
@@ -152,6 +158,9 @@ fn a_started_card_on_a_parent_cycle_keeps_following_its_pull_request() {
     let plan = snapshot(cards, &[20]).plan();
     assert_eq!(
         moves_of(&plan),
-        vec!["#20 In progress -> In review (pull request open)"]
+        vec![
+            "#20 In progress -> In review (pull request open)",
+            "#21 Backlog -> Ready (gate holds)",
+        ]
     );
 }
