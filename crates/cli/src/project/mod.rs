@@ -8,6 +8,7 @@ pub mod cli;
 use tools_core::adapters::github::GhProject;
 use tools_core::application::{Mode, Outcome, Sync};
 use tools_core::domain::IssueNumber;
+use tools_core::workflow::Decision;
 
 use crate::Exit;
 use cli::Arguments;
@@ -32,22 +33,13 @@ pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
 
 /// The trace of the card `selector` names. Exit 0: it is a view, not a verdict.
 fn explain(outcome: &Outcome, selector: &str) -> Result<Exit, Exit> {
-    let matching: Vec<&IssueNumber> = outcome
+    let matching: Vec<&Decision> = outcome
         .evaluation()
         .iter()
-        .map(|decision| decision.number())
-        .filter(|number| selects(selector, number))
+        .filter(|decision| selects(selector, decision.number()))
         .collect();
     match matching.as_slice() {
-        [number] => {
-            let decision = outcome.evaluation().decision(number);
-            Ok(Exit::new(
-                decision
-                    .map(|found| found.explain().to_string())
-                    .unwrap_or_default(),
-                0,
-            ))
-        }
+        [decision] => Ok(Exit::new(decision.explain().to_string(), 0)),
         [] => Err(Exit::failed(format!(
             "{selector} is not a card of the Project"
         ))),

@@ -100,6 +100,7 @@ impl Statuses {
     /// No declared vocabulary: every non-blank name is accepted and a card
     /// without a Status is "No status". For readers that only need to know
     /// which issues are cards, such as the audit; never for writing.
+    // TODO(#59): the audit stops reading Status and this mode goes with it.
     #[must_use]
     pub fn undeclared() -> Self {
         Self {

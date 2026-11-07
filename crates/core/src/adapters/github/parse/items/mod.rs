@@ -194,25 +194,15 @@ pub fn parse_subject(json: &str, asked: &IssueNumber) -> Result<Option<Subject>,
     let Some(content) = reply.data.repository.issue else {
         return Ok(None);
     };
-    let repo = asked.repo();
     let closed = lifecycle_of(content.head.state.as_deref())?.is_closed();
-    let links = links_of(&content.detail, repo);
-    Ok(Some(Subject {
-        number: asked.clone(),
+    let facts = facts_of(&FieldValues { nodes: Vec::new() }, &content.detail);
+    let links = links_of(&content.detail, asked.repo());
+    Ok(Some(Subject::from_parts(
+        asked.clone(),
         closed,
-        status: None,
-        labels: labels_of(content.detail.labels.as_ref())
-            .names()
-            .map(str::to_owned)
-            .collect(),
-        milestone: content.detail.milestone.as_ref().map(|m| m.title.clone()),
-        fields: std::collections::BTreeMap::new(),
-        blockers: links
-            .blockers()
-            .iter()
-            .map(|(number, closed)| (number.clone(), closed))
-            .collect(),
-        parent: links.parent_number().cloned(),
-        prs: Vec::new(),
-    }))
+        None,
+        &facts,
+        &links,
+        Vec::new(),
+    )))
 }

@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::domain::{Card, IssueNumber, Snapshot, StatusName};
+use crate::domain::{Card, Facts, IssueNumber, Links, Snapshot, StatusName};
 
 /// A Project field value: a select option or a number.
 #[derive(Debug, Clone, PartialEq)]
@@ -41,7 +41,27 @@ impl Subject {
     /// The subject of a Project card.
     #[must_use]
     pub fn from_card(card: &Card, snapshot: &Snapshot) -> Self {
-        let facts = card.facts();
+        Self::from_parts(
+            card.number().clone(),
+            card.is_closed(),
+            Some(card.status().clone()),
+            card.facts(),
+            card.links(),
+            snapshot.open_pulls_closing(card.number()),
+        )
+    }
+
+    /// The subject of an issue from its facts and links: the one place that maps
+    /// them onto the schema, for cards and for parents read on demand alike.
+    #[must_use]
+    pub fn from_parts(
+        number: IssueNumber,
+        closed: bool,
+        status: Option<StatusName>,
+        facts: &Facts,
+        links: &Links,
+        prs: Vec<IssueNumber>,
+    ) -> Self {
         let mut fields = BTreeMap::new();
         if let Some(priority) = facts.priority_name() {
             fields.insert("Priority".to_owned(), FieldValue::Text(priority));
@@ -50,20 +70,19 @@ impl Subject {
             fields.insert("Effort".to_owned(), FieldValue::Number(i64::from(points)));
         }
         Self {
-            number: card.number().clone(),
-            closed: card.is_closed(),
-            status: Some(card.status().clone()),
+            number,
+            closed,
+            status,
             labels: facts.labels().names().map(str::to_owned).collect(),
             milestone: facts.milestone_title(),
             fields,
-            blockers: card
-                .links()
+            blockers: links
                 .blockers()
                 .iter()
                 .map(|(number, closed)| (number.clone(), closed))
                 .collect(),
-            parent: card.links().parent_number().cloned(),
-            prs: snapshot.open_pulls_closing(card.number()),
+            parent: links.parent_number().cloned(),
+            prs,
         }
     }
 }

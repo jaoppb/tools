@@ -34,12 +34,13 @@ impl StatusField {
         &self.field
     }
 
-    /// The id of the option with this name, if the field has it.
+    /// The id of the option with this name (surrounding blanks ignored, as when
+    /// the board's names are read), if the field has it.
     #[must_use]
     pub fn option(&self, name: &str) -> Option<&str> {
         self.options
             .iter()
-            .find(|option| option.name == name)
+            .find(|option| option.name.trim() == name.trim())
             .map(|option| option.identifier.as_str())
     }
 
