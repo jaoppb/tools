@@ -45,6 +45,9 @@ pub enum LoadError {
         /// The unknown name.
         name: String,
     },
+    /// A fact is named like a root of the schema.
+    #[error("fact {0:?} would hide a name of the schema")]
+    ReservedFact(String),
     /// Facts refer to each other in a circle.
     #[error("facts depend on each other in a cycle through {0:?}")]
     FactCycle(String),

@@ -106,3 +106,10 @@ fn a_local_rule_with_a_builtin_id_shadows_the_builtin() {
     assert_eq!(ids.iter().filter(|id| **id == "closed-is-done").count(), 1);
     assert_eq!(ids[0], "closed-is-done");
 }
+
+#[test]
+fn a_fact_named_like_a_schema_root_is_rejected() {
+    let error =
+        load(&format!("{BLANK}\n[workflow.facts]\nissue = 'true'\n")).expect_err("hides issue");
+    assert!(matches!(error, LoadError::ReservedFact(name) if name == "issue"));
+}

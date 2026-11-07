@@ -8,7 +8,7 @@ use crate::support::{
     blocked_by, child_of_epic, closed_card, epic, open_card, snapshot, task_of, with_effort,
     without_priority,
 };
-use crate::workflow::support::{Remote, assert_parity, outside};
+use crate::workflow::support::{Remote, assert_parity, cosmo, decision, evaluate, outside};
 
 const LIVE: &str = include_str!("../../fixtures/items_live.json");
 const EDGE: &str = include_str!("../../fixtures/items_edge.json");
@@ -158,15 +158,10 @@ fn hierarchy_matches() {
 
 #[test]
 fn explain_of_a_fixture_issue_names_the_rule_that_held_it_back() {
-    let evaluation = crate::workflow::support::evaluate(
-        &crate::workflow::support::cosmo(),
-        &recorded(LIVE, &[92, 20]),
-        &fixture_remote(),
-    );
-    let text = crate::workflow::support::decision(&evaluation, &cosmo_issue(20))
+    let evaluation = evaluate(&cosmo(), &recorded(LIVE, &[92, 20]), &fixture_remote());
+    let text = decision(&evaluation, &cosmo_issue(20))
         .explain()
         .to_string();
-    eprintln!("{text}");
     assert!(text.starts_with("cosmo#20: Backlog -> Backlog"), "{text}");
     assert!(text.contains("unblocked = false"), "{text}");
     assert!(text.contains("is_epic = false"), "{text}");

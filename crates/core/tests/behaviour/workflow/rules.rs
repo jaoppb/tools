@@ -134,7 +134,6 @@ fn the_explain_trace_lists_every_fact_and_rule_and_marks_the_one_that_fired() {
     );
     let evaluation = evaluate(&cosmo(), &snapshot(vec![blocked], &[]), &Remote::default());
     let text = decision(&evaluation, &number(20)).explain().to_string();
-    eprintln!("{text}");
     assert!(text.starts_with("#20: Backlog -> Backlog"), "{text}");
     assert!(text.contains("unblocked = false"), "{text}");
     assert!(text.contains("[no         ] epic-is-untouched"), "{text}");

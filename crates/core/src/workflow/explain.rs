@@ -87,6 +87,7 @@ fn show(value: &Value) -> String {
     match value {
         Value::Bool(flag) => flag.to_string(),
         Value::Int(number) => number.to_string(),
+        Value::Float(number) => number.to_string(),
         Value::String(text) => format!("{text:?}"),
         Value::Null => "null".to_owned(),
         Value::List(items) => {

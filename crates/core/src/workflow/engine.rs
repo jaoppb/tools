@@ -8,7 +8,7 @@ use std::sync::Arc;
 use cel_interpreter::{Context, Value};
 
 use crate::domain::{IssueNumber, Snapshot};
-use crate::workflow::config::Workflow;
+use crate::workflow::config::{Rule, Workflow};
 use crate::workflow::explain::{Explain, RuleResult, RuleTrace};
 use crate::workflow::schema::CURRENT;
 use crate::workflow::subject::{FieldValue, ParentResolver, Subject};
@@ -53,12 +53,9 @@ impl fmt::Display for Violation {
     }
 }
 
-/// The decision for one Project card.
+/// The decision for one Project card: the trace says everything.
 #[derive(Debug, Clone)]
 pub struct Decision {
-    number: IssueNumber,
-    destination: String,
-    fired: Option<String>,
     explain: Explain,
 }
 
@@ -66,19 +63,23 @@ impl Decision {
     /// The issue.
     #[must_use]
     pub const fn number(&self) -> &IssueNumber {
-        &self.number
+        &self.explain.number
     }
 
     /// The status the card should have; its current one when frozen.
     #[must_use]
     pub fn destination(&self) -> &str {
-        &self.destination
+        &self.explain.destination
     }
 
     /// The id of the rule that fired, if one did.
     #[must_use]
     pub fn fired(&self) -> Option<&str> {
-        self.fired.as_deref()
+        self.explain
+            .rules
+            .iter()
+            .find(|rule| rule.result == RuleResult::Fired)
+            .map(|rule| rule.id.as_str())
     }
 
     /// Why the card is frozen, if it is.
@@ -107,7 +108,7 @@ impl Evaluation {
     /// The decision for `number`, if it is a Project card.
     #[must_use]
     pub fn decision(&self, number: &IssueNumber) -> Option<&Decision> {
-        self.0.iter().find(|decision| decision.number == *number)
+        self.0.iter().find(|decision| decision.number() == number)
     }
 }
 
@@ -128,29 +129,21 @@ impl<'a> Engine<'a> {
     #[must_use]
     pub fn evaluate(&self, snapshot: &Snapshot) -> Evaluation {
         let mut run = Run::new(self.workflow, self.resolver);
-        let order: Vec<IssueNumber> = snapshot
+        let cards: Vec<Subject> = snapshot
             .cards()
-            .map(|card| {
-                let subject = Subject::from_card(card, snapshot);
-                run.subjects.insert(subject.number.clone(), Ok(subject));
-                card.number().clone()
-            })
+            .map(|card| Subject::from_card(card, snapshot))
             .collect();
-        for number in &order {
-            run.walk_chain(number);
+        for subject in &cards {
+            run.subjects
+                .insert(subject.number.clone(), Ok(subject.clone()));
+        }
+        for subject in &cards {
+            run.walk_chain(&subject.number);
         }
         Evaluation(
-            order
+            cards
                 .iter()
-                .map(|number| {
-                    let node = run.node(number);
-                    Decision {
-                        number: number.clone(),
-                        destination: node.next.clone(),
-                        fired: node.fired.clone(),
-                        explain: node.explain.clone(),
-                    }
-                })
+                .map(|subject| run.node(subject).decision.clone())
                 .collect(),
         )
     }
@@ -158,11 +151,22 @@ impl<'a> Engine<'a> {
 
 /// One issue once evaluated.
 struct Node {
-    next: String,
-    fired: Option<String>,
     /// The `issue` value with derived facts and `next`, as a child sees it.
     value: Value,
-    explain: Explain,
+    decision: Decision,
+}
+
+impl Node {
+    fn frozen(&self) -> bool {
+        self.decision.violation().is_some()
+    }
+}
+
+/// What was evaluated before an issue froze.
+#[derive(Default)]
+struct Partial {
+    facts: Vec<(String, Value)>,
+    rules: Vec<RuleTrace>,
 }
 
 struct Run<'a> {
@@ -219,71 +223,51 @@ impl<'a> Run<'a> {
         self.walked.extend(path);
     }
 
-    fn node(&mut self, number: &IssueNumber) -> Rc<Node> {
-        if let Some(node) = self.nodes.get(number) {
+    fn node(&mut self, subject: &Subject) -> Rc<Node> {
+        if let Some(node) = self.nodes.get(&subject.number) {
             return Rc::clone(node);
         }
-        let node = Rc::new(self.compute(number));
-        self.nodes.insert(number.clone(), Rc::clone(&node));
+        let node = Rc::new(self.compute(subject));
+        self.nodes.insert(subject.number.clone(), Rc::clone(&node));
         node
     }
 
-    fn compute(&mut self, number: &IssueNumber) -> Node {
-        let subject = match self.subjects.get(number) {
-            Some(Ok(subject)) => subject.clone(),
-            Some(Err(reason)) => return self.unreadable(number, reason.clone()),
-            None => return self.unreadable(number, "not loaded".to_owned()),
-        };
+    fn compute(&mut self, subject: &Subject) -> Node {
         let current = subject
             .status
             .clone()
             .unwrap_or_else(|| self.workflow.default.clone());
-        if self.cyclic.contains(number) {
-            return self.frozen(&subject, &current, Violation::Cycle, Vec::new(), Vec::new());
+        if self.cyclic.contains(&subject.number) {
+            return self.frozen(subject, &current, Violation::Cycle, Partial::default());
         }
-        let parent = match &subject.parent {
-            None => Value::Null,
-            Some(parent) => match self.subjects.get(parent) {
-                Some(Err(reason)) => {
-                    let violation = Violation::ParentUnreadable {
-                        parent: parent.clone(),
-                        reason: reason.clone(),
-                    };
-                    return self.frozen(&subject, &current, violation, Vec::new(), Vec::new());
-                }
-                _ => {
-                    let node = self.node(parent);
-                    if node.explain.violation.is_some() {
-                        let violation = Violation::ParentFrozen {
-                            parent: parent.clone(),
-                        };
-                        return self.frozen(&subject, &current, violation, Vec::new(), Vec::new());
-                    }
-                    node.value.clone()
-                }
-            },
+        let parent = match self.parent_value(subject) {
+            Ok(parent) => parent,
+            Err(violation) => {
+                return self.frozen(subject, &current, violation, Partial::default());
+            }
         };
-        self.evaluate(&subject, &current, parent)
+        self.evaluate(subject, &current, parent)
     }
 
-    fn unreadable(&self, number: &IssueNumber, reason: String) -> Node {
-        let subject = Subject {
-            number: number.clone(),
-            closed: false,
-            status: None,
-            labels: Vec::new(),
-            milestone: None,
-            fields: Default::default(),
-            blockers: Vec::new(),
-            parent: None,
-            closed_by_open_pr: false,
+    /// The parent as a child sees it: `null` without a parent, otherwise the
+    /// parent node's value; a parent that cannot be read or is frozen freezes
+    /// the child.
+    fn parent_value(&mut self, subject: &Subject) -> Result<Value, Violation> {
+        let Some(parent) = &subject.parent else {
+            return Ok(Value::Null);
         };
-        let violation = Violation::ParentUnreadable {
-            parent: number.clone(),
-            reason,
+        let loaded = match self.subjects.get(parent) {
+            Some(Ok(loaded)) => loaded.clone(),
+            Some(Err(reason)) => return Err(unreadable(parent, reason)),
+            None => return Err(unreadable(parent, "not loaded")),
         };
-        let current = self.workflow.default.clone();
-        self.frozen(&subject, &current, violation, Vec::new(), Vec::new())
+        let node = self.node(&loaded);
+        if node.frozen() {
+            return Err(Violation::ParentFrozen {
+                parent: parent.clone(),
+            });
+        }
+        Ok(node.value.clone())
     }
 
     fn evaluate(&self, subject: &Subject, current: &str, parent: Value) -> Node {
@@ -293,9 +277,41 @@ impl<'a> Run<'a> {
         context.add_variable_from_value("issue", map.clone());
         context.add_variable_from_value("params", self.workflow.params.clone());
         context.add_variable_from_value("repo", subject.number.repo().name());
+        let (facts, failure) = self.eval_facts(&mut context);
+        if let Some(violation) = failure {
+            let partial = Partial {
+                facts,
+                rules: Vec::new(),
+            };
+            return self.frozen(subject, current, violation, partial);
+        }
+        let (rules, outcome) = self.eval_rules(&context);
+        let set = match outcome {
+            Ok(rule) => rule.map(|rule| rule.set.as_str()),
+            Err(violation) => {
+                return self.frozen(subject, current, violation, Partial { facts, rules });
+            }
+        };
+        let next = match set {
+            Some(set) if set != CURRENT => set.to_owned(),
+            _ => current.to_owned(),
+        };
+        for (name, value) in &facts {
+            map.insert(name.clone(), value.clone());
+        }
+        map.insert("next".to_owned(), Value::from(next.as_str()));
+        Node {
+            value: map.into(),
+            decision: decision(subject, current, &next, Partial { facts, rules }, None),
+        }
+    }
+
+    /// Evaluates the derived facts in dependency order, adding each to
+    /// `context`. Returns the facts done and the violation that stopped them.
+    fn eval_facts(&self, context: &mut Context<'_>) -> (Vec<(String, Value)>, Option<Violation>) {
         let mut facts: Vec<(String, Value)> = Vec::new();
         for (name, expr) in &self.workflow.facts {
-            match expr.program().execute(&context) {
+            match expr.program().execute(context) {
                 Ok(value) => {
                     context.add_variable_from_value(name.as_str(), value.clone());
                     facts.push((name.clone(), value));
@@ -305,10 +321,19 @@ impl<'a> Run<'a> {
                         origin: format!("fact {name:?}"),
                         message: error.to_string(),
                     };
-                    return self.frozen(subject, current, violation, facts, Vec::new());
+                    return (facts, Some(violation));
                 }
             }
         }
+        (facts, None)
+    }
+
+    /// Evaluates rules in order until one fires or fails. Returns every
+    /// rule's trace and the rule that fired, if any.
+    fn eval_rules(
+        &self,
+        context: &Context<'_>,
+    ) -> (Vec<RuleTrace>, Result<Option<&Rule>, Violation>) {
         let mut traces: Vec<RuleTrace> = self
             .workflow
             .rules
@@ -320,61 +345,27 @@ impl<'a> Run<'a> {
                 result: RuleResult::NotReached,
             })
             .collect();
-        let mut outcome = None;
         for (rule, trace) in self.workflow.rules.iter().zip(&mut traces) {
-            match rule.when.program().execute(&context) {
+            let failure = match rule.when.program().execute(context) {
                 Ok(Value::Bool(true)) => {
                     trace.result = RuleResult::Fired;
-                    outcome = Some((rule.id.clone(), rule.set.clone()));
-                    break;
+                    return (traces, Ok(Some(rule)));
                 }
-                Ok(Value::Bool(false)) => trace.result = RuleResult::NotMatched,
-                Ok(other) => {
-                    trace.result = RuleResult::Error(format!("expected bool, got {other:?}"));
-                    break;
+                Ok(Value::Bool(false)) => {
+                    trace.result = RuleResult::NotMatched;
+                    continue;
                 }
-                Err(error) => {
-                    trace.result = RuleResult::Error(error.to_string());
-                    break;
-                }
-            }
+                Ok(other) => format!("expected bool, got {other:?}"),
+                Err(error) => error.to_string(),
+            };
+            trace.result = RuleResult::Error(failure.clone());
+            let violation = Violation::Eval {
+                origin: format!("rule {:?}", rule.id),
+                message: failure,
+            };
+            return (traces, Err(violation));
         }
-        let failed = traces.iter().find_map(|trace| match &trace.result {
-            RuleResult::Error(message) => Some(Violation::Eval {
-                origin: format!("rule {:?}", trace.id),
-                message: message.clone(),
-            }),
-            _ => None,
-        });
-        if let Some(violation) = failed {
-            return self.frozen(subject, current, violation, facts, traces);
-        }
-        let (fired, set) = match outcome {
-            Some((id, set)) => (Some(id), set),
-            None => (None, CURRENT.to_owned()),
-        };
-        let next = if set == CURRENT {
-            current.to_owned()
-        } else {
-            set
-        };
-        for (name, value) in &facts {
-            map.insert(name.clone(), value.clone());
-        }
-        map.insert("next".to_owned(), Value::from(next.as_str()));
-        Node {
-            next: next.clone(),
-            fired,
-            value: map.into(),
-            explain: Explain {
-                number: subject.number.clone(),
-                current: current.to_owned(),
-                destination: next,
-                facts,
-                rules: traces,
-                violation: None,
-            },
-        }
+        (traces, Ok(None))
     }
 
     /// A node that changes nothing: `next` is the current status.
@@ -383,25 +374,41 @@ impl<'a> Run<'a> {
         subject: &Subject,
         current: &str,
         violation: Violation,
-        facts: Vec<(String, Value)>,
-        rules: Vec<RuleTrace>,
+        partial: Partial,
     ) -> Node {
         let mut map = issue_map(subject, current);
         map.insert("parent".to_owned(), Value::Null);
         map.insert("next".to_owned(), Value::from(current));
         Node {
-            next: current.to_owned(),
-            fired: None,
             value: map.into(),
-            explain: Explain {
-                number: subject.number.clone(),
-                current: current.to_owned(),
-                destination: current.to_owned(),
-                facts,
-                rules,
-                violation: Some(violation),
-            },
+            decision: decision(subject, current, current, partial, Some(violation)),
         }
+    }
+}
+
+fn decision(
+    subject: &Subject,
+    current: &str,
+    destination: &str,
+    partial: Partial,
+    violation: Option<Violation>,
+) -> Decision {
+    Decision {
+        explain: Explain {
+            number: subject.number.clone(),
+            current: current.to_owned(),
+            destination: destination.to_owned(),
+            facts: partial.facts,
+            rules: partial.rules,
+            violation,
+        },
+    }
+}
+
+fn unreadable(parent: &IssueNumber, reason: &str) -> Violation {
+    Violation::ParentUnreadable {
+        parent: parent.clone(),
+        reason: reason.to_owned(),
     }
 }
 

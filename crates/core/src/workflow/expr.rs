@@ -71,7 +71,7 @@ impl Expr {
 
     /// The free identifiers the expression reads.
     #[must_use]
-    pub const fn reads(&self) -> &BTreeSet<String> {
+    pub(crate) const fn reads(&self) -> &BTreeSet<String> {
         &self.reads
     }
 }
@@ -115,7 +115,9 @@ fn is_builtin(name: &str) -> bool {
 ///
 /// `references()` cannot tell a bound `l` from a free identifier, and the AST
 /// is private to `cel-interpreter`; reading the identifier after `.exists(` and
-/// its siblings is the spike's stand-in for walking the AST.
+/// its siblings is the spike's stand-in for walking the AST. The set is global
+/// to the expression, so a free identifier spelled like a bound one escapes
+/// the load check and fails at run time.
 fn macro_variables(source: &str) -> BTreeSet<String> {
     const MACROS: &[&str] = &[".exists(", ".exists_one(", ".all(", ".filter(", ".map("];
     let mut bound = BTreeSet::new();

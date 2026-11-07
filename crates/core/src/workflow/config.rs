@@ -43,7 +43,7 @@ struct RawRule {
 
 /// One compiled status rule.
 #[derive(Debug)]
-pub struct Rule {
+pub(crate) struct Rule {
     pub(crate) id: String,
     pub(crate) when: Expr,
     pub(crate) set: String,
@@ -137,6 +137,9 @@ fn build(raw: RawWorkflow) -> Result<Workflow, LoadError> {
                 status: rule.set.clone(),
             });
         }
+    }
+    if let Some(name) = raw.facts.keys().find(|name| ROOTS.contains(&name.as_str())) {
+        return Err(LoadError::ReservedFact(name.clone()));
     }
     let known: BTreeSet<String> = ROOTS
         .iter()
