@@ -1,5 +1,5 @@
 name: 'Tools CLI Setup and Quality Audit'
-description: 'Install tools CLI utilities (issues-check, repo-sync, project-sync) from pre-compiled release binaries and optionally execute compliance checks.'
+description: 'Install the tools CLI from a pre-compiled release binary (or build it from source) and optionally run its issues, repo and project commands.'
 author: 'jaoppb'
 branding:
   icon: 'check-circle'
@@ -7,15 +7,11 @@ branding:
 
 inputs:
   version:
-    description: 'Version of tools binaries to install (e.g. "v0.1.0", "v0.2.0", or "latest")'
+    description: 'Version of the tools binary to install (e.g. "v0.2.0" or "latest"); ignored with build-from-source'
     required: false
     default: 'latest'
-  tools:
-    description: 'Comma-separated list of tools to install (e.g. "issues-check,repo-sync,project-sync" or "all")'
-    required: false
-    default: 'all'
   install-dir:
-    description: 'Directory where binaries are installed'
+    description: 'Directory where the binary is installed'
     required: false
     default: '${{ runner.temp }}/tools-bin'
   repo:
@@ -23,9 +19,13 @@ inputs:
     required: false
     default: 'jaoppb/tools'
   config-path:
-    description: 'Path to tools.toml passed as --config to every tool run by this action (default: upward search from the working directory)'
+    description: 'Path to tools.toml passed as --config to every tools command run by this action (default: upward search from the working directory)'
     required: false
     default: ''
+  build-from-source:
+    description: 'Build the tools binary with cargo from the checkout of this action instead of downloading a release (needs a Rust toolchain on the runner)'
+    required: false
+    default: 'false'
   github-token:
     description: 'GitHub token for release downloads and running audits'
     required: false
@@ -35,36 +35,40 @@ inputs:
     required: false
     default: 'true'
   check-issues:
-    description: 'Execute issues-check audit immediately after installation'
+    description: 'Run "tools issues check" immediately after installation'
     required: false
     default: 'false'
   check-repo:
-    description: 'Execute repo-sync --check audit immediately after installation'
+    description: 'Run "tools repo check" immediately after installation'
     required: false
     default: 'false'
-  issues-check-args:
-    description: 'Additional CLI arguments passed to issues-check'
+  check-project:
+    description: 'Run "tools project check" (prints the planned Project Status moves, exits 1 when there are any) immediately after installation'
     required: false
-    default: ''
-  repo-sync-args:
-    description: 'Additional CLI arguments passed to repo-sync --check'
-    required: false
-    default: ''
+    default: 'false'
   sync-project:
-    description: 'Execute project-sync after installation. It applies changes unless project-sync-args contains --dry-run. Writing Projects v2 needs a PAT or app token in github-token; the default github.token cannot.'
+    description: 'Run "tools project sync" after installation, which applies the Status moves. Writing Projects v2 needs a PAT or app token in github-token; the default github.token cannot.'
     required: false
     default: 'false'
-  project-sync-args:
-    description: 'Additional CLI arguments passed to project-sync (e.g. "--dry-run")'
+  issues-args:
+    description: 'Additional CLI arguments passed to "tools issues check"'
+    required: false
+    default: ''
+  repo-args:
+    description: 'Additional CLI arguments passed to "tools repo check"'
+    required: false
+    default: ''
+  project-args:
+    description: 'Additional CLI arguments passed to "tools project check" and "tools project sync"'
     required: false
     default: ''
 
 outputs:
   installed-version:
-    description: 'Resolved version of the installed tools'
+    description: 'Resolved version of the installed tools ("source" when built from source)'
     value: ${{ steps.resolve-version.outputs.version }}
   tools-dir:
-    description: 'Directory where tools binaries are installed'
+    description: 'Directory where the tools binary is installed'
     value: ${{ inputs.install-dir }}
 
 runs:
@@ -78,24 +82,26 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_TOKEN: ${{ inputs.github-token }}
         REPO: ${{ inputs.repo }}
+        FROM_SOURCE: ${{ inputs.build-from-source }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
         bash "${ACTION_PATH}/scripts/install-tools.sh" --resolve-version "$TOOLS_VERSION"
 
-    - name: Cache Tools Binaries
-      if: inputs.cache == 'true'
+    - name: Cache Tools Binary
+      if: inputs.cache == 'true' && inputs.build-from-source != 'true'
       id: cache-tools
       uses: actions/cache@v4
       with:
         path: ${{ inputs.install-dir }}
-        key: tools-${{ inputs.repo }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve-version.outputs.version }}-${{ inputs.tools }}
+        key: tools-${{ inputs.repo }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve-version.outputs.version }}
 
-    - name: Install Tools Binaries
+    - name: Install Tools Binary
       id: install
       shell: bash
       env:
         TOOLS_VERSION: ${{ steps.resolve-version.outputs.version }}
-        TOOLS_LIST: ${{ inputs.tools }}
+        FROM_SOURCE: ${{ inputs.build-from-source }}
+        SOURCE_DIR: ${{ github.action_path }}
         DEST_DIR: ${{ inputs.install-dir }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_TOKEN: ${{ inputs.github-token }}
@@ -103,7 +109,7 @@ runs:
         REPO: ${{ inputs.repo }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
-        bash "${ACTION_PATH}/scripts/install-tools.sh" "$TOOLS_VERSION" "$TOOLS_LIST" "$DEST_DIR"
+        bash "${ACTION_PATH}/scripts/install-tools.sh" "$TOOLS_VERSION" "$DEST_DIR"
 
     - name: Add to PATH
       shell: bash
@@ -112,35 +118,46 @@ runs:
       run: |
         echo "$DEST_DIR" >> "$GITHUB_PATH"
 
-    - name: Run issues-check
+    - name: Run tools issues check
       if: inputs.check-issues == 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
-        EXTRA_ARGS: ${{ inputs.issues-check-args }}
+        EXTRA_ARGS: ${{ inputs.issues-args }}
         CONFIG_PATH: ${{ inputs.config-path }}
       run: |
-        issues-check ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
+        tools issues check ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
 
-    - name: Run repo-sync --check
+    - name: Run tools repo check
       if: inputs.check-repo == 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
-        EXTRA_ARGS: ${{ inputs.repo-sync-args }}
+        EXTRA_ARGS: ${{ inputs.repo-args }}
         CONFIG_PATH: ${{ inputs.config-path }}
       run: |
-        repo-sync --check ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
+        tools repo check ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
 
-    - name: Run project-sync
+    - name: Run tools project check
+      if: inputs.check-project == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        EXTRA_ARGS: ${{ inputs.project-args }}
+        CONFIG_PATH: ${{ inputs.config-path }}
+      run: |
+        tools project check ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
+
+    - name: Run tools project sync
       if: inputs.sync-project == 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
-        EXTRA_ARGS: ${{ inputs.project-sync-args }}
+        EXTRA_ARGS: ${{ inputs.project-args }}
         CONFIG_PATH: ${{ inputs.config-path }}
       run: |
-        project-sync ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
+        tools project sync ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS

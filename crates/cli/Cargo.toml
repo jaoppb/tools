@@ -1,5 +1,5 @@
 [package]
-name = "repo-sync"
+name = "tools"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,8 +10,14 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [[bin]]
-name = "repo-sync"
+name = "tools"
 path = "src/main.rs"
+
+[features]
+default = ["issues", "repo", "project"]
+issues = []
+repo = []
+project = []
 
 [dependencies]
 clap.workspace = true

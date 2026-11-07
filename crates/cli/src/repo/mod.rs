@@ -1,47 +1,28 @@
-//! Command-line entry point: `repo-sync [--check | --dry-run] [--settings] [--labels] [--milestones]`.
+//! `tools repo check|sync`: repository settings, labels and milestones against `tools.toml`.
 //!
-//! Exits with 0 when repository configuration is in sync or applied, with 1 when `--check`
-//! finds configuration drift, and with 2 on configuration or runtime errors.
-//! The report goes to standard error because printing macros are forbidden.
+//! `check` exits with 0 when everything is in sync, with 1 on drift and with 2 on configuration
+//! or runtime errors; `sync` reconciles GitHub to `tools.toml`.
 
-use std::io::Write;
-use std::process::ExitCode;
+pub mod cli;
+pub mod consistency;
 
-use repo_sync::cli::{Arguments, ResolvedRepo};
-use repo_sync::consistency;
 use tools_core::adapters::github::{GhRepo, Target};
 use tools_core::application::{RepoSync, RepoSyncError};
 
-/// What to print and how to exit.
-struct Exit {
-    text: String,
-    code: u8,
-}
+use crate::Exit;
+use cli::{Arguments, ResolvedRepo};
 
-fn main() -> ExitCode {
-    match run() {
-        Ok(outcome) => emit(&outcome, 0),
-        Err(exit) => emit(&exit.text, exit.code),
-    }
-}
-
-fn run() -> Result<String, Exit> {
-    let command_line = std::env::args_os().map(|argument| argument.to_string_lossy().into_owned());
-    let arguments = Arguments::parse(command_line).map_err(|usage| Exit {
-        text: usage.to_string(),
-        code: usage.exit_code(),
-    })?;
-    let resolved = arguments.resolve().map_err(|err| Exit {
-        text: err.to_string(),
-        code: 2,
-    })?;
+/// Runs `tools repo check|sync`.
+///
+/// # Errors
+///
+/// Returns an [`Exit`] with code 1 on drift or file problems, and 2 when the run cannot complete.
+pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
+    let resolved = arguments.resolve().map_err(Exit::failed)?;
     if arguments.checks_files(&resolved) {
-        let problems = file_problems(&arguments, &resolved);
+        let problems = file_problems(arguments, &resolved);
         if !problems.is_empty() {
-            return Err(Exit {
-                text: problems.join("\n"),
-                code: 1,
-            });
+            return Err(Exit::new(problems.join("\n"), 1));
         }
     }
     let is_multi = resolved.repos.len() > 1;
@@ -75,19 +56,16 @@ fn run() -> Result<String, Exit> {
                 } else {
                     reason
                 };
-                return Err(Exit { text, code: 2 });
+                return Err(Exit::new(text, 2));
             }
         }
     }
 
     if !drift_outputs.is_empty() {
-        return Err(Exit {
-            text: drift_outputs.join("\n"),
-            code: 1,
-        });
+        return Err(Exit::new(drift_outputs.join("\n"), 1));
     }
 
-    Ok(outputs.join("\n"))
+    Ok(Exit::new(outputs.join("\n"), 0))
 }
 
 /// Problems between `tools.toml` and the local templates and docs, checked from its directory.
@@ -106,10 +84,4 @@ fn file_problems(arguments: &Arguments, resolved: &ResolvedRepo) -> Vec<String> 
         })
         .unwrap_or_default();
     consistency::check(&arguments.root(), &names, resolved.issue_templates.as_ref())
-}
-
-fn emit(text: &str, code: u8) -> ExitCode {
-    let line = format!("{}\n", text.trim_end());
-    let written = std::io::stderr().lock().write_all(line.as_bytes());
-    written.map_or_else(|_| ExitCode::from(2), |()| ExitCode::from(code))
 }

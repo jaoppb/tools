@@ -1,6 +1,6 @@
-//! The command line for `repo-sync`, parsed with clap.
+//! The command line for `tools repo check|sync`, parsed with clap.
 
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
@@ -8,16 +8,16 @@ use tools_core::application::RepoSyncMode;
 use tools_core::config::{Config, ConfigError, IssueTemplatesConfig, find_config, load_or_find};
 use tools_core::domain::repo::{Repo, RepoPlanError, RepoSpec};
 
-const PROGRAM: &str = "repo-sync";
-const CHECK: &str = "check";
-const DRY_RUN: &str = "dry-run";
+use crate::cli::{CONFIG, OWNER, repos_of};
+
+/// The verb that audits drift without writing.
+pub const CHECK: &str = "check";
+/// The verb that reconciles GitHub to `tools.toml`.
+pub const SYNC: &str = "sync";
 const SETTINGS: &str = "settings";
 const LABELS: &str = "labels";
 const MILESTONES: &str = "milestones";
 const PROJECT: &str = "project";
-const CONFIG: &str = "config";
-const OWNER: &str = "owner";
-const REPO: &str = "repo";
 
 /// Internal entity filter from command-line flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,20 +78,7 @@ pub enum RepoResolveError {
     NoRepositoriesForOrg,
 }
 
-/// A command line that was not run: an argument clap rejected, or `--help`.
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct UsageError(#[from] clap::Error);
-
-impl UsageError {
-    /// The exit code clap gives it: 0 for `--help` and 2 for a rejected argument.
-    #[must_use]
-    pub fn exit_code(&self) -> u8 {
-        u8::try_from(self.0.exit_code()).unwrap_or(2)
-    }
-}
-
-/// The parsed command line for `repo-sync`.
+/// The parsed command line of `tools repo check|sync`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
     mode: RepoSyncMode,
@@ -113,17 +100,11 @@ pub struct ResolvedRepo {
 }
 
 impl Arguments {
-    /// Parses the arguments.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`UsageError`] on invalid syntax or `--help`.
-    pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, UsageError> {
-        let matches = command().try_get_matches_from(arguments)?;
-        let mode = if matches.get_flag(CHECK) {
+    /// Reads the arguments of the `check` or `sync` verb; the global flags travel with `matches`.
+    #[must_use]
+    pub fn from_matches(verb: &str, matches: &ArgMatches) -> Self {
+        let mode = if verb == CHECK {
             RepoSyncMode::Check
-        } else if matches.get_flag(DRY_RUN) {
-            RepoSyncMode::Preview
         } else {
             RepoSyncMode::Apply
         };
@@ -144,18 +125,15 @@ impl Arguments {
             None
         };
 
-        let repos: Vec<String> = matches
-            .get_many::<String>(REPO)
-            .map(|values| values.cloned().collect())
-            .unwrap_or_default();
+        let repos = repos_of(matches);
 
-        Ok(Self {
+        Self {
             mode,
             explicit_entities,
             config_path: matches.get_one::<String>(CONFIG).map(PathBuf::from),
             owner: matches.get_one::<String>(OWNER).cloned(),
             repos,
-        })
+        }
     }
 
     /// Execution mode.
@@ -277,66 +255,45 @@ fn select_entity<T>(
     }
 }
 
-fn command() -> Command {
-    Command::new(PROGRAM)
-        .about("Synchronizes repository settings, labels, and milestones with tools.toml")
-        .arg(
-            Arg::new(CHECK)
-                .long(CHECK)
-                .action(ArgAction::SetTrue)
-                .conflicts_with(DRY_RUN)
-                .help("Audit GitHub configuration drift without modifying state"),
-        )
-        .arg(
-            Arg::new(DRY_RUN)
-                .long(DRY_RUN)
-                .action(ArgAction::SetTrue)
-                .conflicts_with(CHECK)
-                .help("Preview reconciliation actions without modifying GitHub state"),
-        )
+/// The `repo` noun with its `check` and `sync` verbs.
+pub fn command() -> Command {
+    Command::new("repo")
+        .about("Audits or synchronizes repository settings, labels, and milestones with tools.toml")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(entity_flags(
+            Command::new(CHECK).about("Audit GitHub configuration drift without modifying state"),
+        ))
+        .subcommand(entity_flags(
+            Command::new(SYNC).about("Reconcile GitHub repository configuration with tools.toml"),
+        ))
+}
+
+fn entity_flags(command: Command) -> Command {
+    command
         .arg(
             Arg::new(SETTINGS)
                 .long(SETTINGS)
                 .action(ArgAction::SetTrue)
-                .help("Synchronize repository settings only"),
+                .help("Limit to repository settings"),
         )
         .arg(
             Arg::new(LABELS)
                 .long(LABELS)
                 .action(ArgAction::SetTrue)
-                .help("Synchronize repository labels only"),
+                .help("Limit to repository labels"),
         )
         .arg(
             Arg::new(MILESTONES)
                 .long(MILESTONES)
                 .action(ArgAction::SetTrue)
-                .help("Synchronize repository milestones only"),
+                .help("Limit to repository milestones"),
         )
         .arg(
             Arg::new(PROJECT)
                 .long(PROJECT)
                 .action(ArgAction::SetTrue)
-                .help("Synchronize repository project title only"),
-        )
-        .arg(
-            Arg::new(CONFIG)
-                .long(CONFIG)
-                .value_name("FILE")
-                .help("Path to tools.toml configuration file"),
-        )
-        .arg(
-            Arg::new(OWNER)
-                .long(OWNER)
-                .visible_alias("org")
-                .value_name("OWNER")
-                .help("GitHub repository owner or organization override"),
-        )
-        .arg(
-            Arg::new(REPO)
-                .long(REPO)
-                .value_name("REPO")
-                .action(ArgAction::Append)
-                .help("GitHub repository name override"),
+                .help("Limit to the repository project title"),
         )
 }
 
@@ -352,25 +309,33 @@ mod tests {
     }
 
     use super::*;
+    use crate::cli::{Invocation, UsageError};
+
+    fn parse(words: impl IntoIterator<Item = String>) -> Result<Arguments, UsageError> {
+        let command_line = ["tools".to_owned(), "repo".to_owned()]
+            .into_iter()
+            .chain(words);
+        match crate::cli::parse(command_line)? {
+            Invocation::Repo(arguments) => Ok(arguments),
+            #[cfg(any(feature = "issues", feature = "project"))]
+            _ => unreachable!("a repo command line parses to the repo group"),
+        }
+    }
     use tools_core::domain::repo::RepoProjectSpec;
 
     #[test]
     fn parses_flags_correctly() {
-        let args = Arguments::parse(["repo-sync".into(), "--check".into()]).unwrap();
+        let args = parse(["check".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Check);
 
-        let args = Arguments::parse(["repo-sync".into(), "--dry-run".into()]).unwrap();
-        assert_eq!(args.mode(), RepoSyncMode::Preview);
-
-        let args = Arguments::parse(["repo-sync".into()]).unwrap();
+        let args = parse(["sync".into()]).unwrap();
         assert_eq!(args.mode(), RepoSyncMode::Apply);
 
-        let args =
-            Arguments::parse(["repo-sync".into(), "--org".into(), "gatuno-manga".into()]).unwrap();
+        let args = parse(["sync".into(), "--org".into(), "gatuno-manga".into()]).unwrap();
         assert_eq!(args.owner(), Some("gatuno-manga"));
 
-        let args_repos = Arguments::parse([
-            "repo-sync".into(),
+        let args_repos = parse([
+            "sync".into(),
             "--repo".into(),
             "web".into(),
             "--repo".into(),
@@ -382,8 +347,8 @@ mod tests {
 
     #[test]
     fn resolve_fails_loud_when_config_is_missing() {
-        let args = Arguments::parse([
-            "repo-sync".into(),
+        let args = parse([
+            "sync".into(),
             "--config".into(),
             "non-existent-tools.toml".into(),
         ])
@@ -404,7 +369,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let args = parse(["sync".into(), "--labels".into()]).unwrap();
         let err = args.resolve_with_config(config.clone()).unwrap_err();
         assert!(matches!(
             err,
@@ -414,8 +379,8 @@ mod tests {
             }
         ));
 
-        let args_all_flags = Arguments::parse([
-            "repo-sync".into(),
+        let args_all_flags = parse([
+            "sync".into(),
             "--settings".into(),
             "--labels".into(),
             "--milestones".into(),
@@ -432,7 +397,7 @@ mod tests {
             }
         ));
 
-        let args_all = Arguments::parse(["repo-sync".into()]).unwrap();
+        let args_all = parse(["sync".into()]).unwrap();
         let err_all = args_all.resolve_with_config(config).unwrap_err();
         assert!(matches!(err_all, RepoResolveError::EmptyConfig));
     }
@@ -460,14 +425,14 @@ mod tests {
         let config: Config = toml::from_str(toml_str).unwrap();
 
         // When --labels is passed, settings should be None
-        let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let args = parse(["sync".into(), "--labels".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
         assert!(spec_of(&resolved, "tools").settings.is_none());
         assert!(spec_of(&resolved, "tools").labels.is_some());
         assert!(spec_of(&resolved, "tools").milestones.is_none());
 
         // When no filter is passed, configured entities should be Some
-        let args_all = Arguments::parse(["repo-sync".into()]).unwrap();
+        let args_all = parse(["sync".into()]).unwrap();
         let resolved_all = args_all.resolve_with_config(config).unwrap();
         assert!(spec_of(&resolved_all, "tools").settings.is_some());
         assert!(spec_of(&resolved_all, "tools").labels.is_some());
@@ -488,7 +453,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = Arguments::parse(["repo-sync".into(), "--project".into()]).unwrap();
+        let args = parse(["sync".into(), "--project".into()]).unwrap();
         let resolved = args.resolve_with_config(config.clone()).unwrap();
         assert!(spec_of(&resolved, "tools").settings.is_none());
         assert!(spec_of(&resolved, "tools").labels.is_none());
@@ -511,7 +476,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = Arguments::parse(["repo-sync".into()]).unwrap();
+        let args = parse(["sync".into()]).unwrap();
         let err = args.resolve_with_config(config).unwrap_err();
         assert!(matches!(
             err,
@@ -535,8 +500,8 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = Arguments::parse([
-            "repo-sync".into(),
+        let args = parse([
+            "sync".into(),
             "--repo".into(),
             "web".into(),
             "--repo".into(),
@@ -575,7 +540,7 @@ mod tests {
             items = [{ name = "area:ssr", color = "2ea44f", description = "SSR" }]
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
-        let args = Arguments::parse(["repo-sync".into(), "--labels".into()]).unwrap();
+        let args = parse(["sync".into(), "--labels".into()]).unwrap();
         let resolved = args.resolve_with_config(config).unwrap();
         assert_eq!(
             spec_of(&resolved, "web")
@@ -602,7 +567,7 @@ mod tests {
             ]
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
-        let args = Arguments::parse(["repo-sync".into()]).unwrap();
+        let args = parse(["sync".into()]).unwrap();
         let err = args.resolve_with_config(config).unwrap_err();
         assert!(err.to_string().contains("duplicate item"));
     }
@@ -621,7 +586,7 @@ mod tests {
             items = [{ name = "area:ci", color = "2ea44f", description = "CI" }]
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
-        let args = Arguments::parse(["repo-sync".into()]).unwrap();
+        let args = parse(["sync".into()]).unwrap();
         let resolved = args.resolve_with_config(config).unwrap();
         assert_eq!(
             spec_of(&resolved, "web")
@@ -646,8 +611,8 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = Arguments::parse([
-            "repo-sync".into(),
+        let args = parse([
+            "sync".into(),
             "--repo".into(),
             "web".into(),
             "--repo".into(),
@@ -682,7 +647,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = Arguments::parse(["repo-sync".into(), "--repo".into(), "web".into()]).unwrap();
+        let args = parse(["sync".into(), "--repo".into(), "web".into()]).unwrap();
         let resolved = args.resolve_with_config(config).unwrap();
         let coords: Vec<_> = resolved
             .target
@@ -705,8 +670,8 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = Arguments::parse([
-            "repo-sync".into(),
+        let args = parse([
+            "sync".into(),
             "--org".into(),
             "gatuno-manga".into(),
             "--repo".into(),
@@ -746,8 +711,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args =
-            Arguments::parse(["repo-sync".into(), "--org".into(), "gatuno-manga".into()]).unwrap();
+        let args = parse(["sync".into(), "--org".into(), "gatuno-manga".into()]).unwrap();
         let resolved = args.resolve_with_config(config).unwrap();
         let coords: Vec<_> = resolved
             .target
@@ -776,8 +740,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args =
-            Arguments::parse(["repo-sync".into(), "--org".into(), "gatuno-manga".into()]).unwrap();
+        let args = parse(["sync".into(), "--org".into(), "gatuno-manga".into()]).unwrap();
         let err = args.resolve_with_config(config).unwrap_err();
         assert!(matches!(err, RepoResolveError::NoRepositoriesForOrg));
         assert_eq!(
@@ -814,7 +777,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
 
-        let args = Arguments::parse(["repo-sync".into()]).unwrap();
+        let args = parse(["sync".into()]).unwrap();
         let resolved = args.resolve_with_config(config).unwrap();
         let coords: Vec<_> = resolved
             .target

@@ -11,20 +11,18 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
-        mkPackage = pname: pkgs.rustPlatform.buildRustPackage {
-          inherit pname;
+        tools = pkgs.rustPlatform.buildRustPackage {
+          pname = "tools";
           version = cargoToml.workspace.package.version;
           src = ./.;
           cargoLock = {
             lockFile = ./Cargo.lock;
           };
-          buildAndTestSubdir = "crates/${pname}";
+          buildAndTestSubdir = "crates/cli";
         };
       in rec {
-        packages.project-sync = mkPackage "project-sync";
-        packages.issues-check = mkPackage "issues-check";
-        packages.repo-sync = mkPackage "repo-sync";
-        packages.default = packages.project-sync;
+        packages.tools = tools;
+        packages.default = tools;
 
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [

@@ -39,27 +39,27 @@ severity = "error"
 [[restrict-use]]
 name = "core-is-foundational"
 files = ["crates/core/**"]
-deny = ["project_sync::**", "issues_check::**", "repo_sync::**", "clap::**"]
-message = "crates/core must not depend on CLI crates or clap"
+deny = ["tools::**", "clap::**"]
+message = "crates/core must not depend on the CLI crate or clap"
 severity = "error"
 
 [[restrict-use]]
-name = "project-sync-isolation"
-files = ["crates/project-sync/**"]
-deny = ["issues_check::**", "repo_sync::**"]
-message = "project-sync must not depend on other CLI crates"
+name = "project-isolation"
+files = ["crates/cli/src/project/**", "crates/cli/tests/project.rs"]
+deny = ["crate::issues::**", "crate::repo::**", "tools::issues::**", "tools::repo::**"]
+message = "the project group must not depend on the other groups"
 severity = "error"
 
 [[restrict-use]]
-name = "issues-check-isolation"
-files = ["crates/issues-check/**"]
-deny = ["project_sync::**", "repo_sync::**"]
-message = "issues-check must not depend on other CLI crates"
+name = "issues-isolation"
+files = ["crates/cli/src/issues/**", "crates/cli/tests/issues.rs"]
+deny = ["crate::project::**", "crate::repo::**", "tools::project::**", "tools::repo::**"]
+message = "the issues group must not depend on the other groups"
 severity = "error"
 
 [[restrict-use]]
-name = "repo-sync-isolation"
-files = ["crates/repo-sync/**"]
-deny = ["project_sync::**", "issues_check::**"]
-message = "repo-sync must not depend on other CLI crates"
+name = "repo-isolation"
+files = ["crates/cli/src/repo/**", "crates/cli/tests/repo.rs", "crates/cli/tests/consistency.rs"]
+deny = ["crate::project::**", "crate::issues::**", "tools::project::**", "tools::issues::**"]
+message = "the repo group must not depend on the other groups"
 severity = "error"

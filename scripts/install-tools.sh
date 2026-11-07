@@ -3,6 +3,10 @@ set -euo pipefail
 
 # Default configuration
 REPO="${REPO:-jaoppb/tools}"
+BIN="tools"
+# FROM_SOURCE=true builds the checked-out repository (SOURCE_DIR) instead of downloading a release.
+FROM_SOURCE="${FROM_SOURCE:-false}"
+SOURCE_DIR="${SOURCE_DIR:-${ACTION_PATH:-.}}"
 
 # GitHub API / Download Authorization Headers
 AUTH_HEADER=()
@@ -15,6 +19,10 @@ fi
 # Resolve version tag from GitHub Releases
 resolve_version() {
     local req="${1:-latest}"
+    if [ "$FROM_SOURCE" = "true" ]; then
+        echo "source"
+        return
+    fi
     if [ "$req" = "latest" ] || [ -z "$req" ]; then
         local latest_tag=""
         if command -v gh >/dev/null 2>&1; then
@@ -50,8 +58,7 @@ fi
 
 # Precedence: positional arguments override environment variables
 REQUESTED_VERSION="${1:-${TOOLS_VERSION:-latest}}"
-TOOLS_LIST="${2:-${TOOLS_LIST:-all}}"
-DEST_DIR="${3:-${DEST_DIR:-}}"
+DEST_DIR="${2:-${DEST_DIR:-}}"
 CACHE_HIT="${CACHE_HIT:-false}"
 
 if [ -z "$DEST_DIR" ]; then
@@ -63,13 +70,6 @@ if [ -z "$DEST_DIR" ]; then
 fi
 
 mkdir -p "$DEST_DIR"
-
-# Resolve list of tools
-if [ "$TOOLS_LIST" = "all" ] || [ -z "$TOOLS_LIST" ]; then
-    TOOLS=("issues-check" "repo-sync" "project-sync")
-else
-    IFS=',' read -r -a TOOLS <<< "$TOOLS_LIST"
-fi
 
 # Detect Operating System and Architecture
 OS="$(uname -s)"
@@ -118,26 +118,14 @@ echo "  Repository: $REPO"
 echo "  Resolved Version: $TAG"
 echo "  Target: $TARGET"
 echo "  Destination: $DEST_DIR"
-echo "  Tools: ${TOOLS[*]}"
 
-# If cache-hit is true and binaries exist, verify and skip download
-if [ "$CACHE_HIT" = "true" ]; then
-    all_cached=true
-    for tool in "${TOOLS[@]}"; do
-        clean_tool="$(echo "$tool" | xargs)"
-        [ -z "$clean_tool" ] && continue
-        if [ ! -x "${DEST_DIR}/${clean_tool}${BIN_EXT}" ]; then
-            all_cached=false
-            break
-        fi
-    done
-    if [ "$all_cached" = "true" ]; then
-        echo "All requested tools found in cache hit. Skipping download."
-        if [ -n "${GITHUB_OUTPUT:-}" ]; then
-            echo "version=${TAG}" >> "$GITHUB_OUTPUT"
-        fi
-        exit 0
+# If cache-hit is true and the binary exists, skip the download
+if [ "$CACHE_HIT" = "true" ] && [ -x "${DEST_DIR}/${BIN}${BIN_EXT}" ]; then
+    echo "${BIN} found in cache hit. Skipping download."
+    if [ -n "${GITHUB_OUTPUT:-}" ]; then
+        echo "version=${TAG}" >> "$GITHUB_OUTPUT"
     fi
+    exit 0
 fi
 
 TMP_DIR="$(mktemp -d)"
@@ -146,67 +134,78 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Download and install each tool
-for tool in "${TOOLS[@]}"; do
-    clean_tool="$(echo "$tool" | xargs)"
-    [ -z "$clean_tool" ] && continue
+install_from_source() {
+    echo "Building ${BIN} from ${SOURCE_DIR}..."
+    cargo install --path "${SOURCE_DIR}/crates/cli" --root "$TMP_DIR/cargo-root" --locked
+    cp "$TMP_DIR/cargo-root/bin/${BIN}${BIN_EXT}" "${DEST_DIR}/"
+    chmod +x "${DEST_DIR}/${BIN}${BIN_EXT}"
+    echo "Successfully installed ${BIN} to ${DEST_DIR}/${BIN}${BIN_EXT}"
+}
 
-    ASSET="${clean_tool}-${TAG}-${TARGET}.${EXT}"
-    CHECKSUM_ASSET="${clean_tool}-${TAG}-${TARGET}.sha256"
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
-    CHECKSUM_URL="https://github.com/${REPO}/releases/download/${TAG}/${CHECKSUM_ASSET}"
+if [ "$FROM_SOURCE" = "true" ]; then
+    install_from_source
+    if [ -n "${GITHUB_OUTPUT:-}" ]; then
+        echo "version=${TAG}" >> "$GITHUB_OUTPUT"
+    fi
+    echo "Tools installation complete."
+    exit 0
+fi
 
-    echo "Fetching ${clean_tool} (${ASSET})..."
+ASSET="${BIN}-${TAG}-${TARGET}.${EXT}"
+CHECKSUM_ASSET="${BIN}-${TAG}-${TARGET}.sha256"
+DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
+CHECKSUM_URL="https://github.com/${REPO}/releases/download/${TAG}/${CHECKSUM_ASSET}"
 
-    curl_err_file="${TMP_DIR}/curl_error.log"
-    download_success=false
-    if curl -fsSL ${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"} -o "${TMP_DIR}/${ASSET}" "$DOWNLOAD_URL" 2>"$curl_err_file" && \
-       curl -fsSL ${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"} -o "${TMP_DIR}/${CHECKSUM_ASSET}" "$CHECKSUM_URL" 2>>"$curl_err_file"; then
-        download_success=true
+echo "Fetching ${BIN} (${ASSET})..."
+
+curl_err_file="${TMP_DIR}/curl_error.log"
+download_success=false
+if curl -fsSL ${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"} -o "${TMP_DIR}/${ASSET}" "$DOWNLOAD_URL" 2>"$curl_err_file" && \
+   curl -fsSL ${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"} -o "${TMP_DIR}/${CHECKSUM_ASSET}" "$CHECKSUM_URL" 2>>"$curl_err_file"; then
+    download_success=true
+fi
+
+if [ "$download_success" = "true" ]; then
+    echo "Verifying SHA256 checksum for ${ASSET}..."
+    (
+        cd "$TMP_DIR"
+        if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum -c "${CHECKSUM_ASSET}"
+        elif command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 -c "${CHECKSUM_ASSET}"
+        else
+            echo "Warning: sha256sum/shasum not found. Skipping checksum verification." >&2
+        fi
+    )
+
+    echo "Extracting ${ASSET} to ${DEST_DIR}..."
+    if [ "$EXT" = "tar.gz" ]; then
+        tar -xzf "${TMP_DIR}/${ASSET}" -C "$DEST_DIR"
+    elif [ "$EXT" = "zip" ]; then
+        unzip -q -o "${TMP_DIR}/${ASSET}" -d "$DEST_DIR"
+    fi
+    chmod +x "${DEST_DIR}/${BIN}${BIN_EXT}"
+    echo "Successfully installed ${BIN} to ${DEST_DIR}/${BIN}${BIN_EXT}"
+else
+    echo "Release asset download failed for ${BIN} (${ASSET}). Details:" >&2
+    cat "$curl_err_file" >&2 || true
+    echo "Attempting cargo fallback..." >&2
+
+    fallback_success=false
+    if command -v cargo >/dev/null 2>&1; then
+        echo "Attempting cargo install --git fallback..."
+        if cargo install --locked --git "https://github.com/${REPO}" --tag "$TAG" "$BIN" --root "$TMP_DIR/cargo-root"; then
+            cp "$TMP_DIR/cargo-root/bin/${BIN}${BIN_EXT}" "${DEST_DIR}/"
+            chmod +x "${DEST_DIR}/${BIN}${BIN_EXT}"
+            fallback_success=true
+        fi
     fi
 
-    if [ "$download_success" = "true" ]; then
-        echo "Verifying SHA256 checksum for ${ASSET}..."
-        (
-            cd "$TMP_DIR"
-            if command -v sha256sum >/dev/null 2>&1; then
-                sha256sum -c "${CHECKSUM_ASSET}"
-            elif command -v shasum >/dev/null 2>&1; then
-                shasum -a 256 -c "${CHECKSUM_ASSET}"
-            else
-                echo "Warning: sha256sum/shasum not found. Skipping checksum verification." >&2
-            fi
-        )
-
-        echo "Extracting ${ASSET} to ${DEST_DIR}..."
-        if [ "$EXT" = "tar.gz" ]; then
-            tar -xzf "${TMP_DIR}/${ASSET}" -C "$DEST_DIR"
-        elif [ "$EXT" = "zip" ]; then
-            unzip -q -o "${TMP_DIR}/${ASSET}" -d "$DEST_DIR"
-        fi
-        chmod +x "${DEST_DIR}/${clean_tool}${BIN_EXT}"
-        echo "Successfully installed ${clean_tool} to ${DEST_DIR}/${clean_tool}${BIN_EXT}"
-    else
-        echo "Release asset download failed for ${clean_tool} (${ASSET}). Details:" >&2
-        cat "$curl_err_file" >&2 || true
-        echo "Attempting cargo fallback..." >&2
-
-        fallback_success=false
-        if command -v cargo >/dev/null 2>&1; then
-            echo "Attempting cargo install --git fallback..."
-            if cargo install --git "https://github.com/${REPO}" --tag "$TAG" "$clean_tool" --root "$TMP_DIR/cargo-root"; then
-                cp "$TMP_DIR/cargo-root/bin/${clean_tool}${BIN_EXT}" "${DEST_DIR}/"
-                chmod +x "${DEST_DIR}/${clean_tool}${BIN_EXT}"
-                fallback_success=true
-            fi
-        fi
-
-        if [ "$fallback_success" = "false" ]; then
-            echo "Error: Failed to install '${clean_tool}'. Precompiled release asset '${ASSET}' was not accessible and cargo fallback was unavailable or failed." >&2
-            exit 1
-        fi
+    if [ "$fallback_success" = "false" ]; then
+        echo "Error: Failed to install '${BIN}'. Precompiled release asset '${ASSET}' was not accessible and cargo fallback was unavailable or failed." >&2
+        exit 1
     fi
-done
+fi
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "version=${TAG}" >> "$GITHUB_OUTPUT"
