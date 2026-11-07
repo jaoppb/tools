@@ -91,8 +91,30 @@ jobs:
         uses: ./
         with:
           version: 'v0.1.0'
+          repo: 'jaoppb/tools'
+          config-path: 'tools.toml'
           check-issues: 'true'
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Test project-sync input (no project configured here)
+        id: project-sync-dry-run
+        continue-on-error: true
+        uses: ./
+        with:
+          version: 'v0.1.0'
+          config-path: 'tools.toml'
+          sync-project: 'true'
+          project-sync-args: '--dry-run'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assert project-sync step ran and failed without a project
+        env:
+          OUTCOME: ${{ steps.project-sync-dry-run.outcome }}
+        run: |
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::expected project-sync to fail without [github.project], got '$OUTCOME'"
+            exit 1
+          fi
 
       - name: Verify installed binaries on PATH
         run: |

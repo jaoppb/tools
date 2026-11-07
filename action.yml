@@ -18,6 +18,14 @@ inputs:
     description: 'Directory where binaries are installed'
     required: false
     default: '${{ runner.temp }}/tools-bin'
+  repo:
+    description: 'GitHub repository (owner/name) that publishes the tools release binaries'
+    required: false
+    default: 'jaoppb/tools'
+  config-path:
+    description: 'Path to tools.toml passed as --config to every tool run by this action (default: upward search from the working directory)'
+    required: false
+    default: ''
   github-token:
     description: 'GitHub token for release downloads and running audits'
     required: false
@@ -42,6 +50,14 @@ inputs:
     description: 'Additional CLI arguments passed to repo-sync --check'
     required: false
     default: ''
+  sync-project:
+    description: 'Execute project-sync after installation. It applies changes unless project-sync-args contains --dry-run. Writing Projects v2 needs a PAT or app token in github-token; the default github.token cannot.'
+    required: false
+    default: 'false'
+  project-sync-args:
+    description: 'Additional CLI arguments passed to project-sync (e.g. "--dry-run")'
+    required: false
+    default: ''
 
 outputs:
   installed-version:
@@ -61,6 +77,7 @@ runs:
         TOOLS_VERSION: ${{ inputs.version }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ inputs.repo }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
         bash "${ACTION_PATH}/scripts/install-tools.sh" --resolve-version "$TOOLS_VERSION"
@@ -71,7 +88,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ inputs.install-dir }}
-        key: tools-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve-version.outputs.version }}-${{ inputs.tools }}
+        key: tools-${{ inputs.repo }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve-version.outputs.version }}-${{ inputs.tools }}
 
     - name: Install Tools Binaries
       id: install
@@ -83,6 +100,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_TOKEN: ${{ inputs.github-token }}
         CACHE_HIT: ${{ steps.cache-tools.outputs.cache-hit }}
+        REPO: ${{ inputs.repo }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
         bash "${ACTION_PATH}/scripts/install-tools.sh" "$TOOLS_VERSION" "$TOOLS_LIST" "$DEST_DIR"
@@ -101,8 +119,9 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         EXTRA_ARGS: ${{ inputs.issues-check-args }}
+        CONFIG_PATH: ${{ inputs.config-path }}
       run: |
-        issues-check $EXTRA_ARGS
+        issues-check ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
 
     - name: Run repo-sync --check
       if: inputs.check-repo == 'true'
@@ -111,5 +130,18 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         EXTRA_ARGS: ${{ inputs.repo-sync-args }}
+        CONFIG_PATH: ${{ inputs.config-path }}
       run: |
-        repo-sync --check $EXTRA_ARGS
+        repo-sync --check ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
+
+    - name: Run project-sync
+      id: project-sync
+      if: inputs.sync-project == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        EXTRA_ARGS: ${{ inputs.project-sync-args }}
+        CONFIG_PATH: ${{ inputs.config-path }}
+      run: |
+        project-sync ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
