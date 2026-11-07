@@ -35,6 +35,13 @@ impl Blockers {
         Self(blockers)
     }
 
+    /// The blockers: each issue number with whether it is closed.
+    pub fn iter(&self) -> impl Iterator<Item = (&IssueNumber, bool)> {
+        self.0
+            .iter()
+            .map(|blocker| (&blocker.number, blocker.lifecycle.is_closed()))
+    }
+
     /// Whether every blocker is closed. No blockers counts as closed.
     #[must_use]
     pub fn all_closed(&self) -> bool {
@@ -87,6 +94,18 @@ impl Links {
     #[must_use]
     pub fn unblocked(&self) -> bool {
         self.blockers.all_closed()
+    }
+
+    /// The blockers.
+    #[must_use]
+    pub const fn blockers(&self) -> &Blockers {
+        &self.blockers
+    }
+
+    /// The number of the parent issue, whatever it is.
+    #[must_use]
+    pub fn parent_number(&self) -> Option<&IssueNumber> {
+        self.parent.as_ref().map(|parent| &parent.number)
     }
 
     /// The story this issue is a task of, if its parent is a story.

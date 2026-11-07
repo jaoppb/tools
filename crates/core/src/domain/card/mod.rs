@@ -104,6 +104,18 @@ impl Card {
         self.facts.missing()
     }
 
+    /// The facts triage set on this card.
+    #[must_use]
+    pub const fn facts(&self) -> &Facts {
+        &self.facts
+    }
+
+    /// The blockers and the parent of this card.
+    #[must_use]
+    pub const fn links(&self) -> &Links {
+        &self.links
+    }
+
     /// The story this card is a task of, if its parent is a story.
     #[must_use]
     pub fn story(&self) -> Option<&IssueNumber> {

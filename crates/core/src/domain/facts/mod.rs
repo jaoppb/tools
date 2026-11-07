@@ -263,6 +263,30 @@ impl Facts {
         self.labels.is_epic()
     }
 
+    /// The labels.
+    #[must_use]
+    pub const fn labels(&self) -> &Labels {
+        &self.labels
+    }
+
+    /// The milestone title, if set.
+    #[must_use]
+    pub fn milestone_title(&self) -> Option<String> {
+        self.milestone.as_ref().map(ToString::to_string)
+    }
+
+    /// The Priority option name, if set.
+    #[must_use]
+    pub fn priority_name(&self) -> Option<String> {
+        self.priority.as_ref().map(ToString::to_string)
+    }
+
+    /// The Effort in points, if set.
+    #[must_use]
+    pub fn effort_points(&self) -> Option<u8> {
+        self.effort.map(|effort| effort.0)
+    }
+
     /// What triage still has to set under the given rule configuration.
     #[must_use]
     pub fn missing_for(&self, rules: &RulesConfig) -> Vec<Missing> {
