@@ -19,16 +19,19 @@ pub fn target(card: &Card, snapshot: &Snapshot) -> Status {
 /// The Status `card` should have, given everything in `snapshot` under `rules`.
 #[must_use]
 pub fn target_with(card: &Card, snapshot: &Snapshot, rules: &RulesConfig) -> Status {
+    if waits(card) {
+        if on_parent_cycle(card, snapshot) {
+            return card.status();
+        }
+        return when_waiting(card, snapshot, rules);
+    }
     if card.is_epic() {
         return card.status();
     }
     if card.is_closed() {
         return Status::Done;
     }
-    if card.status().started() {
-        return when_started(card, snapshot);
-    }
-    when_waiting(card, snapshot, rules)
+    when_started(card, snapshot)
 }
 
 /// An In progress or In review card follows its pull request, and is never
@@ -67,4 +70,35 @@ fn story_has_started(card: &Card, snapshot: &Snapshot, rules: &RulesConfig) -> b
         return true;
     };
     story.is_closed() || target_with(story, snapshot, rules).started()
+}
+
+/// Whether `card` waits on a story chain that loops, on a cycle or into one.
+///
+/// Only a waiting card looks at its story, and the story's own target looks at
+/// its story only while it waits too: the walk stops at an epic, a closed or a
+/// started card, exactly where the recursion of [`target_with`] stops. A card
+/// that waits on a loop has no target; the sync leaves it unchanged and
+/// reports it.
+#[must_use]
+pub(crate) fn on_parent_cycle(card: &Card, snapshot: &Snapshot) -> bool {
+    // The card itself is seeded, so a story that is its own parent is caught.
+    let mut seen = vec![card.number()];
+    let mut current = card;
+    while waits(current) {
+        let Some(story) = current.story().and_then(|number| snapshot.card(number)) else {
+            return false;
+        };
+        if seen.contains(&story.number()) {
+            return true;
+        }
+        seen.push(story.number());
+        current = story;
+    }
+    false
+}
+
+/// Whether the target of `card` is decided by the gate, and so by its story.
+/// [`target_with`] branches on it first; every other card settles alone.
+fn waits(card: &Card) -> bool {
+    !card.is_epic() && !card.is_closed() && !card.status().started()
 }

@@ -23,7 +23,9 @@ pub use crate::domain::issue::{
     Status, StatusMapping, StatusMappingError, canonical_type_label, is_canonical_type,
 };
 pub use crate::domain::links::{Blocker, Blockers, Links, Parent};
-pub use crate::domain::plan::{Gap, Gaps, Move, Moves, Plan, Reason, Transition};
+pub use crate::domain::plan::{
+    Cause, Frozen, Frozens, Gap, Gaps, Move, Moves, Plan, Reason, Transition,
+};
 pub use crate::domain::repo::{
     DeleteReason, LabelDiff, MilestoneDiff, MilestoneState, Repo, RepoLabel, RepoLabelsSpec,
     RepoMilestone, RepoMilestoneSpec, RepoMilestonesSpec, RepoPlan, RepoPlanError, RepoSettings,
