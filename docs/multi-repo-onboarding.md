@@ -9,8 +9,8 @@ This guide walks through standardizing and onboarding an entire GitHub organizat
 Adopting `tools` across a multi-repository organization establishes consistent quality gates, PR merge standards, issue taxonomy, and milestone tracking across all repositories.
 
 The onboarding workflow consists of two core phases:
-1. **Declarative Repository Provisioning (`repo-sync`)**: Reconciles GitHub repository merge settings, labels (`type:*`, `area:*`), and milestones to match `tools.toml`.
-2. **Issue Taxonomy Migration (`issues-check --migrate`)**: Audits existing unstandardized issues and migrates legacy labels (e.g., `bug`, `enhancement`, `documentation`) into canonical `type:*` and `area:*` labels in bulk.
+1. **Declarative Repository Provisioning (`tools repo`)**: Reconciles GitHub repository merge settings, labels (`type:*`, `area:*`), and milestones to match `tools.toml`.
+2. **Issue Taxonomy Migration (`tools issues migrate`)**: Audits existing unstandardized issues and migrates legacy labels (e.g., `bug`, `enhancement`, `documentation`) into canonical `type:*` and `area:*` labels in bulk.
 
 ---
 
@@ -90,7 +90,7 @@ release = true
 
 ### Per-Repository Overrides
 
-Subsystem-specific labels and milestones go in `[github.overrides.<repo>.labels]` and `[github.overrides.<repo>.milestones]`. `repo-sync` resolves the shared declarations plus the overlay of each target repository; repositories without an overlay get the shared declarations only, and overlays of repositories that are not targeted are ignored.
+Subsystem-specific labels and milestones go in `[github.overrides.<repo>.labels]` and `[github.overrides.<repo>.milestones]`. `tools repo` resolves the shared declarations plus the overlay of each target repository; repositories without an overlay get the shared declarations only, and overlays of repositories that are not targeted are ignored.
 
 ```toml
 [github.overrides.web.labels]
@@ -112,7 +112,7 @@ Merge rules: `items` override by key (`name` for labels, `title` for milestones)
 
 ---
 
-## 3. Provisioning Repositories (`repo-sync`)
+## 3. Provisioning Repositories (`tools repo`)
 
 ### Step 3.1: Check Configuration Drift
 Run an audit across all configured repositories without modifying remote state:
@@ -120,15 +120,11 @@ Run an audit across all configured repositories without modifying remote state:
 ```bash
 just repo-check
 # or with an organization override:
-cargo run -p repo-sync -- --check --org gatuno-manga
+cargo run -q -p tools -- repo check --org gatuno-manga
 ```
 
 ### Step 3.2: Preview Reconciliation
-Preview planned additions, updates, or removals:
-
-```bash
-cargo run -p repo-sync -- --dry-run
-```
+`repo check` is the preview: it reports every addition, update or removal that `repo sync` would make (exit code 1 when there is any) and writes nothing. Run it as in Step 3.1.
 
 ### Step 3.3: Apply Provisioning Across All Repositories
 Reconcile settings, labels, and milestones across all member repositories:
@@ -146,17 +142,17 @@ You can also scope synchronization to specific components if needed:
 
 ---
 
-## 4. Migrating Legacy Issues (`issues-check --migrate`)
+## 4. Migrating Legacy Issues (`tools issues migrate`)
 
 Once labels and settings are provisioned, legacy issues must be migrated to comply with the rule that every issue has exactly one `type:*` label and at least one `area:*` label.
 
-### Step 4.1: Dry-Run Migration Preview
-Inspect existing issues across all target repositories and preview planned label conversions:
+### Step 4.1: Preview the Migration
+`issues check` audits the issues and ends with the label conversions `issues migrate` would write; it never writes:
 
 ```bash
-just issues-migrate
+just issues-check
 # or via cargo:
-cargo run -p issues-check -- --migrate
+cargo run -q -p tools -- issues check
 ```
 
 Example preview output:
@@ -165,29 +161,29 @@ Issue migration plan (3 issues to update):
   web#12: -bug +type:fix +area:web
   api#4: -enhancement +type:feat +area:api
   infra#8: -documentation +type:docs +area:infra
-Run with --apply to execute these changes.
+Run `tools issues migrate` to execute these changes.
 ```
 
 ### Step 4.2: Handling Issues Lacking Area or Type Labels
 If issues have legacy type labels but no area indicator, provide a fallback default area:
 
 ```bash
-cargo run -p issues-check -- --migrate --default-area web --repo web
+cargo run -q -p tools -- issues migrate --default-area web --repo web
 ```
 
 Similarly, if legacy issues have zero labels or are missing a `type:*` label, provide a fallback default type (e.g. `chore` or `type:chore`):
 
 ```bash
-cargo run -p issues-check -- --migrate --default-type chore --default-area web --repo web
+cargo run -q -p tools -- issues migrate --default-type chore --default-area web --repo web
 ```
 
 ### Step 4.3: Apply Migrations
-Execute the migrations directly against the GitHub REST API:
+`issues migrate` always writes. Execute the migrations directly against the GitHub REST API:
 
 ```bash
-just issues-migrate --apply
+just issues-migrate
 # or via cargo:
-cargo run -p issues-check -- --migrate --apply
+cargo run -q -p tools -- issues migrate
 ```
 
 Once complete, run the audit to verify all issues satisfy workflow rules:
@@ -262,10 +258,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify Repository Settings Drift
-        run: repo-sync --check
+        run: tools repo check
 
       - name: Verify Issue Workflow Rules
-        run: issues-check
+        run: tools issues check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -275,28 +271,32 @@ jobs:
 | Input | Description | Default |
 |-------|-------------|---------|
 | `version` | Release version tag to install (e.g. `v0.2.0` or `latest`) | `latest` |
-| `tools` | Comma-separated list of tools (`issues-check`, `repo-sync`, `project-sync`, or `all`) | `all` |
-| `install-dir` | Target directory where binaries are placed | `${{ runner.temp }}/tools-bin` |
+| `install-dir` | Target directory where the binary is placed | `${{ runner.temp }}/tools-bin` |
 | `github-token` | GitHub token for API requests and issue auditing | `${{ github.token }}` |
-| `cache` | Enable cross-run caching of downloaded binaries | `true` |
-| `check-issues` | Run `issues-check` immediately after install | `false` |
-| `check-repo` | Run `repo-sync --check` immediately after install | `false` |
-| `issues-check-args`| Extra CLI flags passed to `issues-check` | `""` |
-| `repo-sync-args` | Extra CLI flags passed to `repo-sync --check` | `""` |
+| `cache` | Enable cross-run caching of the downloaded binary | `true` |
+| `build-from-source` | Build `tools` with cargo from the action's checkout instead of downloading a release | `false` |
+| `config-path` | `tools.toml` passed as `--config` to every command the action runs | `""` |
+| `check-issues` | Run `tools issues check` immediately after install | `false` |
+| `check-repo` | Run `tools repo check` immediately after install | `false` |
+| `check-project` | Run `tools project check` immediately after install | `false` |
+| `sync-project` | Run `tools project sync` (writes) immediately after install | `false` |
+| `issues-args` | Extra CLI flags passed to `tools issues check` | `""` |
+| `repo-args` | Extra CLI flags passed to `tools repo check` | `""` |
+| `project-args` | Extra CLI flags passed to `tools project check` and `tools project sync` | `""` |
 
 ### Nix Flake Execution
-For environments using Nix, binaries can be executed directly without local installation:
+For environments using Nix, the binary can be executed directly without local installation:
 
 ```bash
 # Audit issue workflow rules
-nix run github:jaoppb/tools#issues-check
+nix run github:jaoppb/tools -- issues check
 
 # Audit repository drift
-nix run github:jaoppb/tools#repo-sync -- --check
+nix run github:jaoppb/tools -- repo check
 ```
 
 ### Standalone Script & Cargo Fallback
-You can also install binaries directly via the installation script:
+You can also install the binary directly via the installation script:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/jaoppb/tools/main/scripts/install-tools.sh | bash
@@ -305,5 +305,8 @@ curl -sSL https://raw.githubusercontent.com/jaoppb/tools/main/scripts/install-to
 Or build from source using Cargo (requires a Rust toolchain):
 
 ```bash
-cargo install --git https://github.com/jaoppb/tools issues-check repo-sync project-sync
+cargo install --git https://github.com/jaoppb/tools tools
+
+# A partial build carries only the groups you name
+cargo install --git https://github.com/jaoppb/tools tools --no-default-features --features repo
 ```

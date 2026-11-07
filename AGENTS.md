@@ -1,12 +1,12 @@
 # Tools agent rules
 
-This repository is a monorepo for developer tools, repository management utilities, and GitHub workflow automation (`project-sync`, `issues-check`). This file is the canonical rulebook for humans and agents.
+This repository is a monorepo for developer tools, repository management utilities, and GitHub workflow automation (the `tools` CLI: `tools issues`, `tools repo`, `tools project`). This file is the canonical rulebook for humans and agents.
 
 ## 1. Issue workflow
 
 - **Hierarchy.** Standalone issues under release milestones. Native GitHub sub-issues are supported when breaking down a task into constituent steps.
 - **Milestones.** Every open issue must belong to a release milestone declared in `tools.toml` `[github.milestones]`, the single source of truth (`just repo-check` compares it with GitHub). Docs and templates do not list milestones.
-- **Labels.** `tools.toml` `[github.labels]` is the single source of truth, and `[github.issue_templates]` maps each template file to the label it applies and its title prefix. The hand-written issue templates and the list below must agree with them; `just repo-check` (an offline step of `repo-sync --check`, also run by CI) fails on drift: a template whose `labels:` or `title:` differs from its entry, an undeclared label, a template with no entry (while `require_label = true`, the default), or a list out of step. No label vocabulary lives in Rust. Every issue carries exactly one `type:` label and at least one `area:` label.
+- **Labels.** `tools.toml` `[github.labels]` is the single source of truth, and `[github.issue_templates]` maps each template file to the label it applies and its title prefix. The hand-written issue templates and the list below must agree with them; `just repo-check` (an offline step of `tools repo check`, also run by CI) fails on drift: a template whose `labels:` or `title:` differs from its entry, an undeclared label, a template with no entry (while `require_label = true`, the default), or a list out of step. No label vocabulary lives in Rust. Every issue carries exactly one `type:` label and at least one `area:` label.
 <!-- labels:start -->
   - `type:feat`
   - `type:fix`
@@ -38,6 +38,7 @@ This repository is a monorepo for developer tools, repository management utiliti
 | Form structure | `.github/ISSUE_TEMPLATE/*.yml` with `blank_issues_enabled: false` | Enforced |
 | Repository configuration (settings, labels, milestones) | `just repo-check` & PR review | Enforced |
 | Workspace compilation, lints, tests | `just check` (also via Lefthook `pre-push`) | Enforced |
+| Partial builds: each of the `issues`, `repo`, `project` features compiles alone and with none | `just check-features` (part of `just check` and CI) | Enforced |
 | Pre-commit formatting & lint validation | Lefthook `pre-commit` (`just setup`) | Enforced |
 
 ## 2. Developer setup & Git hooks
@@ -54,7 +55,7 @@ This repository is a monorepo for developer tools, repository management utiliti
 - For onboarding organizations and standardizing repositories (`web`, `api`, `app`, etc.), see the [Multi-Repository Organization Onboarding Guide](docs/multi-repo-onboarding.md).
 - **Recipes:**
   - `just repo-bootstrap` / `just org-sync [org=...]`: Reconciles repository merge settings, labels, and milestones.
-  - `just issues-migrate [--apply] [--default-area=...] [--default-type=...]`: Audits and migrates legacy issue labels in bulk.
+  - `just issues-migrate [--default-area=...] [--default-type=...]`: Rewrites legacy issue labels in bulk (writes; `just issues-check` previews the pending migrations).
 
 ## 4. Repository memory & continuity
 

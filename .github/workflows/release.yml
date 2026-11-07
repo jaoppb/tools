@@ -67,28 +67,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Build & Upload project-sync
+      - name: Build & Upload tools
         uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: project-sync
-          target: ${{ matrix.target }}
-          archive: $bin-$tag-$target
-          checksum: sha256
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build & Upload issues-check
-        uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          bin: issues-check
-          target: ${{ matrix.target }}
-          archive: $bin-$tag-$target
-          checksum: sha256
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build & Upload repo-sync
-        uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          bin: repo-sync
+          bin: tools
           target: ${{ matrix.target }}
           archive: $bin-$tag-$target
           checksum: sha256

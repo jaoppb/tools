@@ -14,9 +14,7 @@ A monorepo for developer tools, declarative repository management utilities, and
   - [Architecture Diagram](#architecture-diagram)
   - [Crates Overview](#crates-overview)
     - [crates/core (tools-core)](#cratescore-tools-core)
-    - [crates/repo-sync (repo-sync)](#cratesrepo-sync-repo-sync)
-    - [crates/issues-check (issues-check)](#cratesissues-check-issues-check)
-    - [crates/project-sync (project-sync)](#cratesproject-sync-project-sync)
+    - [crates/cli (tools)](#cratescli-tools)
 - [Declarative Configuration (tools.toml)](#declarative-configuration-toolstoml)
   - [Repository Settings](#repository-settings)
   - [Labels Schema](#labels-schema)
@@ -63,13 +61,9 @@ flowchart TD
 
     Core --> CoreComponents
 
-    RepoSync["crates/repo-sync\n(repo-sync CLI)"] --> Core
-    IssuesCheck["crates/issues-check\n(issues-check CLI)"] --> Core
-    ProjectSync["crates/project-sync\n(project-sync CLI)"] --> Core
+    Tools["crates/cli\n(tools CLI: issues, repo, project)"] --> Core
 
-    RepoSync --> GitHubAPI["GitHub API\n(REST & GraphQL)"]
-    IssuesCheck --> GitHubAPI
-    ProjectSync --> GitHubAPI
+    Tools --> GitHubAPI["GitHub API\n(REST & GraphQL)"]
 ```
 
 ### Crates Overview
@@ -81,42 +75,38 @@ Shared foundation library providing domain models, adapters, and configuration p
 - **`adapters::github`:** High-performance GitHub REST and GraphQL API clients wrapping `gh` CLI commands and native queries.
 - **`application`:** Orchestration logic for auditing, plan generation, and synchronization execution.
 
-#### [crates/repo-sync](crates/repo-sync) (`repo-sync`)
-Declarative repository configuration synchronizer. Audits or reconciles GitHub settings, labels, and milestones across single repositories or entire organizations.
-- **Drift Detection:** Inspect drift without mutating state:
-  ```bash
-  cargo run -p repo-sync -- --check
-  ```
-- **Selective Synchronization:** Target specific configuration surfaces:
-  ```bash
-  cargo run -p repo-sync -- --settings
-  cargo run -p repo-sync -- --labels
-  cargo run -p repo-sync -- --milestones
-  ```
-- **Dry-run Mode:** Preview mutations before execution:
-  ```bash
-  cargo run -p repo-sync -- --dry-run
-  ```
+#### [crates/cli](crates/cli) (`tools`)
+One binary, `tools <group> <verb>`. Read-only verbs are always `check`; verbs that write are `sync` or `migrate`. `--config`, `--owner` (alias `--org`) and `--repo` are global flags accepted on every verb.
 
-#### [crates/issues-check](crates/issues-check) (`issues-check`)
-Workflow integrity and rule auditor for GitHub issues.
-- **Workflow Auditing:** Verifies that all open issues comply with milestone assignments, taxonomy rules (`type:*` and `area:*`), and contains no cyclic blocker dependencies:
-  ```bash
-  cargo run -p issues-check
-  ```
-- **Label Migration:** Interactively or automatically migrates legacy labels (e.g. `bug`, `enhancement`) to the canonical taxonomy:
-  ```bash
-  cargo run -p issues-check -- --migrate
-  cargo run -p issues-check -- --migrate --apply --default-area area:core
-  ```
+Each group is a cargo feature (`issues`, `repo`, `project`), all on by default, so a build can carry only what it needs:
 
-#### [crates/project-sync](crates/project-sync) (`project-sync`)
-CLI tool to automate GitHub Projects V2 board state synchronization.
-- Maps issue states, blocked-by relationships, and native sub-issues directly into Projects V2 item fields.
-- Supports dry-run inspection:
-  ```bash
-  cargo run -p project-sync -- --dry-run
-  ```
+```bash
+cargo build -p tools --no-default-features --features repo
+```
+
+Exit codes: `0` clean (or `--help`), `1` a `check` found something to fix, `2` the run could not complete.
+
+**`tools repo`**: declarative repository configuration. Audits or reconciles GitHub settings, labels, and milestones across single repositories or entire organizations.
+```bash
+tools repo check                 # drift report, writes nothing (exit 1 on drift)
+tools repo sync                  # reconcile everything configured in tools.toml
+tools repo sync --settings       # or --labels, --milestones, --project
+```
+
+**`tools issues`**: workflow integrity and rule auditor for GitHub issues.
+```bash
+tools issues check               # milestones, taxonomy, blockers; also previews pending label migrations (exit 1 if any)
+tools issues migrate             # rewrite legacy labels (e.g. `bug`, `enhancement`) to the configured taxonomy
+tools issues migrate --default-area core --default-type chore
+```
+
+**`tools project`**: GitHub Projects V2 board Status synchronization from issue states, blocked-by relationships, and native sub-issues.
+```bash
+tools project check              # print the planned moves, write nothing (exit 1 when there are any)
+tools project sync               # write them
+```
+
+During development use `cargo run -q -p tools -- <group> <verb>`, or the `just` recipes below.
 
 ---
 
@@ -141,7 +131,7 @@ merge_commit_message = "PR_BODY"
 ```
 
 ### Labels Schema
-Specifies canonical labels and marks deprecated legacy labels for automated cleanup or migration. The issue templates in `.github/ISSUE_TEMPLATE/` and the label lists in `AGENTS.md` and `CONTRIBUTING.md` must agree with it; `repo-sync --check` verifies this offline:
+Specifies canonical labels and marks deprecated legacy labels for automated cleanup or migration. The issue templates in `.github/ISSUE_TEMPLATE/` and the label lists in `AGENTS.md` and `CONTRIBUTING.md` must agree with it; `tools repo check` verifies this offline:
 ```toml
 [github.labels]
 deprecated = [
@@ -215,6 +205,7 @@ Workspace recipes are managed with `just`:
 | **Validation & Checks** | | |
 | `just check` | Runs formatting checks, workspace type-check, Clippy lints, and unit tests | `just check` |
 | `just arch-check` | Validates architecture boundary rules via `arch-lint` | `just arch-check` |
+| `just check-features` | Builds each feature group (`issues`, `repo`, `project`) alone, and none, with Clippy; part of `just check` | `just check-features` |
 | `just issues-check` | Audits open GitHub issues against workflow rules in `tools.toml` | `just issues-check` |
 | `just repo-check` | Verifies GitHub repository settings, labels, and milestones against `tools.toml` | `just repo-check` |
 | **Repository Synchronization** | | |
@@ -225,7 +216,9 @@ Workspace recipes are managed with `just`:
 | `just repo-bootstrap` | Reconciles repository configuration (alias for `repo-sync`) | `just repo-bootstrap` |
 | `just org-sync` | Synchronizes configuration across an organization | `just org-sync org="my-org"` |
 | **Migration & Releases** | | |
-| `just issues-migrate` | Audits or applies legacy label migrations to canonical taxonomy | `just issues-migrate --apply --default-area area:core --default-type type:chore` |
+| `just issues-migrate` | Rewrites legacy labels to the configured taxonomy (writes; `just issues-check` previews) | `just issues-migrate --default-area core --default-type chore` |
+| `just project-check` | Prints the planned Project Status moves, writes nothing | `just project-check` |
+| `just project-sync` | Writes the planned Project Status moves | `just project-sync` |
 | `just bump-version` | Bumps workspace version, updates `Cargo.lock`, tags, and commits | `just bump-version patch` |
 
 ---
@@ -262,14 +255,14 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Alternatively, omit `check-*` inputs to install `issues-check`, `repo-sync`, and `project-sync` onto `$GITHUB_PATH` for customized command execution:
+Alternatively, omit the `check-*` and `sync-project` inputs to install `tools` onto `$GITHUB_PATH` for customized command execution:
 
 ```yaml
       - name: Setup Tools CLI
         uses: jaoppb/tools@v0.2.0
 
       - name: Run Audit
-        run: issues-check
+        run: tools issues check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -278,16 +271,19 @@ Alternatively, omit `check-*` inputs to install `issues-check`, `repo-sync`, and
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `version` | `latest` | Release tag of the binaries to install. |
-| `tools` | `all` | Comma-separated tools to install. |
-| `repo` | `jaoppb/tools` | `owner/name` repository whose releases provide the binaries (use it for a fork). |
-| `config-path` | _(empty)_ | `tools.toml` passed as `--config` to every tool the action runs. Empty means upward search from the working directory. |
-| `check-issues` / `issues-check-args` | `false` / _(empty)_ | Run `issues-check` and pass extra arguments. |
-| `check-repo` / `repo-sync-args` | `false` / _(empty)_ | Run `repo-sync --check` and pass extra arguments. |
-| `sync-project` / `project-sync-args` | `false` / _(empty)_ | Run `project-sync` and pass extra arguments. |
+| `version` | `latest` | Release tag of the binary to install. |
+| `build-from-source` | `false` | Build `tools` with cargo from the action's own checkout instead of downloading a release (needs a Rust toolchain). |
+| `repo` | `jaoppb/tools` | `owner/name` repository whose releases provide the binary (use it for a fork). |
+| `config-path` | _(empty)_ | `tools.toml` passed as `--config` to every command the action runs. Empty means upward search from the working directory. |
+| `check-issues` / `issues-args` | `false` / _(empty)_ | Run `tools issues check` and pass extra arguments. |
+| `check-repo` / `repo-args` | `false` / _(empty)_ | Run `tools repo check` and pass extra arguments. |
+| `check-project` / `project-args` | `false` / _(empty)_ | Run `tools project check` (read-only; fails when moves are pending) and pass extra arguments. |
+| `sync-project` | `false` | Run `tools project sync` (writes); `project-args` applies to it too. |
 | `github-token` | `${{ github.token }}` | Token for release downloads and the tools. |
 
-`project-sync` applies changes unless `project-sync-args` contains `--dry-run`. Moving cards in a GitHub Project (v2) needs a personal access token or GitHub App token with project write access passed as `github-token`; the default `github.token` cannot write Projects v2. `project-sync` fails when no project number is configured (`[github.project]` in `tools.toml` or `--project`), so leave `sync-project` off in repositories without a project.
+Since v0.3.0 the input names follow the commands: `tools` (the binary list) is gone, `issues-check-args`, `repo-sync-args` and `project-sync-args` became `issues-args`, `repo-args` and `project-args`, and `project-sync-args: '--dry-run'` is now `check-project: 'true'`.
+
+`sync-project` writes. Moving cards in a GitHub Project (v2) needs a personal access token or GitHub App token with project write access passed as `github-token`; the default `github.token` cannot write Projects v2. `tools project` fails when no project number is configured (`[github.project]` in `tools.toml` or `--project`), so leave `check-project` and `sync-project` off in repositories without a project.
 
 ```yaml
       - name: Sync Project Status
@@ -295,7 +291,6 @@ Alternatively, omit `check-*` inputs to install `issues-check`, `repo-sync`, and
         with:
           config-path: 'config/tools.toml'
           sync-project: 'true'
-          project-sync-args: '--dry-run'
           github-token: ${{ secrets.PROJECT_TOKEN }}
 ```
 
@@ -309,21 +304,22 @@ Install directly via curl:
 curl -sSL https://raw.githubusercontent.com/jaoppb/tools/main/scripts/install-tools.sh | bash
 ```
 
-Or install a specific version and toolset:
+Or install a specific version, or build the checked-out source:
 
 ```bash
-TOOLS_VERSION=v0.2.0 TOOLS_LIST="issues-check,repo-sync" ./scripts/install-tools.sh
+TOOLS_VERSION=v0.2.0 ./scripts/install-tools.sh
+FROM_SOURCE=true ./scripts/install-tools.sh
 ```
 
 ### Nix Flake Packages
 
-Each tool is exposed as a packaged flake output in [`flake.nix`](flake.nix):
+The `tools` binary is the flake's default package in [`flake.nix`](flake.nix):
 
 ```bash
 # Run directly without local installation
-nix run github:jaoppb/tools#issues-check
-nix run github:jaoppb/tools#repo-sync -- --check
-nix run github:jaoppb/tools#project-sync
+nix run github:jaoppb/tools -- issues check
+nix run github:jaoppb/tools -- repo check
+nix run github:jaoppb/tools -- project check
 
 # Enter development shell with all utilities
 nix develop github:jaoppb/tools

@@ -112,44 +112,51 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      # No published release has the `tools` binary yet, so the action builds this checkout.
       - name: Test Composite Action
         uses: ./
         with:
-          version: 'v0.1.0'
+          build-from-source: 'true'
           repo: 'jaoppb/tools'
           config-path: 'tools.toml'
           check-issues: 'true'
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Test project-sync input (no project configured here)
-        id: project-sync-dry-run
+      - name: Test check-project input (no project configured here)
+        id: project-check
         continue-on-error: true
         uses: ./
         with:
-          version: 'v0.1.0'
+          build-from-source: 'true'
           config-path: 'tools.toml'
-          sync-project: 'true'
-          project-sync-args: '--dry-run'
+          check-project: 'true'
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Assert project-sync step ran and failed without a project
+      - name: Assert the project check ran and failed without a project
         env:
-          OUTCOME: ${{ steps.project-sync-dry-run.outcome }}
+          OUTCOME: ${{ steps.project-check.outcome }}
         run: |
           if [ "$OUTCOME" != "failure" ]; then
-            echo "::error::expected project-sync to fail without [github.project], got '$OUTCOME'"
+            echo "::error::expected tools project check to fail without [github.project], got '$OUTCOME'"
             exit 1
           fi
           # The action step only proves it failed; confirm the reason with the installed binary.
-          if output="$(project-sync --config tools.toml --dry-run 2>&1)"; then
-            echo "::error::project-sync unexpectedly succeeded without [github.project]"
+          if output="$(tools --config tools.toml project check 2>&1)"; then
+            echo "::error::tools project check unexpectedly succeeded without [github.project]"
             exit 1
           fi
           echo "$output"
           grep -q "project number is required" <<<"$output"
 
-      - name: Verify installed binaries on PATH
+      - name: Verify the installed binary on PATH
         run: |
-          issues-check --help
-          repo-sync --help
-          project-sync --help
+          tools --help
+          tools issues check --help
+          tools repo check --help
+          tools project check --help

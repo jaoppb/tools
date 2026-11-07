@@ -141,8 +141,11 @@ type: subject (#issue)
 Use `just` recipes to validate changes before pushing:
 
 ```bash
-# Workspace lints, formatting, and unit tests
+# Workspace lints, formatting, unit tests, and the partial feature builds
 just check
+
+# Each cargo feature group (issues, repo, project) alone, and none
+just check-features
 
 # Architecture boundaries lint via arch-lint
 just arch-check
