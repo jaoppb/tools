@@ -65,15 +65,13 @@ Local overrides can be added to `lefthook-local.yml` (ignored by git).
 
 ### Hierarchy & Milestones
 
-- Open issues must belong to a target release milestone:
-  - `v0.1.0`: Bootstrap (initial monorepo setup, extraction, tooling, Nix flake).
-  - `v0.2.0`: Initial stable release (distribution, packaging, cross-repo adoption).
-  - `v0.3.0`: Cleanup and refactoring of hardcoded logic.
+- Open issues must belong to a target release milestone. The milestones are declared in `tools.toml` `[github.milestones]`.
 - Native GitHub sub-issues are supported when decomposing complex tasks into discrete steps.
 
 ### Label Taxonomy
 
-Every open issue must strictly follow the label schema:
+Every open issue must strictly follow the label schema (declared in `tools.toml` with the issue templates under `[github.issue_templates]`; `just repo-check` fails when this list or the templates drift from them; list each label as a bullet that starts with its backticked name):
+<!-- labels:start -->
 - **Exactly one `type:` label:**
   - `type:feat` — New behavior or capability
   - `type:fix` — Something is broken
@@ -87,6 +85,7 @@ Every open issue must strictly follow the label schema:
   - `area:issues-check` — `crates/issues-check` (workflow and integrity auditor)
   - `area:tooling` — Flake, Nix, Just, CI, Cargo workspace
   - `area:docs` — Documentation and workflow specifications
+<!-- labels:end -->
 
 Run `just issues-check` locally to verify that all open issues conform to these rules.
 

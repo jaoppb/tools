@@ -141,7 +141,7 @@ merge_commit_message = "PR_BODY"
 ```
 
 ### Labels Schema
-Specifies canonical labels and marks deprecated legacy labels for automated cleanup or migration:
+Specifies canonical labels and marks deprecated legacy labels for automated cleanup or migration. The issue templates in `.github/ISSUE_TEMPLATE/` and the label lists in `AGENTS.md` and `CONTRIBUTING.md` must agree with it; `repo-sync --check` verifies this offline:
 ```toml
 [github.labels]
 deprecated = [

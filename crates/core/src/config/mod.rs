@@ -162,6 +162,39 @@ pub struct GithubConfig {
     /// Per-repository label and milestone overlays, keyed by repository name.
     #[serde(default)]
     pub overrides: std::collections::BTreeMap<String, RepoOverrideConfig>,
+    /// The issue templates and the labels they apply, if declared.
+    #[serde(default)]
+    pub issue_templates: Option<IssueTemplatesConfig>,
+}
+
+/// The `[github.issue_templates]` table: which template applies which label.
+///
+/// `repo-sync --check` compares it with `.github/ISSUE_TEMPLATE/` offline.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssueTemplatesConfig {
+    /// Whether every template file must have an entry (and so a linked label).
+    #[serde(default = "default_require_label")]
+    pub require_label: bool,
+    /// The declared templates.
+    #[serde(default)]
+    pub items: Vec<IssueTemplate>,
+}
+
+const fn default_require_label() -> bool {
+    true
+}
+
+/// One issue template: its file, the single label it applies, and its title prefix.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssueTemplate {
+    /// File name inside `.github/ISSUE_TEMPLATE/`.
+    pub file: String,
+    /// The label the template applies; it must be declared in `[github.labels]`.
+    pub label: String,
+    /// What the template `title:` must start with.
+    pub title: String,
 }
 
 /// Repository coordinates and optional settings.
@@ -392,6 +425,24 @@ pub fn load_or_find(explicit_path: Option<&Path>) -> Result<Config, ConfigError>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_templates_default_to_requiring_a_label() {
+        let config: Config = toml::from_str(
+            r#"
+            [github.repository]
+            owner = "o"
+            name = "n"
+
+            [github.issue_templates]
+            items = [{ file = "feat.yml", label = "type:feat", title = "feat: " }]
+            "#,
+        )
+        .unwrap();
+        let templates = config.github.issue_templates.unwrap();
+        assert!(templates.require_label);
+        assert_eq!(templates.items[0].file, "feat.yml");
+    }
 
     #[test]
     fn parses_domain_based_config() {
