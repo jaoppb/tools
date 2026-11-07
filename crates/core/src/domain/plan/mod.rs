@@ -286,6 +286,9 @@ impl Snapshot {
     /// The moves and the gaps the rules produce from this snapshot under `rules`.
     #[must_use]
     pub fn plan_with(&self, rules: &RulesConfig) -> Plan {
+        // The cycle is decided by `on_parent_cycle`; `target_with` consults the
+        // same function and keeps such a card where it is, so no move is planned
+        // for a frozen card. Gaps skip it here.
         let frozen: Vec<Frozen> = self
             .cards()
             .filter(|card| on_parent_cycle(card, self))
@@ -297,7 +300,7 @@ impl Snapshot {
             .collect();
         let gaps = self
             .cards()
-            .filter(|card| !frozen.iter().any(|held| held.number() == card.number()))
+            .filter(|card| !on_parent_cycle(card, self))
             .flat_map(|card| gaps_of(self, card, rules))
             .collect();
         Plan::new(Moves::new(moves), Gaps::new(gaps)).with_frozen(frozen)

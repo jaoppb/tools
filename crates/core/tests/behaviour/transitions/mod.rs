@@ -164,3 +164,18 @@ fn a_started_card_on_a_parent_cycle_keeps_following_its_pull_request() {
         ]
     );
 }
+
+#[test]
+fn the_target_of_a_card_on_a_parent_cycle_is_its_own_status() {
+    let cards = vec![
+        task_of(open_card(20, Status::Ready), 21),
+        task_of(open_card(21, Status::Backlog), 20),
+    ];
+    let snapshot = snapshot(cards, &[]);
+    for card in snapshot.cards() {
+        assert_eq!(
+            tools_core::domain::target::target(card, &snapshot),
+            card.status()
+        );
+    }
+}
