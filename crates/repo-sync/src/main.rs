@@ -7,7 +7,8 @@
 use std::io::Write;
 use std::process::ExitCode;
 
-use repo_sync::cli::Arguments;
+use repo_sync::cli::{Arguments, ResolvedRepo};
+use repo_sync::consistency;
 use tools_core::adapters::github::{GhRepo, Target};
 use tools_core::application::{RepoSync, RepoSyncError};
 
@@ -34,6 +35,15 @@ fn run() -> Result<String, Exit> {
         text: err.to_string(),
         code: 2,
     })?;
+    if arguments.checks_files(&resolved) {
+        let problems = file_problems(&arguments, &resolved);
+        if !problems.is_empty() {
+            return Err(Exit {
+                text: problems.join("\n"),
+                code: 1,
+            });
+        }
+    }
     let is_multi = resolved.repos.len() > 1;
     let mut outputs = Vec::new();
     let mut drift_outputs = Vec::new();
@@ -78,6 +88,24 @@ fn run() -> Result<String, Exit> {
     }
 
     Ok(outputs.join("\n"))
+}
+
+/// Problems between `tools.toml` and the local templates and docs, checked from its directory.
+/// They are reported alone, before any GitHub drift, so the two kinds never share a run.
+fn file_problems(arguments: &Arguments, resolved: &ResolvedRepo) -> Vec<String> {
+    let names: Vec<String> = resolved
+        .repos
+        .first()
+        .and_then(|(_, spec)| spec.labels.as_ref())
+        .map(|labels| {
+            labels
+                .items
+                .iter()
+                .map(|label| label.name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    consistency::check(&arguments.root(), &names)
 }
 
 fn emit(text: &str, code: u8) -> ExitCode {
