@@ -18,5 +18,8 @@ fn this_repository_templates_and_docs_match_tools_toml() {
         .into_iter()
         .map(|label| label.name)
         .collect();
-    assert_eq!(consistency::check(&root, &names), Vec::<String>::new());
+    assert_eq!(
+        consistency::check(&root, &names, config.github.issue_templates.as_ref()),
+        Vec::<String>::new()
+    );
 }

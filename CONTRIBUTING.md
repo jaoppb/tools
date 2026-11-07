@@ -70,7 +70,7 @@ Local overrides can be added to `lefthook-local.yml` (ignored by git).
 
 ### Label Taxonomy
 
-Every open issue must strictly follow the label schema (declared in `tools.toml`; `just repo-check` fails when this list or the issue templates drift from it):
+Every open issue must strictly follow the label schema (declared in `tools.toml` with the issue templates under `[github.issue_templates]`; `just repo-check` fails when this list or the templates drift from them; list each label as a bullet that starts with its backticked name):
 <!-- labels:start -->
 - **Exactly one `type:` label:**
   - `type:feat` — New behavior or capability

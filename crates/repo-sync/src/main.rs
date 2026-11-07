@@ -105,7 +105,7 @@ fn file_problems(arguments: &Arguments, resolved: &ResolvedRepo) -> Vec<String> 
                 .collect()
         })
         .unwrap_or_default();
-    consistency::check(&arguments.root(), &names)
+    consistency::check(&arguments.root(), &names, resolved.issue_templates.as_ref())
 }
 
 fn emit(text: &str, code: u8) -> ExitCode {

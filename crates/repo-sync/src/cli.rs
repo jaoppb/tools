@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
 use tools_core::application::RepoSyncMode;
-use tools_core::config::{Config, ConfigError, find_config, load_or_find};
+use tools_core::config::{Config, ConfigError, IssueTemplatesConfig, find_config, load_or_find};
 use tools_core::domain::repo::{Repo, RepoPlanError, RepoSpec};
 
 const PROGRAM: &str = "repo-sync";
@@ -108,6 +108,8 @@ pub struct ResolvedRepo {
     pub target: Target,
     /// Each target repository with its desired specification, overlay applied.
     pub repos: Vec<(Repo, RepoSpec)>,
+    /// The `[github.issue_templates]` table, if declared.
+    pub issue_templates: Option<IssueTemplatesConfig>,
 }
 
 impl Arguments {
@@ -243,7 +245,11 @@ impl Arguments {
             })
             .collect::<Result<Vec<_>, RepoResolveError>>()?;
 
-        Ok(ResolvedRepo { target, repos })
+        Ok(ResolvedRepo {
+            target,
+            repos,
+            issue_templates: cfg.github.issue_templates.clone(),
+        })
     }
 
     /// Applies the entity filter and validates a resolved specification.

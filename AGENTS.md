@@ -6,10 +6,19 @@ This repository is a monorepo for developer tools, repository management utiliti
 
 - **Hierarchy.** Standalone issues under release milestones. Native GitHub sub-issues are supported when breaking down a task into constituent steps.
 - **Milestones.** Every open issue must belong to a release milestone declared in `tools.toml` `[github.milestones]`, the single source of truth (`just repo-check` compares it with GitHub). Docs and templates do not list milestones.
-- **Labels.** `tools.toml` `[github.labels]` is the single source of truth. The hand-written issue templates and the lists below must agree with it; `just repo-check` (offline step of `repo-sync --check`, also run by CI) fails on drift: a `type:*` label without its template, a template whose `labels:` or `title:` prefix is not its type, an undeclared label, or a list out of step.
+- **Labels.** `tools.toml` `[github.labels]` is the single source of truth, and `[github.issue_templates]` maps each template file to the label it applies and its title prefix. The hand-written issue templates and the list below must agree with them; `just repo-check` (an offline step of `repo-sync --check`, also run by CI) fails on drift: a template whose `labels:` or `title:` differs from its entry, an undeclared label, a template with no entry (while `require_label = true`, the default), or a list out of step. No label vocabulary lives in Rust. Every issue carries exactly one `type:` label and at least one `area:` label.
 <!-- labels:start -->
-  - Exactly one `type:` label on every issue: `type:feat`, `type:fix`, `type:chore`, `type:docs`, `type:refactor`, or `type:spike`.
-  - At least one `area:` label: `area:core`, `area:project-sync`, `area:issues-check`, `area:tooling`, or `area:docs`.
+  - `type:feat`
+  - `type:fix`
+  - `type:chore`
+  - `type:docs`
+  - `type:refactor`
+  - `type:spike`
+  - `area:core`
+  - `area:project-sync`
+  - `area:issues-check`
+  - `area:tooling`
+  - `area:docs`
 <!-- labels:end -->
 - **Creation and Triage.** File issues using the corresponding template from `.github/ISSUE_TEMPLATE/`. Upon creation or triage:
   - Select the template matching the issue type (which applies the `type:` label).
