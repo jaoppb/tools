@@ -9,6 +9,27 @@ pub const OWNER: &str = "owner";
 /// `--repo`: a repository name, repeatable.
 pub const REPO: &str = "repo";
 
+/// `--project`: the GitHub Project number, on the verbs that read a Project.
+pub const PROJECT: &str = "project";
+
+/// The `--project <NUMBER>` flag shared by the issue and project verbs.
+#[must_use]
+pub fn project_flag() -> Arg {
+    Arg::new(PROJECT)
+        .long(PROJECT)
+        .value_name("NUMBER")
+        .help("GitHub Project number override")
+}
+
+/// The repositories named by the global `--repo` flag.
+#[must_use]
+pub fn repos_of(matches: &clap::ArgMatches) -> Vec<String> {
+    matches
+        .get_many::<String>(REPO)
+        .map(|values| values.cloned().collect())
+        .unwrap_or_default()
+}
+
 /// A command line that was not run: an argument clap rejected, or `--help`.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]

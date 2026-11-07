@@ -169,7 +169,7 @@ pub struct GithubConfig {
 
 /// The `[github.issue_templates]` table: which template applies which label.
 ///
-/// `repo-sync --check` compares it with `.github/ISSUE_TEMPLATE/` offline.
+/// `tools repo check` compares it with `.github/ISSUE_TEMPLATE/` offline.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IssueTemplatesConfig {

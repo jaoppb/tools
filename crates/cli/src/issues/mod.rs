@@ -7,8 +7,9 @@ pub mod cli;
 
 use tools_core::adapters::github::{GhIssues, GhProject};
 use tools_core::application::{
-    Audit, IssueMigrationMode, IssueMigrationOutcome, IssueMigrator, RepositoryIssues,
+    Audit, AuditError, IssueMigrationMode, IssueMigrationOutcome, IssueMigrator, RepositoryIssues,
 };
+use tools_core::domain::audit::survey::IssueTree;
 
 use crate::Exit;
 use cli::{Arguments, ResolvedCheck};
@@ -21,25 +22,47 @@ use cli::{Arguments, ResolvedCheck};
 pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
     let resolved = arguments.resolve().map_err(Exit::failed)?;
     if arguments.is_migrate() {
-        let outcome = migration(
+        let gh_issues = GhIssues::new(resolved.target.clone());
+        let tree = gh_issues.issues().map_err(Exit::failed)?;
+        let outcome = migrate(
+            &gh_issues,
             &resolved,
+            &tree,
+            IssueMigrationMode::Apply,
             arguments.default_area(),
             arguments.default_type(),
-            IssueMigrationMode::Apply,
         )?;
         return Ok(Exit::new(outcome.to_string(), 0));
     }
     check(resolved)
 }
 
+/// Issues read once, so the audit and the migration preview see the same snapshot.
+struct Fetched(IssueTree);
+
+impl RepositoryIssues for Fetched {
+    fn issues(&self) -> Result<IssueTree, AuditError> {
+        Ok(self.0.clone())
+    }
+}
+
 /// The audit, followed by the label migrations `migrate` would write.
 fn check(resolved: ResolvedCheck) -> Result<Exit, Exit> {
-    let pending = migration(&resolved, None, None, IssueMigrationMode::Preview)?;
+    let gh_issues = GhIssues::new(resolved.target.clone());
+    let tree = gh_issues.issues().map_err(Exit::failed)?;
+    let pending = migrate(
+        &gh_issues,
+        &resolved,
+        &tree,
+        IssueMigrationMode::Preview,
+        None,
+        None,
+    )?;
     let project = resolved
         .target
         .project()
         .map(|_| GhProject::new(resolved.target.clone()));
-    let report = Audit::new(GhIssues::new(resolved.target), project, resolved.rules)
+    let report = Audit::new(Fetched(tree), project, resolved.rules)
         .run()
         .map_err(Exit::failed)?;
     let mut text = report.to_string();
@@ -51,20 +74,20 @@ fn check(resolved: ResolvedCheck) -> Result<Exit, Exit> {
     Ok(Exit::new(text, code))
 }
 
-fn migration(
+fn migrate(
+    gh_issues: &GhIssues,
     resolved: &ResolvedCheck,
+    tree: &IssueTree,
+    mode: IssueMigrationMode,
     default_area: Option<&str>,
     default_type: Option<&str>,
-    mode: IssueMigrationMode,
 ) -> Result<IssueMigrationOutcome, Exit> {
-    let gh_issues = GhIssues::new(resolved.target.clone());
-    let tree = gh_issues.issues().map_err(Exit::failed)?;
     IssueMigrator::new(
-        &gh_issues,
+        gh_issues,
         resolved.migrations.clone(),
         default_area.map(str::to_owned),
         default_type.map(str::to_owned),
     )
-    .run(&tree, mode)
+    .run(tree, mode)
     .map_err(Exit::failed)
 }

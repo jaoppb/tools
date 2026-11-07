@@ -281,7 +281,7 @@ Alternatively, omit the `check-*` and `sync-project` inputs to install `tools` o
 | `sync-project` | `false` | Run `tools project sync` (writes); `project-args` applies to it too. |
 | `github-token` | `${{ github.token }}` | Token for release downloads and the tools. |
 
-Since v0.3.0 the input names follow the commands: `tools` (the binary list) is gone, `issues-check-args`, `repo-sync-args` and `project-sync-args` became `issues-args`, `repo-args` and `project-args`, and `project-sync-args: '--dry-run'` is now `check-project: 'true'`.
+Release binaries are named `tools-<tag>-<target>`, so `version` must name a release published after this change (earlier tags only carry the old binaries); use `build-from-source` before then. Since v0.3.0 the input names follow the commands: `tools` (the binary list) is gone, `issues-check-args`, `repo-sync-args` and `project-sync-args` became `issues-args`, `repo-args` and `project-args`, and `project-sync-args: '--dry-run'` is now `check-project: 'true'`.
 
 `sync-project` writes. Moving cards in a GitHub Project (v2) needs a personal access token or GitHub App token with project write access passed as `github-token`; the default `github.token` cannot write Projects v2. `tools project` fails when no project number is configured (`[github.project]` in `tools.toml` or `--project`), so leave `check-project` and `sync-project` off in repositories without a project.
 

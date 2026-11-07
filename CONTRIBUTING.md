@@ -81,8 +81,8 @@ Every open issue must strictly follow the label schema (declared in `tools.toml`
   - `type:spike` — Time-boxed research answering a question
 - **At least one `area:` label:**
   - `area:core` — `crates/core` (domain models, API clients, config)
-  - `area:project-sync` — `crates/project-sync` (Projects V2 status sync)
-  - `area:issues-check` — `crates/issues-check` (workflow and integrity auditor)
+  - `area:project-sync` — `tools project` in `crates/cli` (Projects V2 status sync)
+  - `area:issues-check` — `tools issues` in `crates/cli` (workflow and integrity auditor)
   - `area:tooling` — Flake, Nix, Just, CI, Cargo workspace
   - `area:docs` — Documentation and workflow specifications
 <!-- labels:end -->

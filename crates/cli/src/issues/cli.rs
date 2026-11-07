@@ -8,13 +8,12 @@ use tools_core::adapters::github::Target;
 use tools_core::config::{ConfigError, RepoLabelsSpec, RulesConfig, load_or_find};
 use tools_core::domain::{CANONICAL_TYPES, canonical_type_label};
 
-use crate::cli::{CONFIG, OWNER, REPO};
+use crate::cli::{CONFIG, OWNER, PROJECT, project_flag, repos_of};
 
 /// The verb that audits issues and previews the label migrations without writing.
 pub const CHECK: &str = "check";
 /// The verb that rewrites issue labels to the configured taxonomy.
 pub const MIGRATE: &str = "migrate";
-const PROJECT: &str = "project";
 const NO_PARENT: &str = "no-parent";
 const NO_MEMBERSHIP: &str = "no-membership";
 const DEFAULT_AREA: &str = "default-area";
@@ -60,10 +59,7 @@ impl Arguments {
     /// Reads the arguments of the `check` or `migrate` verb; the global flags travel with `matches`.
     #[must_use]
     pub fn from_matches(verb: &str, matches: &ArgMatches) -> Self {
-        let repos: Vec<String> = matches
-            .get_many::<String>(REPO)
-            .map(|values| values.cloned().collect())
-            .unwrap_or_default();
+        let repos = repos_of(matches);
         let flag =
             |name: &str| matches.try_get_one::<bool>(name).ok().flatten().copied() == Some(true);
         Self {
@@ -210,13 +206,6 @@ pub fn command() -> Command {
                         .help("Fallback type label for issues missing a type: label"),
                 ),
         )
-}
-
-fn project_flag() -> Arg {
-    Arg::new(PROJECT)
-        .long(PROJECT)
-        .value_name("NUMBER")
-        .help("GitHub Project number override")
 }
 
 fn validate_default_type(value: &str) -> Result<String, String> {

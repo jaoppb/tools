@@ -8,7 +8,7 @@ use tools_core::application::RepoSyncMode;
 use tools_core::config::{Config, ConfigError, IssueTemplatesConfig, find_config, load_or_find};
 use tools_core::domain::repo::{Repo, RepoPlanError, RepoSpec};
 
-use crate::cli::{CONFIG, OWNER, REPO};
+use crate::cli::{CONFIG, OWNER, repos_of};
 
 /// The verb that audits drift without writing.
 pub const CHECK: &str = "check";
@@ -125,10 +125,7 @@ impl Arguments {
             None
         };
 
-        let repos: Vec<String> = matches
-            .get_many::<String>(REPO)
-            .map(|values| values.cloned().collect())
-            .unwrap_or_default();
+        let repos = repos_of(matches);
 
         Self {
             mode,

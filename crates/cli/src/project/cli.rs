@@ -1,6 +1,6 @@
 //! The command line of `tools project check|sync`, parsed with clap.
 
-use clap::{Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
@@ -8,13 +8,12 @@ use tools_core::application::Mode;
 use tools_core::config::{ConfigError, RulesConfig, load_or_find};
 use tools_core::domain::{StatusMapping, StatusMappingError};
 
-use crate::cli::{CONFIG, OWNER, REPO};
+use crate::cli::{CONFIG, OWNER, PROJECT, project_flag, repos_of};
 
 /// The verb that prints the planned moves and writes nothing.
 pub const CHECK: &str = "check";
 /// The verb that writes the planned moves.
 pub const SYNC: &str = "sync";
-const PROJECT: &str = "project";
 
 /// An error resolving project synchronization configuration.
 #[derive(Debug, thiserror::Error)]
@@ -45,10 +44,7 @@ impl Arguments {
     /// Reads the arguments of the `check` or `sync` verb; the global flags travel with `matches`.
     #[must_use]
     pub fn from_matches(verb: &str, matches: &ArgMatches) -> Self {
-        let repos: Vec<String> = matches
-            .get_many::<String>(REPO)
-            .map(|values| values.cloned().collect())
-            .unwrap_or_default();
+        let repos = repos_of(matches);
         Self {
             mode: if verb == CHECK {
                 Mode::Preview
@@ -140,11 +136,4 @@ pub fn command() -> Command {
                 .about("Write the planned moves to the Project")
                 .arg(project_flag()),
         )
-}
-
-fn project_flag() -> Arg {
-    Arg::new(PROJECT)
-        .long(PROJECT)
-        .value_name("NUMBER")
-        .help("GitHub Project number override")
 }

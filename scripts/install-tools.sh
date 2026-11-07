@@ -194,7 +194,7 @@ else
     fallback_success=false
     if command -v cargo >/dev/null 2>&1; then
         echo "Attempting cargo install --git fallback..."
-        if cargo install --git "https://github.com/${REPO}" --tag "$TAG" "$BIN" --root "$TMP_DIR/cargo-root"; then
+        if cargo install --locked --git "https://github.com/${REPO}" --tag "$TAG" "$BIN" --root "$TMP_DIR/cargo-root"; then
             cp "$TMP_DIR/cargo-root/bin/${BIN}${BIN_EXT}" "${DEST_DIR}/"
             chmod +x "${DEST_DIR}/${BIN}${BIN_EXT}"
             fallback_success=true
