@@ -1,0 +1,58 @@
+# builtin:cosmo — epic / story / task, parent chain, Ready gate.
+# The engine knows none of these words; they live in params, facts and rules.
+
+[workflow]
+schema   = 1
+statuses = ["Backlog", "Ready", "In progress", "In review", "Done"]
+default  = "Backlog"
+
+[workflow.params]
+type_prefix  = "type:"
+area_prefix  = "area:"
+epic_label   = "epic"
+effort_limit = 8
+started      = ["In progress", "In review"]
+
+[workflow.facts]
+is_epic          = 'issue.labels.exists(l, l == params.epic_label)'
+has_type         = 'issue.labels.filter(l, l.startsWith(params.type_prefix)).size() == 1'
+has_area         = 'issue.labels.exists(l, fold(l).startsWith(fold(params.area_prefix)))'
+triaged          = 'has_type && has_area && issue.milestone != null && has(issue.fields.Priority) && has(issue.fields.Effort) && issue.fields.Effort <= params.effort_limit'
+unblocked        = 'issue.blockers.all(b, b.state == "closed")'
+waits_for_parent = 'issue.parent != null && !issue.parent.is_epic && issue.parent.state == "open" && !(issue.parent.next in params.started)'
+gate_holds       = 'triaged && unblocked && !waits_for_parent'
+
+[[workflow.status]]
+id   = "epic-is-untouched"
+when = 'is_epic'
+set  = "@current"
+
+[[workflow.status]]
+id   = "closed-is-done"
+when = 'issue.state == "closed"'
+set  = "Done"
+
+[[workflow.status]]
+id   = "started-with-pull-request"
+when = 'issue.status in params.started && issue.closed_by_open_pr'
+set  = "In review"
+
+[[workflow.status]]
+id   = "started-keeps-going"
+when = 'issue.status in params.started'
+set  = "In progress"
+
+[[workflow.status]]
+id   = "gate-closed"
+when = '!gate_holds'
+set  = "Backlog"
+
+[[workflow.status]]
+id   = "pull-request-open"
+when = 'issue.closed_by_open_pr'
+set  = "In review"
+
+[[workflow.status]]
+id   = "gate-holds"
+when = 'true'
+set  = "Ready"

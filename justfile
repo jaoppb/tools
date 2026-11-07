@@ -12,7 +12,9 @@ check:
     cargo fmt --all -- --check
     cargo check --workspace
     cargo clippy --workspace -- -D warnings
+    cargo clippy -p tools-core --features workflow --all-targets -- -D warnings
     cargo test --workspace
+    cargo test -p tools-core --features workflow
 
 # Run workspace architecture rules validation via arch-lint
 arch-check:
