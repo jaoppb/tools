@@ -1,6 +1,6 @@
 # Workflow engine: config-driven rules, no cosmo assumptions
 
-Status: grilled (spike #54 round 2), prototype pending. Target milestone: `v0.3.0` (spike + project-sync), `v0.4.0` (issues-check).
+Status: spike #54 done. Prototype in `crates/core/src/workflow/` (feature `workflow`), findings below. Target milestone: `v0.3.0` (spike + project-sync), `v0.4.0` (issues-check).
 
 ## Problem
 
@@ -99,6 +99,85 @@ message = 'exactly one "type:" label is required'
 - **Gap delivery.** Where triage gaps live once status rules own the gate (see non-goals). Decide in the audit design.
 - Resolved in the grill: schema versioning, plan reasons, missing fields (see Decisions).
 
+## Findings (spike #54)
+
+**Verdict.** The design holds. `builtin:cosmo` reproduces the state machine's destination for every card of `items_live.json`, `items_edge.json` (also with every blocker open) and 19 + 6 hand-built transition and hierarchy scenarios, under `plan_with(strict_rules())`. Tests: `crates/core/tests/behaviour/workflow/`.
+
+### Hypothesis 1: `cel-interpreter` 0.10 (confirmed, with gaps)
+
+- Works: `exists`/`all`/`filter` macros, `has()`, ternary, `in`, `startsWith`, `size`, `null` comparison, custom functions (`fold`), child scopes. `default-features = false` is enough (no `regex`, no `chrono`).
+- Compile errors are syntax only, with a position: `ERROR: <input>:1:33: Syntax error: missing ')'`. **There is no type checker**: `issue.fields.Effort <= "8"`, a missing key and an unknown identifier are *runtime* errors. The engine therefore validates names at load and treats runtime errors as a frozen issue.
+- `Program::references()` lists free variables and functions, but (a) includes macro-bound names (`l`) and (b) lists operators as functions (`_&&_`, `!_`, `@in`). The prototype subtracts bound names by reading the identifier after `.exists(`-style openers and skips names starting with `_`, `!`, `@`. Fragile; the real engine should parse with `cel-parser` and walk the AST (`IdedExpr` is public).
+- Speed: 1000 issues, 12 facts and 7 rules each, parent chains included: **84 ms release, ~490 ms debug**. A child scope per issue over one shared root context matters (building `Context::default()` per issue was 2.7x slower in debug).
+- Alternative (`rhai`, home-grown) not needed.
+
+### Hypothesis 2: dependency-ordered evaluation (confirmed)
+
+Algorithm, one pass, implemented in `workflow/engine.rs`:
+1. Insert every Project card as a `Subject`.
+2. For each card, walk its parent chain, fetching missing parents through `ParentResolver` (parent chain only, cached, a fetch error is stored, not raised). A repeat inside the current path records the whole loop as cyclic.
+3. Evaluate each card with memoised recursion: the parent node first, then facts in dependency order (facts are sorted at load from `references()`; cycles between facts are a load error), then rules in order, first match wins. `issue.parent` is the parent node's whole `issue` value plus its derived facts and `next`.
+4. A node is **frozen** (destination = current status, a `Violation`) when: it is on a cycle, its parent cannot be fetched, a fact or `when` errors, or **its parent is frozen** (new: a frozen parent has no derived facts to expose, and the safe answer is to change nothing). Never falls through to a later rule.
+5. The trace (`Explain`) is a by-product of the same pass: every fact, every rule with its `when` source and one of `FIRED`/`no`/`ERROR`/`not reached`.
+
+Sample, `items_live.json` `cosmo#20` (open blocker #76):
+
+```
+cosmo#20: Backlog -> Backlog
+facts:
+  has_area = true
+  has_type = true
+  triaged = true
+  unblocked = false
+  waits_for_parent = false
+  gate_holds = false
+  is_epic = false
+rules:
+  [no         ] epic-is-untouched: is_epic => @current
+  [no         ] closed-is-done: issue.state == "closed" => Done
+  [no         ] started-with-pull-request: issue.status in params.started && issue.closed_by_open_pr => In review
+  [no         ] started-keeps-going: issue.status in params.started => In progress
+  [FIRED      ] gate-closed: !gate_holds => Backlog
+  [not reached] pull-request-open: issue.closed_by_open_pr => In review
+  [not reached] gate-holds: true => Ready
+```
+
+### Hypothesis 3: `builtin:cosmo` parity (confirmed, three intentional differences)
+
+The preset is `crates/core/src/workflow/presets/cosmo.toml`: 7 facts, 7 rules, params `type_prefix`, `area_prefix`, `epic_label`, `effort_limit`, `started`. Differences from the old code, each pinned by a test:
+1. A readable parent outside the Project is fetched and applies (old: no card, no wait).
+2. A parent cycle or an unreadable parent freezes the issue (old: stack overflow on a story cycle; no handling for unreadable).
+3. The gate is the strict one (Priority and Effort required). The default `RulesConfig` toggles are gone.
+
+Not reproduced, by decision: plan reason text (the firing rule id replaces it) and triage gaps.
+
+### Fact schema v1
+
+Every expression sees `issue`, `params`, `repo`, the derived facts by name, and the helper `fold(s)`.
+
+| Name | Type | Notes |
+|------|------|-------|
+| `issue.number` | int | |
+| `issue.state` | `"open"` / `"closed"` | not-planned counts as closed |
+| `issue.status` | string | board column; the workflow `default` when the issue is not a card |
+| `issue.labels` | list of string | raw names |
+| `issue.milestone` | string or null | title |
+| `issue.fields` | map | only fields that are set; `has(issue.fields.X)` guards |
+| `issue.blockers` | list of `{number, state}` | cross-repo blockers as the adapter reads them |
+| `issue.closed_by_open_pr` | bool | stands in for `issue.prs` until the adapter carries PR numbers |
+| `issue.parent` | null or the parent's `issue` map | plus `next` and the parent's derived facts; recursive up the chain |
+| `params.*` | scalar or list | opaque |
+| `repo` | string | repository name |
+| `fold(s)` | function | lowercase + ascii-fold |
+
+`issue.next` exists only on a parent (the child's own `next` is the result being computed). Facts compile against these roots plus each other.
+
+### Open questions, resolved or re-stated
+
+- Resolved: schema versioning (`schema = 1`), plan reasons (rule id), missing fields (absent key).
+- Re-stated: `issue.prs` as a list (needs PR numbers in `Snapshot`); parse with `cel-parser` instead of the regex-free scan; `repo` is only a name today, not a map; gaps; `extends` from file/URL.
+- New: should a frozen parent freeze its whole subtree (prototype) or only expose `next = current` with partial facts? The prototype takes the safe side.
+
 ## Risks
 
 - **Dependency-ordered evaluation across repos** is the hardest part: on-demand fetch, ordering, cycle exclusion, and the explain trace all interact. Prototype this first in the spike, against the existing `items_live.json` fixtures.
@@ -111,16 +190,17 @@ message = 'exactly one "type:" label is required'
 
 ## Issue map
 
-Spike / engine (`type:spike`, `area:core`, `v0.3.0`):
-1. Spike: fact schema, CEL evaluation, dependency-ordered evaluation with cross-repo parents and cycle exclusion; prototype against fixtures.
-2. feat: `[workflow]` config, CEL rules, `builtin:cosmo` and `builtin:tools` presets, load-time validation.
-3. feat: project-sync driven by the workflow engine; `--explain`.
-4. feat: config migration command for `[github.issues.rules]` and `status_mapping`.
-5. feat (v0.4.0): issues-check driven by `[[workflow.audit]]`; delete `domain/audit/rules`, `violation` text, `Status` enum.
+Scope is what each issue inherits from the spike. Spike / engine (`area:core`, `v0.3.0`):
+1. ~~Spike #54~~ done: this document and `crates/core/src/workflow/`.
+2. feat: `[workflow]` config in `tools.toml`, `[workflow.params]`, the two presets (`builtin:tools` still to write), load-time validation with TOML locations (the prototype's `from_toml` takes a stand-alone TOML string). Replace the macro-variable scan with an AST walk over `cel-parser`. Promote the module out of the feature gate. Take over the `ParentResolver` contract.
+3. feat: project-sync driven by the engine: a `ParentResolver` backed by the GitHub adapter (cross-repo, parent chain only, unreadable repo = frozen issue), `--explain <issue>` printing `Explain`, `Violation` reporting, Project statuses as strings instead of the `Status` enum. Decide what moves with the new strict gate (changelog).
+4. feat: config migration command for `[github.issues.rules]` and `status_mapping`; map `priority`/`effort` toggles to the strict gate and `area_prefixes` to `params.area_prefix` (the toggles-off case needs a documented override or a rule shadow).
+5. feat (`v0.4.0`): issues-check driven by `[[workflow.audit]]`; decide where triage gaps live; delete `domain/audit/rules`, violation text, `Status` enum, `domain/plan` reasons.
 
-Independent of the engine (can start now):
+Independent of the engine (unchanged by the findings):
 6. chore: remove `Target::cosmo()`, "Cosmo" wording, dead `references`/`text` flags and `domain/audit/text`.
-7. refactor: label `default_migrations` becomes config only (`[github.labels] migrations`), no implicit merge.
-8. refactor: `--default-type` validates against `[github.labels.items]`, not `CANONICAL_TYPES`; migration uses configured prefixes.
+7. refactor: label `default_migrations` becomes config only.
+8. refactor: `--default-type` validates against `[github.labels.items]`, not `CANONICAL_TYPES`.
 9. feat: action.yml `config-path` input, project-sync step, `REPO` input.
 10. chore: generate or check issue templates and docs label/milestone lists against `tools.toml`.
+11. (new, from the spike) fix: story cycle overflows the stack in `domain/target` today. Independent of the engine, small; worth fixing before v0.3.0 if the engine slips.
