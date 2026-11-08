@@ -2,8 +2,10 @@
 //!
 //! `tools.toml` declares the labels and which template applies which label. The templates under
 //! `.github/ISSUE_TEMPLATE/` and the label lists in the docs restate them by hand, so this check
-//! fails when they drift. It reads local files only and needs no network, and it knows no label
-//! vocabulary: names, prefixes and title conventions all come from `tools.toml`.
+//! fails when they drift. Both parts are opt-in: the templates are checked only when
+//! `[github.issue_templates]` is declared, and only the docs listed in `[github.labels].docs` are
+//! read. It reads local files only and needs no network, and it knows no file name or label
+//! vocabulary: they all come from `tools.toml`.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -13,25 +15,26 @@ use tools_core::config::IssueTemplatesConfig;
 
 const TEMPLATE_DIR: &str = ".github/ISSUE_TEMPLATE";
 const TEMPLATE_CONFIG: &str = "config.yml";
-const DOCS: [&str; 2] = ["AGENTS.md", "CONTRIBUTING.md"];
 const BLOCK_START: &str = "<!-- labels:start -->";
 const BLOCK_END: &str = "<!-- labels:end -->";
 
-/// Checks the templates and docs under `root` against the declared labels and templates.
+/// Checks the declared templates and docs under `root` against the declared labels.
 ///
 /// Returns one message per problem; an empty list means everything agrees. Without a
-/// `[github.issue_templates]` table the templates are not checked.
+/// `[github.issue_templates]` table the templates are not checked, and only the `docs` listed
+/// (paths relative to `root`) are read, so with neither nothing is read at all.
 #[must_use]
 pub fn check(
     root: &Path,
     declared: &[String],
     templates: Option<&IssueTemplatesConfig>,
+    docs: &[String],
 ) -> Vec<String> {
     let declared: BTreeSet<&str> = declared.iter().map(String::as_str).collect();
     let mut problems = templates.map_or_else(Vec::new, |templates| {
         check_templates(&root.join(TEMPLATE_DIR), templates, &declared)
     });
-    for doc in DOCS {
+    for doc in docs {
         match fs::read_to_string(root.join(doc)) {
             Ok(text) => problems.extend(check_doc(doc, &text, &declared)),
             Err(error) => problems.push(format!("{doc}: cannot read: {error}")),
@@ -181,9 +184,104 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         for (file, text) in files {
-            fs::write(dir.join(file), text).unwrap();
+            let path = dir.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
         }
         dir
+    }
+
+    const GOOD_TEMPLATE: &str = "title: \"a: \"\nlabels: [\"k:a\"]\n";
+    const BAD_TEMPLATE: &str = "title: \"a: \"\nlabels: [\"k:zz\"]\n";
+    const GOOD_DOC: &str = "<!-- labels:start -->\n- `k:a`\n<!-- labels:end -->\n";
+
+    /// Runs [`check`] on a repository holding `files`, with `k:a` declared.
+    fn check_repo(
+        name: &str,
+        files: &[(&str, &str)],
+        templates: Option<&IssueTemplatesConfig>,
+        docs: &[&str],
+    ) -> Vec<String> {
+        let dir = dir_with(name, files);
+        let docs: Vec<String> = docs.iter().map(|doc| (*doc).to_owned()).collect();
+        let problems = check(&dir, &["k:a".to_owned()], templates, &docs);
+        let _ = fs::remove_dir_all(&dir);
+        problems
+    }
+
+    fn template_at(file: &str) -> String {
+        format!("{TEMPLATE_DIR}/{file}")
+    }
+
+    #[test]
+    fn without_templates_or_docs_nothing_is_read() {
+        let problems = check_repo(
+            "none",
+            &[
+                (&template_at("a.yml"), BAD_TEMPLATE),
+                ("AGENTS.md", "no block"),
+            ],
+            None,
+            &[],
+        );
+        assert_eq!(problems, Vec::<String>::new());
+    }
+
+    #[test]
+    fn templates_only_checks_the_templates_and_no_doc() {
+        let declared = templates(true, &[("a.yml", "k:a", "a: ")]);
+        let template = template_at("a.yml");
+        let problems = check_repo(
+            "templates",
+            &[(&template, BAD_TEMPLATE), ("AGENTS.md", "no block")],
+            Some(&declared),
+            &[],
+        );
+        assert_eq!(
+            problems,
+            [format!("{template}: `labels:` must be exactly [k:a]")]
+        );
+    }
+
+    #[test]
+    fn docs_only_checks_the_listed_docs_and_no_template() {
+        let template = template_at("a.yml");
+        let problems = check_repo(
+            "docs",
+            &[
+                (&template, BAD_TEMPLATE),
+                ("docs/LABELS.md", "no block"),
+                ("CONTRIBUTING.md", "no block"),
+            ],
+            None,
+            &["docs/LABELS.md", "AGENTS.md"],
+        );
+        assert_eq!(problems.len(), 2, "{problems:?}");
+        assert!(problems[0].starts_with("docs/LABELS.md: missing <!-- labels:start -->"));
+        assert!(problems[1].starts_with("AGENTS.md: cannot read:"));
+    }
+
+    #[test]
+    fn templates_and_docs_are_both_checked() {
+        let declared = templates(true, &[("a.yml", "k:a", "a: ")]);
+        let template = template_at("a.yml");
+        let agree = check_repo(
+            "both-ok",
+            &[(&template, GOOD_TEMPLATE), ("AGENTS.md", GOOD_DOC)],
+            Some(&declared),
+            &["AGENTS.md"],
+        );
+        assert_eq!(agree, Vec::<String>::new());
+
+        let drift = check_repo(
+            "both-drift",
+            &[(&template, BAD_TEMPLATE), ("AGENTS.md", "no block")],
+            Some(&declared),
+            &["AGENTS.md"],
+        );
+        assert_eq!(drift.len(), 2, "{drift:?}");
+        assert!(drift[0].starts_with(&template));
+        assert!(drift[1].starts_with("AGENTS.md: missing"));
     }
 
     #[test]

@@ -20,7 +20,7 @@ fn this_repository_templates_and_docs_match_tools_toml() {
         .map(|label| label.name)
         .collect();
     assert_eq!(
-        consistency::check(&root, &names, config.issue_templates()),
+        consistency::check(&root, &names, config.issue_templates(), config.label_docs()),
         Vec::<String>::new()
     );
 }
