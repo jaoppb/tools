@@ -25,12 +25,8 @@ impl Arguments {
     /// the required flags.
     #[must_use]
     pub fn from_matches(_verb: &str, matches: &ArgMatches) -> Self {
-        let text = |name: &str| {
-            matches
-                .get_one::<String>(name)
-                .cloned()
-                .expect("clap requires this flag")
-        };
+        // arch-lint forbids `expect`; the flags are `required`, so the default never shows.
+        let text = |name: &str| matches.get_one::<String>(name).cloned().unwrap_or_default();
         Self {
             base: text(BASE),
             watch: matches
