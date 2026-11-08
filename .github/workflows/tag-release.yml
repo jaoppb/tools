@@ -1,8 +1,11 @@
 name: Tag Release
 
 # A merged version bump (see scripts/bump-version.sh) changes the workspace version on
-# main. This workflow tags that commit and publishes the release. Tags pushed with
-# GITHUB_TOKEN do not trigger release.yml, so it is called directly.
+# main. This workflow tags that commit and publishes the release. scripts/release-tag.sh
+# tags only when the push itself changed [workspace.package].version, so a later unrelated
+# Cargo.toml change never releases under a version an earlier commit bumped.
+# workflow_dispatch is the recovery path: it tags and releases exactly the requested ref.
+# Tags pushed with GITHUB_TOKEN do not trigger release.yml, so it is called directly.
 
 on:
   push:
@@ -10,51 +13,62 @@ on:
       - main
     paths:
       - Cargo.toml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z). Created at ref when missing; released as it is when it exists.
+        required: true
+        type: string
+      ref:
+        description: Commit, branch or tag to tag when the tag is missing (default the commit this run uses). When the tag exists, leave empty or give its commit.
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
-
-concurrency:
-  group: tag-release
 
 jobs:
   tag:
     name: Tag the workspace version
     runs-on: ubuntu-latest
+    # Only the tagging is serialized: a run waiting behind a whole release build could be
+    # replaced by a newer pending run and drop a version bump.
+    concurrency:
+      group: tag-release
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
+      tag: ${{ steps.push.outputs.tag || steps.dispatch.outputs.tag }}
     steps:
+      # Full history: the push path compares with the commit before the push and the
+      # dispatch path may tag an older ref.
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Create the release tag when missing
-        id: tag
-        run: |
-          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
-          tag="v${version}"
-          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::notice::Version '${version}' is not a plain release version; not tagging"
-          else
-            rc=0
-            git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1 || rc=$?
-            if [ "${rc}" -eq 0 ]; then
-              echo "::notice::Tag ${tag} already exists; nothing to release"
-              exit 0
-            elif [ "${rc}" -ne 2 ]; then
-              echo "::error::Could not query tags on origin (exit ${rc})"
-              exit 1
-            fi
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "${tag}" -m "${tag}"
-            git push origin "refs/tags/${tag}"
-            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Tag a version bump pushed to main
+        id: push
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: scripts/release-tag.sh push "${BEFORE}" "${AFTER}"
+
+      - name: Tag or verify the requested release
+        id: dispatch
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ inputs.tag }}
+          REF: ${{ inputs.ref }}
+          DEFAULT_REF: ${{ github.sha }}
+        run: scripts/release-tag.sh dispatch "${TAG}" "${REF}" "${DEFAULT_REF}"
 
   release:
     name: Release
     needs: tag
     if: needs.tag.outputs.tag != ''
+    concurrency:
+      group: release-${{ needs.tag.outputs.tag }}
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.tag.outputs.tag }}

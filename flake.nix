@@ -34,6 +34,12 @@
             jq
             just
             lefthook
+            # `just workflows-check`: workflow lint (actionlint runs shellcheck on `run:` blocks)
+            # and scripts/release-tag.sh with its harness.
+            actionlint
+            shellcheck
+            python3
+            git
           ];
           # Checked by the justfile's `_devshell` guard: recipes run only with this toolchain.
           TOOLS_DEVSHELL = "1";
