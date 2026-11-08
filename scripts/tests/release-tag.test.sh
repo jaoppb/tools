@@ -3,9 +3,14 @@
 # clone where each case commits Cargo.toml revisions and runs the script.
 set -euo pipefail
 
+# Git hooks (Lefthook's pre-push runs `just check`) export GIT_DIR, GIT_INDEX_FILE and
+# friends, which would point every git command below at the repository being pushed.
+# shellcheck disable=SC2046 # word splitting is intended: one name per variable
+unset $(git rev-parse --local-env-vars)
+
 SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/release-tag.sh"
 readonly SCRIPT
-ROOT="$(mktemp -d)"
+ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 readonly ROOT
 trap 'rm -rf "${ROOT}"' EXIT
 
@@ -25,6 +30,11 @@ setup() {
   git init --quiet --bare --initial-branch=main "${dir}/origin.git"
   git clone --quiet "${dir}/origin.git" "${dir}/work" 2>/dev/null
   cd "${dir}/work"
+  # Never run a case against any repository but this throwaway clone.
+  [[ "$(git rev-parse --absolute-git-dir)" == "${dir}/work/.git" ]] || {
+    echo "release-tag.test.sh: git resolves outside ${dir}/work; aborting" >&2
+    exit 1
+  }
   : >"${dir}/output"
   export GITHUB_OUTPUT="${dir}/output"
 }
