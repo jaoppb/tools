@@ -38,7 +38,7 @@ This repository enforces strict issue hygiene and commit conventions as document
 
 ### Prerequisites
 
-- **[Nix](https://nixos.org/) with flakes enabled (required):** the `flake.nix` devShell provides the Rust toolchain, `just`, Lefthook and the GitHub CLI (`gh`) at the versions pinned by `flake.lock`. CI runs every `just` job in the same devShell, so `just check` means the same thing locally and in CI. Every `just` recipe fails outside it; only `just --list` works anywhere.
+- **[Nix](https://nixos.org/) with flakes enabled (required):** the `flake.nix` devShell provides the Rust toolchain, `just`, Lefthook and the GitHub CLI (`gh`), and the workflow linters (`actionlint`, `shellcheck`) at the versions pinned by `flake.lock`. CI runs every `just` job in the same devShell, so `just check` means the same thing locally and in CI. Every `just` recipe fails outside it; only `just --list` works anywhere.
 - *(Optional)* **[direnv](https://direnv.net/):** enters the devShell automatically through `.envrc` (`direnv allow`).
 
 ### Initial Setup
@@ -146,7 +146,15 @@ Releases never touch `main` directly:
 2. From an up-to-date `main`, run `just bump-version <major|minor|patch|X.Y.Z> --issue <n>` (add `--dry-run` to preview the version, branch, and PR text without changing anything). It needs an authenticated `gh`, creates `chore/<n>`, commits `chore: bump version to X.Y.Z (#n)`, pushes the branch, and opens the PR.
 3. Merge the PR with a merge commit. The `Tag Release` workflow then tags the merge commit `vX.Y.Z` and calls the `Release` workflow, which validates the tag against the `Cargo.toml` version and publishes the GitHub Release with binaries. Pushing a `vX.Y.Z` tag by hand still triggers `Release` directly.
 
-If `Release` fails after the tag exists, use "Re-run failed jobs" on the same `Tag Release` run (a new run sees the tag and does nothing). If the `tag` job itself failed, re-run it: the tag job tags the current `Cargo.toml` version whenever its tag is missing, so otherwise the next unrelated change to the root `Cargo.toml` on `main` would tag and release that commit under the bumped version.
+`Tag Release` tags a push to `main` only when that push changed `[workspace.package].version`. A later `Cargo.toml` change that keeps the version never tags, even when the tag is missing: the run logs a notice naming the missing tag. A push it cannot compare (a new branch, or rewritten history) logs a warning and tags nothing.
+
+**Recovery.** When a bump was merged but never tagged or released, run `Tag Release` by hand (Actions → Tag Release → Run workflow, or `gh workflow run tag-release.yml -f tag=vX.Y.Z -f ref=<merge commit>`):
+
+- **Tag missing:** it creates `vX.Y.Z` at `ref` (default: the commit the run uses, the head of the branch you run it from) after checking that `Cargo.toml` there has version `X.Y.Z`, then calls `Release`. Give the bump's merge commit as `ref` when `main` has moved on since.
+- **Tag present:** it releases the tag as it is; leave `ref` empty or give the tag's commit. It never moves or recreates a tag, so a tag on the wrong commit must be deleted by hand first.
+- `Release` replaces an existing GitHub Release for the tag (the tag stays) and uploads every binary again, so re-running is safe. "Re-run failed jobs" on the original run still works when only part of `Release` failed.
+
+`scripts/release-tag.sh` holds this logic; `just workflows-check` lints the workflows and runs its tests.
 
 ---
 
@@ -155,8 +163,11 @@ If `Release` fails after the tag exists, use "Re-run failed jobs" on the same `T
 Use `just` recipes to validate changes before pushing:
 
 ```bash
-# Workspace lints, formatting, unit tests, and the partial feature builds
+# Workspace lints, formatting, unit tests, the partial feature builds, and workflows-check
 just check
+
+# actionlint over .github/workflows, and shellcheck plus tests for scripts/release-tag.sh
+just workflows-check
 
 # Each cargo feature group (issues, repo, project) alone, and none
 just check-features
