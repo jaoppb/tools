@@ -1,0 +1,52 @@
+name: Tag Release
+
+# A merged version bump (see scripts/bump-version.sh) changes the workspace version on
+# main. This workflow tags that commit and publishes the release. Tags pushed with
+# GITHUB_TOKEN do not trigger release.yml, so it is called directly.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - Cargo.toml
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Tag the workspace version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Create the release tag when missing
+        id: tag
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          tag="v${version}"
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::Version '${version}' is not a plain release version; not tagging"
+          elif git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "::notice::Tag ${tag} already exists; nothing to release"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "${tag}" -m "${tag}"
+            git push origin "refs/tags/${tag}"
+            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    name: Release
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    permissions:
+      contents: write
