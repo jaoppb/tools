@@ -105,3 +105,31 @@ impl From<MilestonesOverlayConfig> for RepoMilestonesOverlay {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::repo::Unmanaged;
+
+    #[test]
+    fn unmanaged_defaults_to_error_for_milestones() {
+        let config: MilestonesConfig = toml::from_str("items = []").unwrap();
+        assert_eq!(RepoMilestonesSpec::from(config).unmanaged, Unmanaged::Error);
+    }
+
+    #[test]
+    fn unmanaged_policy_parses_every_value_and_rejects_others() {
+        for (word, policy) in [
+            ("ignore", Unmanaged::Ignore),
+            ("warn", Unmanaged::Warn),
+            ("error", Unmanaged::Error),
+            ("prune", Unmanaged::Prune),
+        ] {
+            let config: MilestonesConfig =
+                toml::from_str(&format!("unmanaged = \"{word}\"")).unwrap();
+            assert_eq!(RepoMilestonesSpec::from(config).unmanaged, policy);
+        }
+        assert!(toml::from_str::<MilestonesConfig>("unmanaged = \"loud\"").is_err());
+        assert!(toml::from_str::<MilestonesConfig>("prune_unmanaged = true").is_err());
+    }
+}

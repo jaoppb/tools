@@ -165,9 +165,45 @@ struct RepoSettingsRaw {
     #[serde(default = "default_true")]
     delete_branch_on_merge: bool,
     #[serde(default)]
-    merge_commit_title: Option<MergeCommitTitle>,
+    merge_commit_title: Option<WireMergeCommitTitle>,
     #[serde(default)]
-    merge_commit_message: Option<MergeCommitMessage>,
+    merge_commit_message: Option<WireMergeCommitMessage>,
+}
+
+/// The spelling GitHub uses for the merge commit title.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum WireMergeCommitTitle {
+    PrTitle,
+    MergeMessage,
+}
+
+impl From<WireMergeCommitTitle> for MergeCommitTitle {
+    fn from(wire: WireMergeCommitTitle) -> Self {
+        match wire {
+            WireMergeCommitTitle::PrTitle => Self::PrTitle,
+            WireMergeCommitTitle::MergeMessage => Self::MergeMessage,
+        }
+    }
+}
+
+/// The spelling GitHub uses for the merge commit message.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum WireMergeCommitMessage {
+    PrBody,
+    PrTitle,
+    Blank,
+}
+
+impl From<WireMergeCommitMessage> for MergeCommitMessage {
+    fn from(wire: WireMergeCommitMessage) -> Self {
+        match wire {
+            WireMergeCommitMessage::PrBody => Self::PrBody,
+            WireMergeCommitMessage::PrTitle => Self::PrTitle,
+            WireMergeCommitMessage::Blank => Self::Blank,
+        }
+    }
 }
 
 const fn default_true() -> bool {
@@ -186,8 +222,8 @@ pub fn parse_repo_settings(json: &str) -> Result<RepoSettings, GhError> {
         allow_squash_merge: raw.allow_squash_merge,
         allow_rebase_merge: raw.allow_rebase_merge,
         delete_branch_on_merge: raw.delete_branch_on_merge,
-        merge_commit_title: raw.merge_commit_title.unwrap_or_default(),
-        merge_commit_message: raw.merge_commit_message.unwrap_or_default(),
+        merge_commit_title: raw.merge_commit_title.map(Into::into).unwrap_or_default(),
+        merge_commit_message: raw.merge_commit_message.map(Into::into).unwrap_or_default(),
     })
 }
 
