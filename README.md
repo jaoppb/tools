@@ -190,11 +190,8 @@ area_prefix = ["area:", "domain:"]   # a list: any prefix counts, ignoring case 
 
 ### Prerequisites
 
-- **Rust**: Rust toolchain supporting edition 2024.
-- **[Just](https://github.com/casey/just)**: Command runner for workspace tasks.
-- **[Lefthook](https://github.com/evilmartians/lefthook)**: Fast, multi-language Git hooks manager.
-- **[GitHub CLI (`gh`)](https://cli.github.com/)**: Authenticated CLI used by adapters to communicate with GitHub.
-- *(Optional)* **[Nix](https://nixos.org/)**: A reproducible developer environment is provided via [`flake.nix`](flake.nix) (`nix develop`).
+- **[Nix](https://nixos.org/)** with flakes enabled (required): the [`flake.nix`](flake.nix) devShell provides the Rust toolchain, `just`, Lefthook and the GitHub CLI (`gh`) at the versions pinned by `flake.lock`, the same ones CI uses. Every `just` recipe except `just --list` fails outside it.
+- *(Optional)* **[direnv](https://direnv.net/)**: enters the devShell automatically through [`.envrc`](.envrc) (`direnv allow`).
 
 ### Local Environment Setup
 
@@ -203,11 +200,12 @@ area_prefix = ["area:", "domain:"]   # a list: any prefix counts, ignoring case 
    git clone https://github.com/jaoppb/tools.git
    cd tools
    ```
-2. Initialize developer tooling and Git hooks:
+2. Enter the devShell (`nix develop`, or `direnv allow` once), then initialize the Git hooks:
    ```bash
+   nix develop
    just setup
    ```
-   This configures Lefthook pre-commit (formatting and clippy lints) and pre-push hooks (workspace tests and issue checks).
+   This configures Lefthook pre-commit (formatting and clippy lints) and pre-push hooks (workspace tests and issue checks). To run one recipe without entering the devShell, prefix it: `nix develop -c just check`.
 
 ### Development Recipes
 
@@ -217,6 +215,8 @@ Workspace recipes are managed with `just`:
 |--------|-------------|------------|
 | **Validation & Checks** | | |
 | `just check` | Runs formatting checks, workspace type-check, Clippy lints, and unit tests | `just check` |
+| `just fmt-check` | Checks Rust formatting; part of `just check` and the pre-commit hook | `just fmt-check` |
+| `just lint` | Runs Clippy on the workspace, denying warnings; part of `just check` and the pre-commit hook | `just lint` |
 | `just arch-check` | Validates architecture boundary rules via `arch-lint` | `just arch-check` |
 | `just check-features` | Builds each feature group (`issues`, `repo`, `project`) alone, and none, with Clippy; part of `just check` | `just check-features` |
 | `just issues-check` | Audits open GitHub issues against workflow rules in `tools.toml` | `just issues-check` |
