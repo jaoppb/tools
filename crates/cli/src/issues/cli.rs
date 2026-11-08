@@ -6,7 +6,6 @@ use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
 use tools_core::config::{ConfigError, RulesConfig, load_or_find};
-use tools_core::domain::{CANONICAL_TYPES, canonical_type_label};
 
 use crate::cli::{CONFIG, OWNER, PROJECT, project_flag, repos_of};
 
@@ -16,8 +15,6 @@ pub const CHECK: &str = "check";
 pub const MIGRATE: &str = "migrate";
 const NO_PARENT: &str = "no-parent";
 const NO_MEMBERSHIP: &str = "no-membership";
-const DEFAULT_AREA: &str = "default-area";
-const DEFAULT_TYPE: &str = "default-type";
 
 /// An error resolving issue audit configuration.
 #[derive(Debug, thiserror::Error)]
@@ -40,8 +37,6 @@ pub struct Arguments {
     no_parent: bool,
     no_membership: bool,
     migrate: bool,
-    default_area: Option<String>,
-    default_type: Option<String>,
 }
 
 /// Resolved target, audit rules, and label migrations from configuration and CLI overrides.
@@ -72,16 +67,6 @@ impl Arguments {
             no_parent: flag(NO_PARENT),
             no_membership: flag(NO_MEMBERSHIP),
             migrate: verb == MIGRATE,
-            default_area: matches
-                .try_get_one::<String>(DEFAULT_AREA)
-                .ok()
-                .flatten()
-                .cloned(),
-            default_type: matches
-                .try_get_one::<String>(DEFAULT_TYPE)
-                .ok()
-                .flatten()
-                .cloned(),
         }
     }
 
@@ -89,18 +74,6 @@ impl Arguments {
     #[must_use]
     pub const fn is_migrate(&self) -> bool {
         self.migrate
-    }
-
-    /// Default area label to assign if an issue has none.
-    #[must_use]
-    pub fn default_area(&self) -> Option<&str> {
-        self.default_area.as_deref()
-    }
-
-    /// Default type label to assign if an issue has none.
-    #[must_use]
-    pub fn default_type(&self) -> Option<&str> {
-        self.default_type.as_deref()
     }
 
     /// Resolves the target, rules, and migrations from configuration and CLI overrides.
@@ -189,28 +162,6 @@ pub fn command() -> Command {
         .subcommand(
             Command::new(MIGRATE)
                 .about("Rewrite issue labels to match the configured taxonomy")
-                .arg(project_flag())
-                .arg(
-                    Arg::new(DEFAULT_AREA)
-                        .long(DEFAULT_AREA)
-                        .value_name("AREA")
-                        .help("Fallback area label for issues missing an area: label"),
-                )
-                .arg(
-                    Arg::new(DEFAULT_TYPE)
-                        .long(DEFAULT_TYPE)
-                        .value_name("TYPE")
-                        .value_parser(validate_default_type)
-                        .help("Fallback type label for issues missing a type: label"),
-                ),
+                .arg(project_flag()),
         )
-}
-
-fn validate_default_type(value: &str) -> Result<String, String> {
-    canonical_type_label(value).ok_or_else(|| {
-        format!(
-            "invalid default type '{value}'; must be one of: {}",
-            CANONICAL_TYPES.join(", ")
-        )
-    })
 }

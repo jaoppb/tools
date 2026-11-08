@@ -104,25 +104,13 @@ impl fmt::Display for IssueMigrationOutcome {
 pub struct IssueMigrator<P> {
     port: P,
     migrations: BTreeMap<String, String>,
-    default_area: Option<String>,
-    default_type: Option<String>,
 }
 
 impl<P: IssueMigrationPort> IssueMigrator<P> {
     /// Creates a new migrator.
     #[must_use]
-    pub const fn new(
-        port: P,
-        migrations: BTreeMap<String, String>,
-        default_area: Option<String>,
-        default_type: Option<String>,
-    ) -> Self {
-        Self {
-            port,
-            migrations,
-            default_area,
-            default_type,
-        }
+    pub const fn new(port: P, migrations: BTreeMap<String, String>) -> Self {
+        Self { port, migrations }
     }
 
     /// Evaluates issues and applies migrations if running in Apply mode.
@@ -135,12 +123,7 @@ impl<P: IssueMigrationPort> IssueMigrator<P> {
         issues: &IssueTree,
         mode: IssueMigrationMode,
     ) -> Result<IssueMigrationOutcome, MigrationError> {
-        let plan = IssueMigrationPlan::build(
-            issues.iter(),
-            &self.migrations,
-            self.default_area.as_deref(),
-            self.default_type.as_deref(),
-        );
+        let plan = IssueMigrationPlan::build(issues.iter(), &self.migrations);
 
         if mode == IssueMigrationMode::Apply {
             for action in plan.actions() {
@@ -206,7 +189,7 @@ mod tests {
         let mut migrations = BTreeMap::new();
         migrations.insert("bug".to_string(), "type:fix".to_string());
 
-        let migrator = IssueMigrator::new(&port, migrations, None, None);
+        let migrator = IssueMigrator::new(&port, migrations);
         let tree = make_tree();
         let outcome = migrator.run(&tree, IssueMigrationMode::Preview).unwrap();
 
@@ -222,7 +205,7 @@ mod tests {
         let mut migrations = BTreeMap::new();
         migrations.insert("bug".to_string(), "type:fix".to_string());
 
-        let migrator = IssueMigrator::new(&port, migrations, None, None);
+        let migrator = IssueMigrator::new(&port, migrations);
         let tree = make_tree();
         let outcome = migrator.run(&tree, IssueMigrationMode::Apply).unwrap();
 
@@ -232,29 +215,5 @@ mod tests {
         assert_eq!(calls[0].0.to_string(), "web#1");
         assert_eq!(calls[0].1, vec!["area:web", "type:fix"]);
         assert!(outcome.to_string().contains("Applied label migrations"));
-    }
-
-    #[test]
-    fn applies_default_type_and_area_to_unlabeled_issue() {
-        let port = MockPort::new();
-        let migrations = BTreeMap::new();
-
-        let migrator = IssueMigrator::new(
-            &port,
-            migrations,
-            Some("area:infra".to_string()),
-            Some("type:chore".to_string()),
-        );
-
-        let num = IssueNumber::new(Repo::new("org", "infra"), 100);
-        let issue = TreeIssue::new(num, Lifecycle::Open);
-        let tree = IssueTree::new(vec![issue]);
-
-        let outcome = migrator.run(&tree, IssueMigrationMode::Apply).unwrap();
-        assert_eq!(outcome.plan().len(), 1);
-        let calls = port.recorded_calls();
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0.to_string(), "infra#100");
-        assert_eq!(calls[0].1, vec!["area:infra", "type:chore"]);
     }
 }

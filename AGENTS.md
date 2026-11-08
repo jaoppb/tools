@@ -55,7 +55,7 @@ This repository is a monorepo for developer tools, repository management utiliti
 - For onboarding organizations and standardizing repositories (`web`, `api`, `app`, etc.), see the [Multi-Repository Organization Onboarding Guide](docs/multi-repo-onboarding.md).
 - **Recipes:**
   - `just repo-bootstrap` / `just org-sync [org=...]`: Reconciles repository merge settings, labels, and milestones.
-  - `just issues-migrate [--default-area=...] [--default-type=...]`: Rewrites legacy issue labels in bulk (writes; `just issues-check` previews the pending migrations).
+  - `just issues-migrate`: Rewrites legacy issue labels in bulk (writes; `just issues-check` previews the pending migrations).
 
 ## 4. Repository memory & continuity
 

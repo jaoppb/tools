@@ -170,18 +170,8 @@ Issue migration plan (3 issues to update):
 Run `tools issues migrate` to execute these changes.
 ```
 
-### Step 4.2: Handling Issues Lacking Area or Type Labels
-If issues have legacy type labels but no area indicator, provide a fallback default area:
-
-```bash
-cargo run -q -p tools -- issues migrate --default-area web --repo web
-```
-
-Similarly, if legacy issues have zero labels or are missing a `type:*` label, provide a fallback default type (e.g. `chore` or `type:chore`):
-
-```bash
-cargo run -q -p tools -- issues migrate --default-type chore --default-area web --repo web
-```
+### Step 4.2: Issues Lacking Area or Type Labels
+`issues migrate` only applies the configured label renames; it never invents a label. Issues that still lack a type or area after migration are reported by `tools issues check`; label them by hand (or with `gh issue edit --add-label`).
 
 ### Step 4.3: Apply Migrations
 `issues migrate` always writes. Execute the migrations directly against the GitHub REST API:
