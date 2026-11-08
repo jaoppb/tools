@@ -254,6 +254,13 @@ run dispatch v0.3.0 "${bump}" "${bump}"
 expect_status 0
 expect_output "tag=v0.3.0"
 
+case_ "dispatch: an existing annotated tag with its commit as ref is released"
+bump="$(commit_version 0.3.0)"
+git tag -a v0.3.0 -m v0.3.0 && git push --quiet origin v0.3.0
+run dispatch v0.3.0 "${bump}" "${bump}"
+expect_status 0
+expect_output "tag=v0.3.0"
+
 case_ "dispatch: an existing tag is never moved to another ref"
 bump="$(commit_version 0.3.0)"
 git tag -a v0.3.0 -m v0.3.0 && git push --quiet origin v0.3.0
