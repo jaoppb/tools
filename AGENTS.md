@@ -31,6 +31,7 @@ This repository is a monorepo for developer tools, repository management utiliti
   - Pull request title: `type: subject (#issue)`.
   - Closing keywords: Use `Closes #issue` in the PR body and the branch's final commit. Use `Refs #issue` for intermediate commits.
   - Merge method: **Merge commit only**. Rebase and squash are disabled; every commit reaches `main`.
+- **Migration guides.** Every release milestone gets `docs/migrations/<version>.md` (for example `docs/migrations/v0.2.0.md`), covering only the step from the previous release: one section per consumer-visible change (what changed, what you must do, and a before/after `tools.toml` snippet where a key is involved) and a forward pointer where a later release changed it again. The version-bump issue's Definition of Done must include "`docs/migrations/<version>.md` exists".
 
 | Issue workflow rule | Enforcer | Status |
 |---------------------|----------|--------|
