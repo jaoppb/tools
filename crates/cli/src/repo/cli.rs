@@ -197,21 +197,18 @@ impl Arguments {
     ///
     /// Fails when a requested entity is not configured or when tools.toml has no repository configuration.
     pub fn resolve_with_config(&self, cfg: Config) -> Result<ResolvedRepo, RepoResolveError> {
-        if self.owner.is_some() && self.repos.is_empty() && cfg.github.repositories.is_empty() {
+        if self.owner.is_some() && self.repos.is_empty() && cfg.repositories().is_empty() {
             return Err(RepoResolveError::NoRepositoriesForOrg);
         }
 
-        let owner = self
-            .owner
-            .clone()
-            .unwrap_or_else(|| cfg.github.repository.owner.clone());
-        let project_number = cfg.github.project.as_ref().and_then(|p| p.number);
+        let owner = self.owner.clone().unwrap_or_else(|| cfg.owner().to_owned());
+        let project_number = cfg.project_number();
         let target = if !self.repos.is_empty() {
             Target::multi(owner, self.repos.clone(), project_number)
-        } else if !cfg.github.repositories.is_empty() {
-            Target::multi(owner, cfg.github.repositories.clone(), project_number)
+        } else if !cfg.repositories().is_empty() {
+            Target::multi(owner, cfg.repositories().to_vec(), project_number)
         } else {
-            Target::single(owner, cfg.github.repository.name.clone(), project_number)
+            Target::single(owner, cfg.repository_name().to_owned(), project_number)
         };
 
         let repos = target
@@ -226,7 +223,7 @@ impl Arguments {
         Ok(ResolvedRepo {
             target,
             repos,
-            issue_templates: cfg.github.issue_templates.clone(),
+            issue_templates: cfg.issue_templates().cloned(),
         })
     }
 

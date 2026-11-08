@@ -91,9 +91,9 @@ impl Arguments {
                 let migrations = cfg.label_migrations();
                 (
                     Some(target),
-                    cfg.github.issues.rules,
+                    cfg.rules().clone(),
                     migrations,
-                    cfg.warnings,
+                    cfg.warnings().to_vec(),
                 )
             }
             Err(ConfigError::NotFound) => {
