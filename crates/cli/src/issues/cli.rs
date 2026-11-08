@@ -88,17 +88,12 @@ impl Arguments {
         let (cfg_target, mut rules, migrations, warnings) = match loaded {
             Ok(cfg) => {
                 let target = cfg.target();
-                let migrations = cfg
-                    .github
-                    .labels
-                    .as_ref()
-                    .map(|labels| labels.migrations.clone())
-                    .unwrap_or_default();
+                let migrations = cfg.label_migrations();
                 (
                     Some(target),
-                    cfg.github.issues.rules,
+                    cfg.rules().clone(),
                     migrations,
-                    cfg.warnings,
+                    cfg.warnings().to_vec(),
                 )
             }
             Err(ConfigError::NotFound) => {

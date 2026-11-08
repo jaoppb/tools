@@ -1,14 +1,7 @@
 //! Repository merge and branch settings enforced on GitHub.
 
-use serde::{Deserialize, Serialize};
-
-const fn default_true() -> bool {
-    true
-}
-
 /// Default merge commit title format enforced on GitHub.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MergeCommitTitle {
     /// Use the pull request title.
     #[default]
@@ -27,8 +20,7 @@ impl std::fmt::Display for MergeCommitTitle {
 }
 
 /// Default merge commit message format enforced on GitHub.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MergeCommitMessage {
     /// Use the pull request body.
     #[default]
@@ -50,25 +42,19 @@ impl std::fmt::Display for MergeCommitMessage {
 }
 
 /// Repository settings enforced on GitHub.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoSettings {
     /// Whether merge commits are allowed.
-    #[serde(default = "default_true")]
     pub allow_merge_commit: bool,
     /// Whether squash merges are allowed.
-    #[serde(default)]
     pub allow_squash_merge: bool,
     /// Whether rebase merges are allowed.
-    #[serde(default)]
     pub allow_rebase_merge: bool,
     /// Whether head branches are automatically deleted upon merge.
-    #[serde(default = "default_true")]
     pub delete_branch_on_merge: bool,
     /// Default merge commit title format (e.g. `PR_TITLE` or `MERGE_MESSAGE`).
-    #[serde(default)]
     pub merge_commit_title: MergeCommitTitle,
     /// Default merge commit message format (e.g. `PR_BODY`, `PR_TITLE`, or `BLANK`).
-    #[serde(default)]
     pub merge_commit_message: MergeCommitMessage,
 }
 

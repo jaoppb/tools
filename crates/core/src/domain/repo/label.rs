@@ -1,46 +1,36 @@
 //! Repository label representation and diffing.
 
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::domain::repo::unmanaged::default_labels;
 use crate::domain::repo::{
     DeleteReason, ReconcileHandler, RepoPlanError, Severity, Unmanaged, overlay_by_key,
     reconcile_by_key, union_names,
 };
 
 /// Repository label representation on GitHub and in configuration.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoLabel {
     /// Label name (e.g. `type:feat`).
     pub name: String,
     /// Hex color without `#` (e.g. `1d76db`).
-    #[serde(deserialize_with = "deserialize_hex_color")]
     pub color: String,
     /// Label description.
-    #[serde(default)]
     pub description: String,
 }
 
 /// Repository labels specification and reconciliation policy.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoLabelsSpec {
     /// List of label names to prune.
-    #[serde(default)]
     pub deprecated: Vec<String>,
     /// Rename mappings from old label name to new label name.
-    #[serde(default)]
     pub renames: BTreeMap<String, String>,
     /// What to do with labels that exist on GitHub but are not declared (`ignore`, `warn`,
     /// `error` or `prune`).
-    #[serde(default = "default_labels")]
     pub unmanaged: Unmanaged,
     /// Mappings from legacy issue labels to canonical labels.
-    #[serde(default)]
     pub migrations: BTreeMap<String, String>,
     /// Desired labels to enforce.
-    #[serde(default)]
     pub items: Vec<RepoLabel>,
 }
 
@@ -61,23 +51,17 @@ impl Default for RepoLabelsSpec {
 /// Items override shared items with the same name and are otherwise appended; `deprecated` is a
 /// union; `renames` and `migrations` are merged with overlay entries winning; `unmanaged`
 /// replaces the shared value only when set.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RepoLabelsOverlay {
     /// Additional label names to prune.
-    #[serde(default)]
     pub deprecated: Vec<String>,
     /// Additional or overriding rename mappings.
-    #[serde(default)]
     pub renames: BTreeMap<String, String>,
     /// Overrides what to do with undeclared labels when set.
-    #[serde(default)]
     pub unmanaged: Option<Unmanaged>,
     /// Additional or overriding migration mappings.
-    #[serde(default)]
     pub migrations: BTreeMap<String, String>,
     /// Additional or overriding labels.
-    #[serde(default)]
     pub items: Vec<RepoLabel>,
 }
 
@@ -102,14 +86,6 @@ impl RepoLabelsOverlay {
 
 fn normalize_hex_color(color: &str) -> String {
     color.trim_start_matches('#').to_ascii_lowercase()
-}
-
-fn deserialize_hex_color<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    Ok(normalize_hex_color(&s))
 }
 
 impl RepoLabel {

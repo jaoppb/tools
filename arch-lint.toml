@@ -63,3 +63,10 @@ files = ["crates/cli/src/repo/**", "crates/cli/tests/repo.rs", "crates/cli/tests
 deny = ["crate::project::**", "crate::issues::**", "tools::project::**", "tools::issues::**"]
 message = "the repo group must not depend on the other groups"
 severity = "error"
+
+[[restrict-use]]
+name = "repo-domain-is-serde-free"
+files = ["crates/core/src/domain/repo/**"]
+deny = ["serde::**", "serde_json::**", "toml::**"]
+message = "the repo domain must not know the shape of tools.toml or of the GitHub wire format; those live in config/schema and adapters/github"
+severity = "error"

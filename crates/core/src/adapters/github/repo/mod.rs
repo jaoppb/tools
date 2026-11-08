@@ -13,6 +13,7 @@ use crate::domain::repo::{
     LabelDiff, MilestoneDiff, ProjectDiff, RepoLabel, RepoMilestone, RepoMilestoneSpec,
     RepoProject, RepoSettings, RepoSpec, RepoState, SettingDiff,
 };
+use serde::Serialize;
 
 /// Communicates with GitHub GraphQL and REST APIs for repository management.
 #[derive(Debug, Clone)]
@@ -169,7 +170,7 @@ impl RepoPort for GhRepo {
 impl GhRepo {
     fn create_label(&self, label: &RepoLabel) -> Result<(), RepoSyncError> {
         let endpoint = self.repo_endpoint("labels");
-        let payload = serde_json::to_string(label).map_err(|error| {
+        let payload = serde_json::to_string(&LabelPayload::from(label)).map_err(|error| {
             RepoSyncError::Write(format!(
                 "failed to serialize label '{}': {error}",
                 label.name
@@ -206,12 +207,13 @@ impl GhRepo {
 
     fn create_milestone(&self, milestone: &RepoMilestoneSpec) -> Result<(), RepoSyncError> {
         let endpoint = self.repo_endpoint("milestones");
-        let payload = serde_json::to_string(milestone).map_err(|error| {
-            RepoSyncError::Write(format!(
-                "failed to serialize milestone '{}': {error}",
-                milestone.title
-            ))
-        })?;
+        let payload =
+            serde_json::to_string(&MilestonePayload::from(milestone)).map_err(|error| {
+                RepoSyncError::Write(format!(
+                    "failed to serialize milestone '{}': {error}",
+                    milestone.title
+                ))
+            })?;
         self.runner.rest_post(&endpoint, &payload).map_err(|err| {
             RepoSyncError::Write(format!(
                 "failed to create milestone '{}': {err}",
@@ -227,12 +229,13 @@ impl GhRepo {
         milestone: &RepoMilestoneSpec,
     ) -> Result<(), RepoSyncError> {
         let endpoint = self.milestone_endpoint(number);
-        let payload = serde_json::to_string(milestone).map_err(|error| {
-            RepoSyncError::Write(format!(
-                "failed to serialize milestone '{}': {error}",
-                milestone.title
-            ))
-        })?;
+        let payload =
+            serde_json::to_string(&MilestonePayload::from(milestone)).map_err(|error| {
+                RepoSyncError::Write(format!(
+                    "failed to serialize milestone '{}': {error}",
+                    milestone.title
+                ))
+            })?;
         self.runner.rest_patch(&endpoint, &payload).map_err(|err| {
             RepoSyncError::Write(format!(
                 "failed to update milestone '{}': {err}",
@@ -260,6 +263,42 @@ impl GhRepo {
                 ))
             })?;
         Ok(())
+    }
+}
+
+/// The body GitHub expects when creating a label.
+#[derive(Serialize)]
+struct LabelPayload<'a> {
+    name: &'a str,
+    color: &'a str,
+    description: &'a str,
+}
+
+impl<'a> From<&'a RepoLabel> for LabelPayload<'a> {
+    fn from(label: &'a RepoLabel) -> Self {
+        Self {
+            name: &label.name,
+            color: &label.color,
+            description: &label.description,
+        }
+    }
+}
+
+/// The body GitHub expects when creating or updating a milestone.
+#[derive(Serialize)]
+struct MilestonePayload<'a> {
+    title: &'a str,
+    description: &'a str,
+    state: String,
+}
+
+impl<'a> From<&'a RepoMilestoneSpec> for MilestonePayload<'a> {
+    fn from(milestone: &'a RepoMilestoneSpec) -> Self {
+        Self {
+            title: &milestone.title,
+            description: &milestone.description,
+            state: milestone.state.to_string(),
+        }
     }
 }
 
@@ -330,6 +369,38 @@ fn paginate<T>(
 mod tests {
     use super::*;
     use crate::domain::repo::{MergeCommitMessage, MergeCommitTitle};
+
+    // The strings below are what the former `#[derive(Serialize)]` on the domain types produced;
+    // the wire format must not change with the types.
+    #[test]
+    fn label_payload_matches_the_wire_format() {
+        let label = RepoLabel::new("type:feat", "#1D76DB", "New \"feature\"");
+        assert_eq!(
+            serde_json::to_string(&LabelPayload::from(&label)).unwrap(),
+            r#"{"name":"type:feat","color":"1d76db","description":"New \"feature\""}"#
+        );
+    }
+
+    #[test]
+    fn milestone_payload_matches_the_wire_format() {
+        let open = RepoMilestoneSpec {
+            title: "v1".into(),
+            description: "Stable".into(),
+            state: crate::domain::repo::MilestoneState::Open,
+        };
+        let closed = RepoMilestoneSpec {
+            state: crate::domain::repo::MilestoneState::Closed,
+            ..open.clone()
+        };
+        assert_eq!(
+            serde_json::to_string(&MilestonePayload::from(&open)).unwrap(),
+            r#"{"title":"v1","description":"Stable","state":"open"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&MilestonePayload::from(&closed)).unwrap(),
+            r#"{"title":"v1","description":"Stable","state":"closed"}"#
+        );
+    }
 
     #[test]
     fn percent_encodes_spaces_and_special_characters() {

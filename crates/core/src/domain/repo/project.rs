@@ -1,9 +1,7 @@
 //! Repository Project V2 representation and diffing.
 
-use serde::{Deserialize, Serialize};
-
 /// Desired repository Project V2 definition in configuration.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoProjectSpec {
     /// GitHub Project V2 number.
     pub number: u32,
@@ -23,7 +21,7 @@ impl RepoProjectSpec {
 }
 
 /// Repository Project V2 state on GitHub.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoProject {
     /// GitHub Project V2 node ID.
     pub id: String,

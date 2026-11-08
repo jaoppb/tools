@@ -10,7 +10,12 @@ pub use crate::domain::repo::{
 use crate::workflow::{LoadError, Workflow, WorkflowConfig};
 pub mod migrate;
 mod milestone_format;
+mod schema;
 pub use milestone_format::{MilestoneFormat, TitlePattern};
+use schema::{
+    LabelsConfig, LabelsOverlayConfig, MilestonesConfig, MilestonesOverlayConfig,
+    RepositorySettingsConfig,
+};
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -19,13 +24,13 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Config {
     /// GitHub configuration namespace.
-    pub github: GithubConfig,
+    github: GithubConfig,
     /// The `[workflow]` block, when the file has one.
     #[serde(default)]
-    pub workflow: Option<WorkflowConfig>,
+    workflow: Option<WorkflowConfig>,
     /// Deprecations of the loaded file, for the commands that read the deprecated keys to print.
     #[serde(skip)]
-    pub warnings: Vec<String>,
+    warnings: Vec<String>,
 }
 
 impl Config {
@@ -69,28 +74,53 @@ impl Config {
         &self.github.issues.rules
     }
 
-    /// The repository settings configuration, if specified.
+    /// The legacy-to-canonical label mappings of `[github.labels].migrations`, empty when unset.
     #[must_use]
-    pub const fn repo_settings(&self) -> Option<&RepositorySettingsConfig> {
-        self.github.repository.settings.as_ref()
+    pub fn label_migrations(&self) -> std::collections::BTreeMap<String, String> {
+        self.github
+            .labels
+            .as_ref()
+            .map(|labels| labels.migrations().clone())
+            .unwrap_or_default()
     }
 
-    /// The repository labels configuration, if specified.
+    /// The repository owner (user or organization).
     #[must_use]
-    pub const fn labels(&self) -> Option<&LabelsConfig> {
-        self.github.labels.as_ref()
+    pub fn owner(&self) -> &str {
+        &self.github.repository.owner
     }
 
-    /// The repository milestones configuration, if specified.
+    /// The repository name of `[github.repository]`.
     #[must_use]
-    pub const fn milestones(&self) -> Option<&MilestonesConfig> {
-        self.github.milestones.as_ref()
+    pub fn repository_name(&self) -> &str {
+        &self.github.repository.name
     }
 
-    /// The repository project configuration, if specified.
+    /// The multi-repository targets of `[github].repositories`, empty when unset.
     #[must_use]
-    pub const fn project(&self) -> Option<&ProjectConfig> {
-        self.github.project.as_ref()
+    pub fn repositories(&self) -> &[String] {
+        &self.github.repositories
+    }
+
+    /// The project number of `[github.project]`, if set.
+    #[must_use]
+    pub fn project_number(&self) -> Option<u32> {
+        self.github
+            .project
+            .as_ref()
+            .and_then(|project| project.number)
+    }
+
+    /// The `[github.issue_templates]` table, if declared.
+    #[must_use]
+    pub const fn issue_templates(&self) -> Option<&IssueTemplatesConfig> {
+        self.github.issue_templates.as_ref()
+    }
+
+    /// Deprecations of the loaded file, for the commands that read the deprecated keys to print.
+    #[must_use]
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
     }
 
     /// Resolves the desired specification for `repo_name`: the shared labels and milestones with
@@ -115,15 +145,25 @@ impl Config {
         };
         let overlay = self.github.overrides.get(repo_name);
         let labels = match overlay.and_then(|o| o.labels.as_ref()) {
-            Some(over) => Some(over.apply_to(self.github.labels.as_ref())?),
-            None => self.github.labels.clone(),
+            Some(over) => {
+                let base = self.github.labels.clone().map(RepoLabelsSpec::from);
+                Some(RepoLabelsOverlay::from(over.clone()).apply_to(base.as_ref())?)
+            }
+            None => self.github.labels.clone().map(RepoLabelsSpec::from),
         };
         let milestones = match overlay.and_then(|o| o.milestones.as_ref()) {
-            Some(over) => Some(over.apply_to(self.github.milestones.as_ref())?),
-            None => self.github.milestones.clone(),
+            Some(over) => {
+                let base = self.github.milestones.clone().map(RepoMilestonesSpec::from);
+                Some(RepoMilestonesOverlay::from(over.clone()).apply_to(base.as_ref())?)
+            }
+            None => self.github.milestones.clone().map(RepoMilestonesSpec::from),
         };
         Ok(RepoSpec::new(
-            self.github.repository.settings.clone(),
+            self.github
+                .repository
+                .settings
+                .clone()
+                .map(RepoSettings::from),
             labels,
             milestones,
             project,
@@ -137,38 +177,38 @@ impl Config {
 pub struct RepoOverrideConfig {
     /// Labels overlay.
     #[serde(default)]
-    pub labels: Option<RepoLabelsOverlay>,
+    labels: Option<LabelsOverlayConfig>,
     /// Milestones overlay.
     #[serde(default)]
-    pub milestones: Option<RepoMilestonesOverlay>,
+    milestones: Option<MilestonesOverlayConfig>,
 }
 
 /// GitHub configuration namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct GithubConfig {
     /// Repository coordinates and settings.
-    pub repository: RepositoryConfig,
+    repository: RepositoryConfig,
     /// Multi-repository targets, if configured.
     #[serde(default)]
-    pub repositories: Vec<String>,
+    repositories: Vec<String>,
     /// Project coordinates, if used.
     #[serde(default)]
-    pub project: Option<ProjectConfig>,
+    project: Option<ProjectConfig>,
     /// Issue rules configuration.
     #[serde(default)]
-    pub issues: IssuesConfig,
+    issues: IssuesConfig,
     /// Repository labels configuration.
     #[serde(default)]
-    pub labels: Option<LabelsConfig>,
+    labels: Option<LabelsConfig>,
     /// Repository milestones configuration.
     #[serde(default)]
-    pub milestones: Option<MilestonesConfig>,
+    milestones: Option<MilestonesConfig>,
     /// Per-repository label and milestone overlays, keyed by repository name.
     #[serde(default)]
-    pub overrides: std::collections::BTreeMap<String, RepoOverrideConfig>,
+    overrides: std::collections::BTreeMap<String, RepoOverrideConfig>,
     /// The issue templates and the labels they apply, if declared.
     #[serde(default)]
-    pub issue_templates: Option<IssueTemplatesConfig>,
+    issue_templates: Option<IssueTemplatesConfig>,
 }
 
 /// The `[github.issue_templates]` table: which template applies which label.
@@ -205,13 +245,13 @@ pub struct IssueTemplate {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct RepositoryConfig {
     /// Repository owner (user or organization).
-    pub owner: String,
+    owner: String,
     /// Repository name.
     #[serde(alias = "repository")]
-    pub name: String,
+    name: String,
     /// Target repository settings.
     #[serde(default)]
-    pub settings: Option<RepositorySettingsConfig>,
+    settings: Option<RepositorySettingsConfig>,
 }
 
 /// Project parameters.
@@ -219,10 +259,10 @@ pub struct RepositoryConfig {
 pub struct ProjectConfig {
     /// Project number, if used.
     #[serde(default)]
-    pub number: Option<u32>,
+    number: Option<u32>,
     /// Project title, if specified.
     #[serde(default)]
-    pub title: Option<String>,
+    title: Option<String>,
 }
 
 /// Settings for issues rules.
@@ -230,17 +270,8 @@ pub struct ProjectConfig {
 pub struct IssuesConfig {
     /// Granular rule toggles.
     #[serde(default)]
-    pub rules: RulesConfig,
+    rules: RulesConfig,
 }
-
-/// Repository merge and branch settings configuration (alias for [`RepoSettings`]).
-pub type RepositorySettingsConfig = RepoSettings;
-
-/// Repository labels configuration (alias for [`RepoLabelsSpec`]).
-pub type LabelsConfig = RepoLabelsSpec;
-
-/// Repository milestones configuration (alias for [`RepoMilestonesSpec`]).
-pub type MilestonesConfig = RepoMilestonesSpec;
 
 /// Granular boolean toggles for each issues-check rule.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -559,7 +590,11 @@ mod tests {
         assert_eq!(target.repository(), "tools");
         assert_eq!(target.project(), Some(4));
 
-        let settings = config.repo_settings().expect("settings should exist");
+        let settings = config
+            .spec_for("tools")
+            .unwrap()
+            .settings
+            .expect("settings should exist");
         assert!(settings.allow_merge_commit);
         assert!(!settings.allow_squash_merge);
         assert!(!settings.allow_rebase_merge);
@@ -595,7 +630,11 @@ mod tests {
             ]
         "##;
         let config: Config = toml::from_str(toml_str).expect("should parse");
-        let labels = config.labels().expect("labels should exist");
+        let labels = config
+            .spec_for("tools")
+            .unwrap()
+            .labels
+            .expect("labels should exist");
         assert_eq!(labels.deprecated, vec!["bug", "epic"]);
         assert_eq!(labels.unmanaged, Unmanaged::Prune);
         assert_eq!(labels.items.len(), 2);
@@ -603,7 +642,11 @@ mod tests {
         assert_eq!(labels.items[0].color, "1d76db"); // normalized: no # and lowercase
         assert_eq!(labels.items[0].description, "New feature");
 
-        let milestones = config.milestones().expect("milestones should exist");
+        let milestones = config
+            .spec_for("tools")
+            .unwrap()
+            .milestones
+            .expect("milestones should exist");
         assert_eq!(milestones.deprecated, vec!["v0.9"]);
         assert_eq!(milestones.items.len(), 2);
         assert_eq!(milestones.items[0].title, "v0");
@@ -638,17 +681,29 @@ mod tests {
             ]
         "#;
         let config: Config = toml::from_str(toml_str).expect("should parse");
-        let project = config.project().expect("project should exist");
+        let project = config
+            .github
+            .project
+            .as_ref()
+            .expect("project should exist");
         assert_eq!(project.number, Some(4));
         assert_eq!(project.title.as_deref(), Some("Tools Roadmap"));
 
-        let labels = config.labels().expect("labels should exist");
+        let labels = config
+            .spec_for("tools")
+            .unwrap()
+            .labels
+            .expect("labels should exist");
         assert_eq!(
             labels.renames.get("enhancement"),
             Some(&"type:feat".to_string())
         );
 
-        let milestones = config.milestones().expect("milestones should exist");
+        let milestones = config
+            .spec_for("tools")
+            .unwrap()
+            .milestones
+            .expect("milestones should exist");
         assert_eq!(milestones.renames.get("v0.9"), Some(&"v1".to_string()));
 
         let repo_spec = config.spec_for("tools").unwrap();
@@ -692,7 +747,11 @@ mod tests {
             migrations = { "legacy-bug" = "type:fix", "ui" = "area:web" }
         "#;
         let config: Config = toml::from_str(toml_str).expect("should parse");
-        let labels = config.labels().expect("labels config exists");
+        let labels = config
+            .spec_for("web")
+            .unwrap()
+            .labels
+            .expect("labels config exists");
         assert_eq!(
             labels.migrations.get("legacy-bug"),
             Some(&"type:fix".to_string())
@@ -828,7 +887,13 @@ mod tests {
             "[github.repository]\nowner = \"o\"\nname = \"r\"\n\n[github.labels]\nitems = []\n\n[github.milestones]\nitems = []\n",
         )
         .unwrap();
-        assert_eq!(config.labels().unwrap().unmanaged, Unmanaged::Warn);
-        assert_eq!(config.milestones().unwrap().unmanaged, Unmanaged::Error);
+        assert_eq!(
+            config.spec_for("r").unwrap().labels.unwrap().unmanaged,
+            Unmanaged::Warn
+        );
+        assert_eq!(
+            config.spec_for("r").unwrap().milestones.unwrap().unmanaged,
+            Unmanaged::Error
+        );
     }
 }

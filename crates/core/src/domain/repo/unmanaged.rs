@@ -1,10 +1,7 @@
 //! What to do with items that exist on GitHub but are not declared in `tools.toml`.
 
-use serde::{Deserialize, Serialize};
-
 /// Per-kind policy for remote items that `tools.toml` does not declare.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unmanaged {
     /// Say nothing.
     Ignore,
@@ -48,14 +45,6 @@ pub enum Severity {
     Warn,
     /// Reported, run fails.
     Error,
-}
-
-pub(crate) const fn default_labels() -> Unmanaged {
-    Unmanaged::labels()
-}
-
-pub(crate) const fn default_milestones() -> Unmanaged {
-    Unmanaged::milestones()
 }
 
 impl std::fmt::Display for Severity {

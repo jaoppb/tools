@@ -1,17 +1,14 @@
 //! Repository milestone representation and diffing.
 
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::domain::repo::unmanaged::default_milestones;
 use crate::domain::repo::{
     DeleteReason, ReconcileHandler, RepoPlanError, Severity, Unmanaged, overlay_by_key,
     reconcile_by_key, union_names,
 };
 
 /// Repository milestone state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MilestoneState {
     /// Active, open milestone.
     #[default]
@@ -30,34 +27,27 @@ impl std::fmt::Display for MilestoneState {
 }
 
 /// Desired repository milestone definition in configuration.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoMilestoneSpec {
     /// Milestone title (e.g. `v0`).
     pub title: String,
     /// Milestone description.
-    #[serde(default)]
     pub description: String,
     /// Milestone state (`open` or `closed`).
-    #[serde(default)]
     pub state: MilestoneState,
 }
 
 /// Repository milestones specification and reconciliation policy.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoMilestonesSpec {
     /// Deprecated milestone titles to close/prune.
-    #[serde(default)]
     pub deprecated: Vec<String>,
     /// Rename mappings from old milestone title to new milestone title.
-    #[serde(default)]
     pub renames: BTreeMap<String, String>,
     /// What to do with milestones that exist on GitHub but are not declared (`ignore`, `warn`,
     /// `error` or `prune`).
-    #[serde(default = "default_milestones")]
     pub unmanaged: Unmanaged,
     /// Desired milestones to enforce.
-    #[serde(default)]
     pub items: Vec<RepoMilestoneSpec>,
 }
 
@@ -78,20 +68,15 @@ impl Default for RepoMilestonesSpec {
 /// Items override shared items with the same title and are otherwise appended; `deprecated` is a
 /// union; `renames` are merged with overlay entries winning; `unmanaged` replaces the shared
 /// value only when set.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RepoMilestonesOverlay {
     /// Additional milestone titles to close/prune.
-    #[serde(default)]
     pub deprecated: Vec<String>,
     /// Additional or overriding rename mappings.
-    #[serde(default)]
     pub renames: BTreeMap<String, String>,
     /// Overrides what to do with undeclared milestones when set.
-    #[serde(default)]
     pub unmanaged: Option<Unmanaged>,
     /// Additional or overriding milestones.
-    #[serde(default)]
     pub items: Vec<RepoMilestoneSpec>,
 }
 
@@ -117,17 +102,15 @@ impl RepoMilestonesOverlay {
 }
 
 /// Repository milestone entity on GitHub.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoMilestone {
     /// GitHub milestone number.
     pub number: u64,
     /// Milestone title (e.g. `v0`).
     pub title: String,
     /// Milestone description.
-    #[serde(default)]
     pub description: String,
     /// Milestone state (`open` or `closed`).
-    #[serde(default)]
     pub state: MilestoneState,
 }
 
@@ -684,23 +667,5 @@ mod tests {
         assert_eq!(RepoMilestonesSpec::default().unmanaged, Unmanaged::Error);
         let overlay_only = RepoMilestonesOverlay::default().apply_to(None).unwrap();
         assert_eq!(overlay_only.unmanaged, Unmanaged::Error);
-        let spec: RepoMilestonesSpec = toml::from_str("items = []").unwrap();
-        assert_eq!(spec.unmanaged, Unmanaged::Error);
-    }
-
-    #[test]
-    fn unmanaged_policy_parses_every_value_and_rejects_others() {
-        for (word, policy) in [
-            ("ignore", Unmanaged::Ignore),
-            ("warn", Unmanaged::Warn),
-            ("error", Unmanaged::Error),
-            ("prune", Unmanaged::Prune),
-        ] {
-            let spec: RepoMilestonesSpec =
-                toml::from_str(&format!("unmanaged = \"{word}\"")).unwrap();
-            assert_eq!(spec.unmanaged, policy);
-        }
-        assert!(toml::from_str::<RepoMilestonesSpec>("unmanaged = \"loud\"").is_err());
-        assert!(toml::from_str::<RepoMilestonesSpec>("prune_unmanaged = true").is_err());
     }
 }
