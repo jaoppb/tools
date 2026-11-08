@@ -28,13 +28,14 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: tag-release
-
 jobs:
   tag:
     name: Tag the workspace version
     runs-on: ubuntu-latest
+    # Only the tagging is serialized: a run waiting behind a whole release build could be
+    # replaced by a newer pending run and drop a version bump.
+    concurrency:
+      group: tag-release
     outputs:
       tag: ${{ steps.push.outputs.tag || steps.dispatch.outputs.tag }}
     steps:
@@ -66,6 +67,8 @@ jobs:
     name: Release
     needs: tag
     if: needs.tag.outputs.tag != ''
+    concurrency:
+      group: release-${{ needs.tag.outputs.tag }}
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.tag.outputs.tag }}

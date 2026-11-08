@@ -170,6 +170,24 @@ expect_output ""
 expect_tag_at v0.3.0 "${first}"
 expect_log "already exists"
 
+case_ "push: a failed tag query on origin fails without tagging"
+before="$(commit_version 0.3.0)"
+after="$(commit_version 0.4.0)"
+git remote set-url origin "${ROOT}/missing.git"
+run push "${before}" "${after}"
+expect_status 1
+expect_output ""
+expect_log "Could not query tags on origin"
+[[ -z "$(git tag --list v0.4.0)" ]] || fail "expected no local tag v0.4.0"
+
+case_ "push: a failed tag query on origin fails even when the version is unchanged"
+before="$(commit_version 0.4.0)"
+after="$(commit_version 0.4.0 '# dependency bump')"
+git remote set-url origin "${ROOT}/missing.git"
+run push "${before}" "${after}"
+expect_status 1
+expect_log "Could not query tags on origin"
+
 # --- dispatch ---------------------------------------------------------------------
 
 case_ "dispatch: a missing tag defaults to the dispatched commit"
@@ -246,16 +264,13 @@ expect_output ""
 expect_tag_at v0.3.0 "${bump}"
 expect_log "a tag is never moved"
 
-case_ "dispatch: an existing tag not fetched locally is fetched to check its version"
-bump="$(commit_version 0.3.0)"
-git tag -a v0.3.0 -m v0.3.0 "${bump}" && git push --quiet origin v0.3.0
-head="$(commit_version 0.3.1)"
-git clone --quiet --depth 1 --no-tags "file://${ROOT}/case${cases}/origin.git" "${ROOT}/case${cases}/shallow" 2>/dev/null
-cd "${ROOT}/case${cases}/shallow"
-! git cat-file -e "${bump}^{commit}" 2>/dev/null || fail "expected ${bump} absent from the shallow clone"
+case_ "dispatch: a failed tag query on origin fails without releasing"
+head="$(commit_version 0.3.0)"
+git remote set-url origin "${ROOT}/missing.git"
 run dispatch v0.3.0 "" "${head}"
-expect_status 0
-expect_output "tag=v0.3.0"
+expect_status 1
+expect_output ""
+expect_log "Could not query tags on origin"
 
 # --- usage ------------------------------------------------------------------------
 

@@ -81,7 +81,7 @@ create_tag() {
 release() { echo "tag=$1" >>"${GITHUB_OUTPUT:-/dev/stdout}"; }
 
 cmd_push() {
-  local before="$1" after="$2" version previous tag
+  local before="$1" after="$2" version previous tag existing
   version="$(workspace_version "${after}")"
   if [[ -z ${version} ]]; then
     notice "Cargo.toml at ${after} has no [workspace.package].version; not tagging"
@@ -95,8 +95,10 @@ cmd_push() {
   fi
 
   previous="$(workspace_version "${before}")"
+  # An assignment, not a test, so a failed query on origin stops the script.
+  existing="$(remote_tag_commit "${tag}")"
   if [[ ${previous} == "${version}" ]]; then
-    if [[ -z "$(remote_tag_commit "${tag}")" ]]; then
+    if [[ -z ${existing} ]]; then
       notice "This push did not change the workspace version ${version}; not tagging, although tag ${tag} is missing. To release it, ${RECOVERY}"
     else
       notice "This push did not change the workspace version ${version}; nothing to release"
@@ -108,7 +110,7 @@ cmd_push() {
     notice "Version '${version}' is not a plain release version; not tagging"
     return 0
   fi
-  if [[ -n "$(remote_tag_commit "${tag}")" ]]; then
+  if [[ -n ${existing} ]]; then
     notice "Tag ${tag} already exists; nothing to release"
     return 0
   fi
@@ -122,28 +124,22 @@ cmd_dispatch() {
 
   existing="$(remote_tag_commit "${tag}")"
   if [[ -n ${existing} ]]; then
+    # release.yml checks an existing tag against its Cargo.toml version.
     if [[ -n ${ref} ]]; then
       commit="$(resolve_commit "${ref}")"
       [[ ${commit} == "${existing}" ]] ||
         die "Tag ${tag} points at ${existing}, not at '${ref}' (${commit}); a tag is never moved"
     fi
-    commit="${existing}"
-    git cat-file -e "${commit}^{commit}" 2>/dev/null ||
-      git fetch --quiet --no-tags origin "refs/tags/${tag}" ||
-      die "Cannot fetch tag ${tag} from origin"
-  else
-    commit="$(resolve_commit "${ref:-${default_ref}}")"
+    notice "Tag ${tag} already exists at ${existing}; releasing it"
+    release "${tag}"
+    return 0
   fi
 
+  commit="$(resolve_commit "${ref:-${default_ref}}")"
   version="$(workspace_version "${commit}")"
   [[ "v${version}" == "${tag}" ]] ||
     die "Cargo.toml at ${commit} has workspace version '${version}', which does not match ${tag}"
-
-  if [[ -n ${existing} ]]; then
-    notice "Tag ${tag} already exists at ${commit}; releasing it"
-  else
-    create_tag "${tag}" "${commit}"
-  fi
+  create_tag "${tag}" "${commit}"
   release "${tag}"
 }
 
