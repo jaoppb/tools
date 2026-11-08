@@ -6,10 +6,12 @@
 //! in `[workflow.params]`, the facts and the rules of a preset.
 
 mod config;
+mod contain;
 mod engine;
 mod error;
 mod explain;
 mod expr;
+mod params;
 mod schema;
 mod subject;
 
@@ -18,3 +20,5 @@ pub use crate::workflow::engine::{Decision, Engine, Evaluation, Outcome, Violati
 pub use crate::workflow::error::LoadError;
 pub use crate::workflow::explain::{Explain, RuleResult};
 pub use crate::workflow::subject::{FieldValue, ParentResolver, ResolveError, Subject};
+
+pub(crate) use crate::workflow::config::wrappable_params;

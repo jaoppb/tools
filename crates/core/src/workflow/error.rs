@@ -70,6 +70,16 @@ pub enum LoadError {
     /// A param holds a value CEL cannot carry.
     #[error("param {0:?} holds a value that is neither a scalar nor a list of scalars")]
     Param(String),
+    /// A local param does not have the TOML shape of the preset's value.
+    #[error("param {name:?}: the preset has {preset}, this is {local}")]
+    ParamType {
+        /// The param.
+        name: String,
+        /// The shape of the preset's value, e.g. `a list of strings`.
+        preset: String,
+        /// The shape of the local value, e.g. `a string`.
+        local: String,
+    },
 }
 
 impl LoadError {

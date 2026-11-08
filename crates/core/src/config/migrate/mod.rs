@@ -3,7 +3,9 @@
 //! Works on the text with `toml_edit`, so comments and layout survive. It never loads the file as
 //! a [`Config`](super::Config): a file with removed keys does not load.
 
-use toml_edit::{Array, DocumentMut, Item, Table, value};
+use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
+
+use crate::workflow::wrappable_params;
 
 /// The column-alias follow-up: a rename of a board column cannot be written as `[workflow]` yet.
 const RENAME_ISSUE: &str = "#88";
@@ -66,6 +68,11 @@ impl Migration {
 pub fn inspect(contents: &str) -> Result<Report, MigrateError> {
     let doc = parse(contents)?;
     let mut report = Report::default();
+    for name in wrappable(contents)? {
+        report.pending.push(format!(
+            "[workflow.params] {name} is a single value where the preset has a list"
+        ));
+    }
     if status_mapping(&doc).is_some() {
         report.pending.push(
             "[github.project.status_mapping] is removed: board columns must equal [workflow].statuses"
@@ -87,7 +94,8 @@ pub fn inspect(contents: &str) -> Result<Report, MigrateError> {
     Ok(report)
 }
 
-/// Rewrites `contents`: drops `status_mapping`, and derives `[workflow]` from
+/// Rewrites `contents`: drops `status_mapping`, wraps in a list a `[workflow.params]` value given
+/// as a single value where the preset has a list of its kind, and derives `[workflow]` from
 /// `[github.issues.rules]` when the file has no `[workflow]` block yet. The rules table stays
 /// until #59. A second run changes nothing.
 ///
@@ -99,6 +107,7 @@ pub fn migrate(contents: &str) -> Result<Migration, MigrateError> {
     let mut doc = parse(contents)?;
     let mut notes = Vec::new();
     drop_status_mapping(&mut doc, &mut notes)?;
+    wrap_params(&mut doc, &wrappable(contents)?, &mut notes);
     if !doc.contains_key("workflow")
         && let Some(old) = rules(&doc).map(OldRules::read).transpose()?
     {
@@ -116,6 +125,45 @@ fn parse(contents: &str) -> Result<DocumentMut, MigrateError> {
     contents
         .parse()
         .map_err(|error: toml_edit::TomlError| MigrateError::Syntax(error.to_string()))
+}
+
+/// The `[workflow.params]` values that are a single value where the preset has a list they fit
+/// once wrapped.
+fn wrappable(contents: &str) -> Result<Vec<String>, MigrateError> {
+    let file: toml::Table =
+        toml::from_str(contents).map_err(|error| MigrateError::Syntax(error.to_string()))?;
+    Ok(file
+        .get("workflow")
+        .and_then(toml::Value::as_table)
+        .map(wrappable_params)
+        .unwrap_or_default())
+}
+
+/// Wraps each named param in a one-element list, keeping its comments.
+fn wrap_params(doc: &mut DocumentMut, names: &[String], notes: &mut Vec<String>) {
+    let Some(params) = doc
+        .get_mut("workflow")
+        .and_then(|workflow| workflow.get_mut("params"))
+        .and_then(Item::as_table_like_mut)
+    else {
+        return;
+    };
+    for name in names {
+        let Some(item) = params.get_mut(name) else {
+            continue;
+        };
+        let Some(mut single) = item.as_value().cloned() else {
+            continue;
+        };
+        let decor = std::mem::take(single.decor_mut());
+        let mut list = Array::new();
+        list.push_formatted(single);
+        *list.decor_mut() = decor;
+        *item = Item::Value(Value::Array(list));
+        notes.push(format!(
+            "[workflow.params] {name} -> a list, as the preset ships it"
+        ));
+    }
 }
 
 fn status_mapping(doc: &DocumentMut) -> Option<&Item> {

@@ -184,3 +184,79 @@ fn loading_the_rules_table_warns_until_it_is_migrated() {
     assert!(!after.warnings[0].contains("tools config migrate"));
     assert!(loads(HEAD).warnings.is_empty());
 }
+
+/// #92: the string shape `area_prefix` had before #58 made it a list.
+const STRING_PREFIX: &str = "[workflow]\nextends = \"builtin:tools\"\n\n[workflow.params]\narea_prefix = \"area:\" # the old shape\ntype_prefix = \"type:\"\n";
+
+#[test]
+fn a_single_value_where_the_preset_has_a_list_is_pending() {
+    let report = inspect(&format!("{HEAD}{STRING_PREFIX}")).expect("parses");
+    assert_eq!(
+        report.pending,
+        ["[workflow.params] area_prefix is a single value where the preset has a list"]
+    );
+}
+
+#[test]
+fn migrate_wraps_it_in_a_list_keeping_its_comment_and_the_file_loads() {
+    let migration = migrated(STRING_PREFIX);
+    assert!(
+        migration
+            .text
+            .contains("area_prefix = [\"area:\"] # the old shape\n"),
+        "{}",
+        migration.text
+    );
+    assert!(migration.text.contains("type_prefix = \"type:\"\n"));
+    assert_eq!(
+        migration.notes,
+        ["[workflow.params] area_prefix -> a list, as the preset ships it"]
+    );
+    loads(&migration.text);
+    let again = migrate(&migration.text).expect("migrates");
+    assert!(!again.changed());
+    assert!(inspect(&migration.text).expect("parses").pending.is_empty());
+}
+
+#[test]
+fn an_inline_params_table_is_wrapped_too() {
+    let migration =
+        migrated("[workflow]\nextends = \"builtin:cosmo\"\nparams = { area_prefix = \"area:\" }\n");
+    assert!(
+        migration.text.contains("area_prefix = [\"area:\"]"),
+        "{}",
+        migration.text
+    );
+    loads(&migration.text);
+}
+
+#[test]
+fn a_mismatch_a_list_does_not_fix_is_left_to_the_load_error() {
+    for (params, extends) in [
+        ("started = 3", "builtin:tools"),
+        ("type_prefix = [\"type:\"]", "builtin:tools"),
+        ("effort_limit = \"8\"", "builtin:cosmo"),
+    ] {
+        let text =
+            format!("{HEAD}[workflow]\nextends = \"{extends}\"\n[workflow.params]\n{params}\n");
+        assert!(
+            inspect(&text).expect("parses").pending.is_empty(),
+            "{params}"
+        );
+        assert!(!migrate(&text).expect("migrates").changed(), "{params}");
+        let error = load_from_str(&text).expect_err(params);
+        assert!(
+            matches!(error, ConfigError::Workflow { .. }),
+            "{params}: {error}"
+        );
+    }
+}
+
+#[test]
+fn a_param_without_a_preset_is_never_wrapped() {
+    let text = format!(
+        "{HEAD}[workflow]\nstatuses = [\"Todo\"]\n[workflow.params]\narea_prefix = \"area:\"\n"
+    );
+    assert!(inspect(&text).expect("parses").pending.is_empty());
+    assert!(!migrate(&text).expect("migrates").changed());
+}

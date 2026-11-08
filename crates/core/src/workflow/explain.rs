@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use cel_interpreter::Value;
+use cel::Value;
 
 use crate::domain::{IssueNumber, StatusName};
 use crate::workflow::config::RuleId;

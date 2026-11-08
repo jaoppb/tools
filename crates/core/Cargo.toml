@@ -10,8 +10,7 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-cel-interpreter.workspace = true
-cel-parser.workspace = true
+cel.workspace = true
 deunicode.workspace = true
 regex.workspace = true
 serde.workspace = true

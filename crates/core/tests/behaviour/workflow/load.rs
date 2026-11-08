@@ -171,6 +171,55 @@ fn both_presets_load_and_a_local_param_overrides_the_preset_one() {
         .expect("a param override needs no shadow");
 }
 
+/// #92: a string `area_prefix` loaded and then broke every card at run time.
+#[test]
+fn a_param_with_another_shape_than_the_preset_is_rejected_where_it_is_written() {
+    let error = load(
+        "[workflow]\nextends = \"builtin:tools\"\n[workflow.params]\narea_prefix = \"area:\"\n",
+    )
+    .expect_err("the preset has a list");
+    assert!(
+        matches!(error.root(), LoadError::ParamType { name, preset, local }
+            if name == "area_prefix" && preset == "a list of strings" && local == "a string"),
+        "{error}"
+    );
+    assert_eq!(at(&error), (4, 15));
+    assert_eq!(
+        error.to_string(),
+        "line 4, column 15: param \"area_prefix\": the preset has a list of strings, this is a string"
+    );
+}
+
+#[test]
+fn a_param_keeps_the_kind_and_the_element_kind_of_the_preset() {
+    let cosmo = |params: &str| {
+        load(&format!(
+            "[workflow]\nextends = \"builtin:cosmo\"\n[workflow.params]\n{params}\n"
+        ))
+    };
+    for wrong in [
+        "effort_limit = 8.5",
+        "effort_limit = \"8\"",
+        "type_prefix = [\"type:\"]",
+        "started = [1]",
+        "started = [\"In progress\", 2]",
+    ] {
+        let error = cosmo(wrong).expect_err(wrong);
+        assert!(
+            matches!(error.root(), LoadError::ParamType { .. }),
+            "{wrong}: {error}"
+        );
+    }
+    for right in [
+        "effort_limit = 3",
+        "started = []",
+        "area_prefix = [\"area:\", \"zone:\"]",
+        "custom = 1.5",
+    ] {
+        cosmo(right).unwrap_or_else(|error| panic!("{right}: {error}"));
+    }
+}
+
 // A name bound by a macro is not free; the same spelling outside the macro is.
 #[test]
 fn a_macro_bound_name_is_not_a_free_identifier() {
@@ -270,6 +319,7 @@ fn every_built_in_function_the_loader_allows_also_runs_in_the_interpreter() {
         "\"ab\".startsWith(\"a\") && \"ab\".endsWith(\"b\") && \"ab\".contains(\"a\")",
         "max(1, 2) == 2 && min(1, 2) == 1",
         "int(\"3\") == 3 && double(1) == 1.0 && string(1) == \"1\"",
+        "uint(1) == 1u",
     ] {
         let toml =
             format!("{BLANK}\n[[workflow.status]]\nid = \"r\"\nwhen = '{expr}'\nset = \"Done\"\n");
