@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use tools::changelog::{Policy, run, verdict};
+use tools::changelog::{Policy, verdict};
 use tools::cli::{Invocation, UsageError, parse as parse_command_line};
 
 fn parse(words: &[&str]) -> Result<tools::changelog::cli::Arguments, UsageError> {
@@ -191,29 +191,37 @@ fn run_diffs_the_branch_against_its_merge_base() {
     git(&dir, &["add", "."]);
     git(&dir, &["commit", "--quiet", "-m", "code"]);
 
+    // The built binary in `dir`, with git's own variables cleared: a git hook running this test
+    // exports GIT_DIR, which would point the binary's `git diff` at the repository being pushed.
     let in_dir = |words: &[&str]| {
-        let previous = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(&dir).expect("enter");
-        let result = run(&check(words).expect("parses"));
-        std::env::set_current_dir(previous).expect("leave");
-        result
+        let output = Command::new(env!("CARGO_BIN_EXE_tools"))
+            .current_dir(&dir)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_INDEX_FILE")
+            .env_remove("GIT_WORK_TREE")
+            .args(["changelog", "check"])
+            .args(words)
+            .args(POLICY_FLAGS)
+            .output()
+            .expect("tools runs");
+        (
+            output.status.code().expect("exit code"),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
     };
 
-    let failing = in_dir(&["--base", "main", "--skip-label", "skip"]).expect("runs");
-    assert_eq!(failing.code, 1, "{}", failing.text);
-    let waived =
-        in_dir(&["--base", "main", "--labels", "skip", "--skip-label", "skip"]).expect("runs");
-    assert_eq!(waived.code, 0);
+    let (code, text) = in_dir(&["--base", "main", "--skip-label", "skip"]);
+    assert_eq!(code, 1, "{text}");
+    let (code, text) = in_dir(&["--base", "main", "--labels", "skip", "--skip-label", "skip"]);
+    assert_eq!(code, 0, "{text}");
 
     std::fs::write(dir.join("CHANGELOG.md"), "x").expect("write");
     git(&dir, &["add", "."]);
     git(&dir, &["commit", "--quiet", "-m", "changelog"]);
-    let recorded = in_dir(&["--base", "main", "--skip-label", "skip"]).expect("runs");
-    assert_eq!(recorded.code, 0, "{}", recorded.text);
+    let (code, text) = in_dir(&["--base", "main", "--skip-label", "skip"]);
+    assert_eq!(code, 0, "{text}");
 
-    let unknown = in_dir(&["--base", "nowhere", "--skip-label", "skip"]).expect_err("fails");
-    assert_eq!(unknown.code, 2);
-    let option = in_dir(&["--base=--output=x", "--skip-label", "skip"]).expect_err("fails");
-    assert_eq!(option.code, 2);
+    assert_eq!(in_dir(&["--base", "nowhere", "--skip-label", "skip"]).0, 2);
+    assert_eq!(in_dir(&["--base=--output=x", "--skip-label", "skip"]).0, 2);
     std::fs::remove_dir_all(&dir).ok();
 }
