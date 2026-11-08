@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::domain::repo::{DeleteReason, RepoPlanError};
+use crate::domain::repo::{DeleteReason, RepoPlanError, Severity, Unmanaged};
 
 /// Defines key extraction and diff variant construction for collection reconciliation.
 pub trait ReconcileHandler<C, D, Diff> {
@@ -16,8 +16,8 @@ pub trait ReconcileHandler<C, D, Diff> {
     fn create(&self, desired: &D) -> Diff;
     /// Constructs a deletion diff for a deprecated or unmanaged item.
     fn delete(&self, current: &C, reason: DeleteReason) -> Diff;
-    /// Constructs an unmanaged diff for an unmanaged item when pruning is disabled.
-    fn unmanaged(&self, current: &C) -> Diff;
+    /// Constructs a report for an unmanaged item that is not pruned.
+    fn unmanaged(&self, current: &C, severity: Severity) -> Diff;
 }
 
 /// Validates static configuration of desired items, deprecated keys, and rename mappings.
@@ -113,7 +113,8 @@ where
 ///    - If missing in current but a rename source exists remotely, match and diff the rename.
 ///    - Otherwise, emit `Create`.
 /// 3. Walk current items: if already matched in step 2, skip. If in deprecated, emit `Delete(Deprecated)`.
-///    If `prune_unmanaged`, emit `Delete(Unmanaged)`. Otherwise, emit `Unmanaged`.
+///    Otherwise by `unmanaged`: `prune` emits `Delete(Unmanaged)`, `warn`/`error` emit a report with
+///    that severity, `ignore` emits nothing.
 ///
 /// # Errors
 ///
@@ -124,7 +125,7 @@ pub fn reconcile_by_key<C, D, Diff, H>(
     desired: &[D],
     deprecated: &[String],
     renames: &BTreeMap<String, String>,
-    prune_unmanaged: bool,
+    unmanaged: Unmanaged,
     handler: H,
 ) -> Result<Vec<Diff>, RepoPlanError>
 where
@@ -216,10 +217,10 @@ where
 
         if deprecated_keys.contains(&key) {
             diffs.push(handler.delete(item, DeleteReason::Deprecated));
-        } else if prune_unmanaged {
+        } else if unmanaged == Unmanaged::Prune {
             diffs.push(handler.delete(item, DeleteReason::Unmanaged));
-        } else {
-            diffs.push(handler.unmanaged(item));
+        } else if let Some(severity) = unmanaged.severity() {
+            diffs.push(handler.unmanaged(item, severity));
         }
     }
 

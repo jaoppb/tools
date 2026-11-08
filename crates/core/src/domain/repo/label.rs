@@ -3,8 +3,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use crate::domain::repo::unmanaged::default_labels;
 use crate::domain::repo::{
-    DeleteReason, ReconcileHandler, RepoPlanError, overlay_by_key, reconcile_by_key, union_names,
+    DeleteReason, ReconcileHandler, RepoPlanError, Severity, Unmanaged, overlay_by_key,
+    reconcile_by_key, union_names,
 };
 
 /// Repository label representation on GitHub and in configuration.
@@ -21,7 +23,8 @@ pub struct RepoLabel {
 }
 
 /// Repository labels specification and reconciliation policy.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RepoLabelsSpec {
     /// List of label names to prune.
     #[serde(default)]
@@ -29,9 +32,10 @@ pub struct RepoLabelsSpec {
     /// Rename mappings from old label name to new label name.
     #[serde(default)]
     pub renames: BTreeMap<String, String>,
-    /// Whether to prune unmanaged labels.
-    #[serde(default)]
-    pub prune_unmanaged: bool,
+    /// What to do with labels that exist on GitHub but are not declared (`ignore`, `warn`,
+    /// `error` or `prune`).
+    #[serde(default = "default_labels")]
+    pub unmanaged: Unmanaged,
     /// Mappings from legacy issue labels to canonical labels.
     #[serde(default)]
     pub migrations: BTreeMap<String, String>,
@@ -40,10 +44,22 @@ pub struct RepoLabelsSpec {
     pub items: Vec<RepoLabel>,
 }
 
+impl Default for RepoLabelsSpec {
+    fn default() -> Self {
+        Self {
+            deprecated: Vec::new(),
+            renames: BTreeMap::new(),
+            unmanaged: Unmanaged::labels(),
+            migrations: BTreeMap::new(),
+            items: Vec::new(),
+        }
+    }
+}
+
 /// Repository-scoped labels overlay applied on top of the shared [`RepoLabelsSpec`].
 ///
 /// Items override shared items with the same name and are otherwise appended; `deprecated` is a
-/// union; `renames` and `migrations` are merged with overlay entries winning; `prune_unmanaged`
+/// union; `renames` and `migrations` are merged with overlay entries winning; `unmanaged`
 /// replaces the shared value only when set.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -54,9 +70,9 @@ pub struct RepoLabelsOverlay {
     /// Additional or overriding rename mappings.
     #[serde(default)]
     pub renames: BTreeMap<String, String>,
-    /// Overrides whether to prune unmanaged labels when set.
+    /// Overrides what to do with undeclared labels when set.
     #[serde(default)]
-    pub prune_unmanaged: Option<bool>,
+    pub unmanaged: Option<Unmanaged>,
     /// Additional or overriding migration mappings.
     #[serde(default)]
     pub migrations: BTreeMap<String, String>,
@@ -76,8 +92,8 @@ impl RepoLabelsOverlay {
         union_names(&mut spec.deprecated, self.deprecated.clone());
         spec.renames.extend(self.renames.clone());
         spec.migrations.extend(self.migrations.clone());
-        if let Some(prune) = self.prune_unmanaged {
-            spec.prune_unmanaged = prune;
+        if let Some(unmanaged) = self.unmanaged {
+            spec.unmanaged = unmanaged;
         }
         overlay_by_key(&mut spec.items, self.items.clone(), |label| &label.name)?;
         Ok(spec)
@@ -118,14 +134,14 @@ impl RepoLabel {
         desired: &[Self],
         deprecated: &[String],
         renames: &BTreeMap<String, String>,
-        prune_unmanaged: bool,
+        unmanaged: Unmanaged,
     ) -> Result<Vec<LabelDiff>, RepoPlanError> {
         reconcile_by_key(
             current,
             desired,
             deprecated,
             renames,
-            prune_unmanaged,
+            unmanaged,
             LabelReconciler,
         )
     }
@@ -167,9 +183,10 @@ impl ReconcileHandler<RepoLabel, RepoLabel, LabelDiff> for LabelReconciler {
         }
     }
 
-    fn unmanaged(&self, current: &RepoLabel) -> LabelDiff {
+    fn unmanaged(&self, current: &RepoLabel, severity: Severity) -> LabelDiff {
         LabelDiff::Unmanaged {
             name: current.name.clone(),
+            severity,
         }
     }
 }
@@ -186,21 +203,35 @@ pub enum LabelDiff {
         /// Desired label state.
         desired: RepoLabel,
     },
-    /// Label is marked deprecated (or unmanaged with prune enabled) and should be deleted.
+    /// Label is marked deprecated (or unmanaged with policy `prune`) and should be deleted.
     Delete {
         /// Label name.
         name: String,
         /// Reason for deletion.
         reason: DeleteReason,
     },
-    /// Label exists on GitHub but is unmanaged (reported when pruning is disabled).
+    /// Label exists on GitHub but is not declared (reported unless the policy is `ignore` or `prune`).
     Unmanaged {
         /// Label name.
         name: String,
+        /// Whether it only warns or fails the run.
+        severity: Severity,
     },
 }
 
 impl LabelDiff {
+    /// Whether this is an undeclared item whose policy fails the run.
+    #[must_use]
+    pub const fn is_unmanaged_error(&self) -> bool {
+        matches!(
+            self,
+            Self::Unmanaged {
+                severity: Severity::Error,
+                ..
+            }
+        )
+    }
+
     /// Whether this difference requires an action or indicates a configuration drift.
     #[must_use]
     pub const fn is_actionable(&self) -> bool {
@@ -242,10 +273,10 @@ impl std::fmt::Display for LabelDiff {
             Self::Delete { name, reason } => {
                 write!(formatter, "label '{name}': delete ({reason})")
             }
-            Self::Unmanaged { name } => {
+            Self::Unmanaged { name, severity } => {
                 write!(
                     formatter,
-                    "label '{name}': unmanaged (exists on GitHub but not in tools.toml)"
+                    "label '{name}' exists on GitHub but is not declared in tools.toml ({severity}); declare it under [github.labels].items or add it to deprecated"
                 )
             }
         }
@@ -291,8 +322,14 @@ mod tests {
         let deprecated = vec!["deprecated-label".into()];
         let renames = BTreeMap::new();
 
-        let diffs =
-            RepoLabel::diff(&current, &desired_items, &deprecated, &renames, false).unwrap();
+        let diffs = RepoLabel::diff(
+            &current,
+            &desired_items,
+            &deprecated,
+            &renames,
+            Unmanaged::Warn,
+        )
+        .unwrap();
         assert_eq!(diffs.len(), 4);
 
         // 1. type:feat updated description
@@ -319,7 +356,7 @@ mod tests {
         // 4. unmanaged-label reported as unmanaged
         assert!(matches!(
             &diffs[3],
-            LabelDiff::Unmanaged { name } if name == "unmanaged-label"
+            LabelDiff::Unmanaged { name, .. } if name == "unmanaged-label"
         ));
     }
 
@@ -338,7 +375,8 @@ mod tests {
         }];
         let renames = BTreeMap::new();
 
-        let diffs = RepoLabel::diff(&current, &desired_items, &[], &renames, false).unwrap();
+        let diffs =
+            RepoLabel::diff(&current, &desired_items, &[], &renames, Unmanaged::Warn).unwrap();
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
             LabelDiff::Update { current, desired } => {
@@ -365,7 +403,8 @@ mod tests {
         let deprecated = vec!["type:feat".into()];
         let renames = BTreeMap::new();
 
-        let diffs = RepoLabel::diff(&current, &desired, &deprecated, &renames, false).unwrap();
+        let diffs =
+            RepoLabel::diff(&current, &desired, &deprecated, &renames, Unmanaged::Warn).unwrap();
         // Should NOT emit a Delete; desired takes precedence and it is in sync
         assert!(diffs.is_empty());
     }
@@ -385,7 +424,7 @@ mod tests {
         let mut renames = BTreeMap::new();
         renames.insert("enhancement".into(), "type:feat".into());
 
-        let diffs = RepoLabel::diff(&current, &desired, &[], &renames, false).unwrap();
+        let diffs = RepoLabel::diff(&current, &desired, &[], &renames, Unmanaged::Warn).unwrap();
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
             LabelDiff::Update { current, desired } => {
@@ -423,7 +462,7 @@ mod tests {
         let mut renames = BTreeMap::new();
         renames.insert("enhancement".into(), "type:feat".into());
 
-        let err = RepoLabel::diff(&current, &desired, &[], &renames, false).unwrap_err();
+        let err = RepoLabel::diff(&current, &desired, &[], &renames, Unmanaged::Warn).unwrap_err();
         assert!(matches!(err, RepoPlanError::Collision(_)));
         assert!(err.to_string().contains("enhancement"));
         assert!(err.to_string().contains("type:feat"));
@@ -440,7 +479,7 @@ mod tests {
         renames.insert("a".into(), "b".into());
         renames.insert("b".into(), "c".into());
 
-        let err = RepoLabel::diff(&[], &desired, &[], &renames, false).unwrap_err();
+        let err = RepoLabel::diff(&[], &desired, &[], &renames, Unmanaged::Warn).unwrap_err();
         assert!(matches!(err, RepoPlanError::Validation(_)));
         assert!(err.to_string().contains("cycle or chain"));
     }
@@ -450,7 +489,7 @@ mod tests {
         let base = RepoLabelsSpec {
             deprecated: vec!["bug".into()],
             renames: BTreeMap::from([("a".into(), "x".into())]),
-            prune_unmanaged: true,
+            unmanaged: Unmanaged::Prune,
             migrations: BTreeMap::new(),
             items: vec![
                 RepoLabel::new("type:feat", "111111", "shared"),
@@ -460,7 +499,7 @@ mod tests {
         let overlay = RepoLabelsOverlay {
             deprecated: vec!["bug".into(), "wontfix".into()],
             renames: BTreeMap::from([("b".into(), "y".into())]),
-            prune_unmanaged: None,
+            unmanaged: None,
             migrations: BTreeMap::from([("ui".into(), "area:ssr".into())]),
             items: vec![
                 RepoLabel::new("type:feat", "#ABCDEF", "local"),
@@ -471,7 +510,7 @@ mod tests {
         assert_eq!(merged.deprecated, vec!["bug", "wontfix"]);
         assert_eq!(merged.renames.len(), 2);
         assert_eq!(merged.migrations.get("ui"), Some(&"area:ssr".to_string()));
-        assert!(merged.prune_unmanaged);
+        assert_eq!(merged.unmanaged, Unmanaged::Prune);
         let names: Vec<_> = merged.items.iter().map(|l| l.name.as_str()).collect();
         assert_eq!(names, vec!["type:feat", "area:core", "area:ssr"]);
         assert_eq!(merged.items[0].color, "abcdef");
@@ -486,17 +525,20 @@ mod tests {
     #[test]
     fn overlay_can_override_prune_and_works_without_base() {
         let overlay = RepoLabelsOverlay {
-            prune_unmanaged: Some(false),
+            unmanaged: Some(Unmanaged::Warn),
             items: vec![RepoLabel::new("area:db", "444444", "db")],
             ..RepoLabelsOverlay::default()
         };
         let base = RepoLabelsSpec {
-            prune_unmanaged: true,
+            unmanaged: Unmanaged::Prune,
             ..RepoLabelsSpec::default()
         };
-        assert!(!overlay.apply_to(Some(&base)).unwrap().prune_unmanaged);
+        assert_eq!(
+            overlay.apply_to(Some(&base)).unwrap().unmanaged,
+            Unmanaged::Warn
+        );
         let alone = overlay.apply_to(None).unwrap();
         assert_eq!(alone.items.len(), 1);
-        assert!(!alone.prune_unmanaged);
+        assert_eq!(alone.unmanaged, Unmanaged::Warn);
     }
 }

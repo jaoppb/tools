@@ -41,6 +41,7 @@ merge_commit_title = "PR_TITLE"
 merge_commit_message = "PR_BODY"
 
 [github.labels]
+unmanaged = "warn"                # labels on GitHub that are not declared: ignore | warn | error | prune
 deprecated = [
     "bug",
     "enhancement",
@@ -80,6 +81,7 @@ ui = "area:web"
 backend = "area:api"
 
 [github.milestones]
+unmanaged = "error"              # the default: an undeclared milestone fails `repo check`
 items = [
     { title = "v0.1.0", description = "Initial milestone", state = "open" },
     { title = "v0.2.0", description = "Next milestone", state = "open" },
@@ -100,7 +102,7 @@ Subsystem-specific labels and milestones go in `[github.overrides.<repo>.labels]
 
 ```toml
 [github.overrides.web.labels]
-prune_unmanaged = false          # overrides the shared value; omit to inherit it
+unmanaged = "error"              # overrides the shared value; omit to inherit it
 deprecated = ["accessibility"]   # unioned with the shared list
 items = [
     { name = "area:ssr", color = "2ea44f", description = "Server-side rendering" },
@@ -114,7 +116,7 @@ items = [
 items = [{ title = "v1.0.0", description = "Infra GA", state = "open" }]
 ```
 
-Merge rules: `items` override by key (`name` for labels, `title` for milestones) and otherwise append; `deprecated` is a union; `renames` and label `migrations` are merged key by key; `prune_unmanaged` replaces the shared value only when set. The shared section is optional: a repository may declare its labels or milestones only through its overlay. `issues-check --migrate` reads only `migrations`: there is no built-in map, `renames` (which rename the label itself) are not applied to issues, and with no configuration found nothing is remapped. A key not recognised inside an overlay (for example a misspelled `prune_unmanged`) is a configuration error, but an overlay keyed by a repository that is not targeted is ignored.
+Merge rules: `items` override by key (`name` for labels, `title` for milestones) and otherwise append; `deprecated` is a union; `renames` and label `migrations` are merged key by key; `unmanaged` replaces the shared value only when set. The shared section is optional: a repository may declare its labels or milestones only through its overlay. `issues-check --migrate` reads only `migrations`: there is no built-in map, `renames` (which rename the label itself) are not applied to issues, and with no configuration found nothing is remapped. A key not recognised inside an overlay (for example a misspelled `unmanged`) is a configuration error, but an overlay keyed by a repository that is not targeted is ignored.
 
 ---
 
@@ -129,8 +131,23 @@ just repo-check
 cargo run -q -p tools -- repo check --org gatuno-manga
 ```
 
+### Undeclared labels and milestones
+
+`tools.toml` is the source of truth, so a label or milestone that exists on GitHub but is not declared in `items` is drift: declare it, or list it under `deprecated` to have it removed. What `tools repo` does about it is set per kind with `unmanaged`, on `[github.labels]`, `[github.milestones]` and in an overlay:
+
+| `unmanaged` | `check` | `sync` |
+|-------------|---------|--------|
+| `ignore` | says nothing | says nothing |
+| `warn` (labels' default) | names each item, exit 0 | names each item, exit 0 |
+| `error` (milestones' default) | names each item, exit 1 | applies everything else, names each item, then exits 1 |
+| `prune` | reports the deletion as drift, exit 1 | deletes the item |
+
+Each reported item is named with its fix, for example `milestone 'v0.4.0' exists on GitHub but is not declared in tools.toml (error); declare it under [github.milestones].items or add it to deprecated`. Open and closed milestones are treated alike. Milestones default to `error` because they are few and always intentional; labels default to `warn` because collaborators add them by hand.
+
+`prune_unmanaged` no longer exists. A file that still sets it fails to load with a message naming its table; replace `true` with `unmanaged = "prune"` and `false` with `unmanaged = "warn"`.
+
 ### Step 3.2: Preview Reconciliation
-`repo check` is the preview: it reports every addition, update or removal that `repo sync` would make (exit code 1 when there is any) and writes nothing. Run it as in Step 3.1.
+`repo check` is the preview: it reports every addition, update or removal that `repo sync` would make (exit code 1 when there is any, and for an undeclared item whose `unmanaged` is `error`) and writes nothing. Run it as in Step 3.1.
 
 ### Step 3.3: Apply Provisioning Across All Repositories
 Reconcile settings, labels, and milestones across all member repositories:

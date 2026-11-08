@@ -1,7 +1,8 @@
 //! `tools repo check|sync`: repository settings, labels and milestones against `tools.toml`.
 //!
-//! `check` exits with 0 when everything is in sync, with 1 on drift and with 2 on configuration
-//! or runtime errors; `sync` reconciles GitHub to `tools.toml`.
+//! `check` exits with 0 when everything is in sync, with 1 on drift (an undeclared label or
+//! milestone counts when its `unmanaged` policy is `error`) and with 2 on configuration or runtime
+//! errors; `sync` reconciles GitHub to `tools.toml` and exits with 1 while such an item remains.
 
 pub mod cli;
 pub mod consistency;

@@ -5,6 +5,7 @@ pub use crate::domain::repo::{
     MergeCommitMessage, MergeCommitTitle, MilestoneState, ProjectDiff, RepoLabel,
     RepoLabelsOverlay, RepoLabelsSpec, RepoMilestone, RepoMilestoneSpec, RepoMilestonesOverlay,
     RepoMilestonesSpec, RepoPlanError, RepoProject, RepoProjectSpec, RepoSettings, RepoSpec,
+    Unmanaged,
 };
 use crate::workflow::{LoadError, Workflow, WorkflowConfig};
 mod milestone_format;
@@ -332,6 +333,16 @@ pub enum ConfigError {
         #[source]
         source: Box<LoadError>,
     },
+    /// A key that no longer exists is still set.
+    #[error(
+        "{path}: `prune_unmanaged` in [{table}] was removed; set `unmanaged = \"prune\"` (was true) or `unmanaged = \"warn\"` (was false)"
+    )]
+    RemovedPruneUnmanaged {
+        /// File path.
+        path: PathBuf,
+        /// The table that still sets it, for example `github.labels`.
+        table: String,
+    },
     /// `tools.toml` was not found.
     #[error("tools.toml not found in current directory or any parent")]
     NotFound,
@@ -362,6 +373,7 @@ pub fn load_from_str(contents: &str) -> Result<Config, ConfigError> {
 
 /// Parses `contents` and validates its `[workflow]` block.
 fn parse(contents: &str, path: &Path) -> Result<Config, ConfigError> {
+    reject_prune_unmanaged(contents, path)?;
     let config: Config = toml::from_str(contents).map_err(|source| ConfigError::Parse {
         path: path.to_path_buf(),
         source,
@@ -375,6 +387,43 @@ fn parse(contents: &str, path: &Path) -> Result<Config, ConfigError> {
             })?;
     }
     Ok(config)
+}
+
+/// Fails with a message naming the replacement when a table still sets the removed
+/// `prune_unmanaged`, which the strict tables would otherwise report as an unknown field.
+fn reject_prune_unmanaged(contents: &str, path: &Path) -> Result<(), ConfigError> {
+    let Ok(root) = contents.parse::<toml::Table>() else {
+        return Ok(()); // the typed parse reports the syntax error
+    };
+    let Some(github) = root.get("github").and_then(toml::Value::as_table) else {
+        return Ok(());
+    };
+    let mut tables: Vec<(String, &toml::Table)> = Vec::new();
+    for kind in ["labels", "milestones"] {
+        if let Some(table) = github.get(kind).and_then(toml::Value::as_table) {
+            tables.push((format!("github.{kind}"), table));
+        }
+        for (repo, over) in github
+            .get("overrides")
+            .and_then(toml::Value::as_table)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(table) = over.get(kind).and_then(toml::Value::as_table) {
+                tables.push((format!("github.overrides.{repo}.{kind}"), table));
+            }
+        }
+    }
+    match tables
+        .into_iter()
+        .find(|(_, table)| table.contains_key("prune_unmanaged"))
+    {
+        Some((table, _)) => Err(ConfigError::RemovedPruneUnmanaged {
+            path: path.to_path_buf(),
+            table,
+        }),
+        None => Ok(()),
+    }
 }
 
 /// Loads and parses configuration from the given file path.
@@ -483,7 +532,7 @@ mod tests {
 
             [github.labels]
             deprecated = ["bug", "epic"]
-            prune_unmanaged = true
+            unmanaged = "prune"
             items = [
                 { name = "type:feat", color = "#1D76DB", description = "New feature" },
                 { name = "type:fix", color = "d73a4a", description = "Bug fix" }
@@ -499,7 +548,7 @@ mod tests {
         let config: Config = toml::from_str(toml_str).expect("should parse");
         let labels = config.labels().expect("labels should exist");
         assert_eq!(labels.deprecated, vec!["bug", "epic"]);
-        assert!(labels.prune_unmanaged);
+        assert_eq!(labels.unmanaged, Unmanaged::Prune);
         assert_eq!(labels.items.len(), 2);
         assert_eq!(labels.items[0].name, "type:feat");
         assert_eq!(labels.items[0].color, "1d76db"); // normalized: no # and lowercase
@@ -667,11 +716,11 @@ mod tests {
             repositories = ["web", "api"]
 
             [github.labels]
-            prune_unmanaged = true
+            unmanaged = "prune"
             items = [{ name = "type:feat", color = "1d76db", description = "Feature" }]
 
             [github.overrides.web.labels]
-            prune_unmanaged = false
+            unmanaged = "error"
             items = [{ name = "area:ssr", color = "2ea44f", description = "SSR" }]
 
             [github.overrides.infra.milestones]
@@ -681,12 +730,12 @@ mod tests {
         let web = config.spec_for("web").unwrap();
         let web_labels = web.labels.expect("labels");
         assert_eq!(web_labels.items.len(), 2);
-        assert!(!web_labels.prune_unmanaged);
+        assert_eq!(web_labels.unmanaged, Unmanaged::Error);
 
         let api = config.spec_for("api").unwrap();
         let api_labels = api.labels.expect("labels");
         assert_eq!(api_labels.items.len(), 1);
-        assert!(api_labels.prune_unmanaged);
+        assert_eq!(api_labels.unmanaged, Unmanaged::Prune);
         assert!(api.milestones.is_none());
 
         let infra = config.spec_for("infra").unwrap();
@@ -704,5 +753,33 @@ mod tests {
             prune_unmanged = true
         "#;
         assert!(toml::from_str::<Config>(toml_str).is_err());
+    }
+
+    #[test]
+    fn removed_prune_unmanaged_fails_naming_the_replacement() {
+        for table in [
+            "github.labels",
+            "github.milestones",
+            "github.overrides.web.labels",
+            "github.overrides.web.milestones",
+        ] {
+            let toml = format!(
+                "[github.repository]\nowner = \"o\"\nname = \"r\"\n\n[{table}]\nprune_unmanaged = true\n"
+            );
+            let message = load_from_str(&toml).unwrap_err().to_string();
+            assert!(message.contains("prune_unmanaged"), "{message}");
+            assert!(message.contains(&format!("[{table}]")), "{message}");
+            assert!(message.contains("unmanaged = \"prune\""), "{message}");
+        }
+    }
+
+    #[test]
+    fn unmanaged_defaults_differ_per_kind() {
+        let config = load_from_str(
+            "[github.repository]\nowner = \"o\"\nname = \"r\"\n\n[github.labels]\nitems = []\n\n[github.milestones]\nitems = []\n",
+        )
+        .unwrap();
+        assert_eq!(config.labels().unwrap().unmanaged, Unmanaged::Warn);
+        assert_eq!(config.milestones().unwrap().unmanaged, Unmanaged::Error);
     }
 }

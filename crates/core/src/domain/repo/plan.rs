@@ -11,7 +11,7 @@ use crate::domain::repo::{
 pub enum DeleteReason {
     /// Item is explicitly configured in `deprecated` list.
     Deprecated,
-    /// Item exists remotely but is not in `tools.toml` and `prune_unmanaged` is true.
+    /// Item exists remotely but is not in `tools.toml` and the policy is `prune`.
     Unmanaged,
 }
 
@@ -172,6 +172,16 @@ impl RepoPlan {
             || self.project_diffs.iter().any(ProjectDiff::is_actionable)
     }
 
+    /// Whether an undeclared label or milestone whose policy is `error` was found.
+    #[must_use]
+    pub fn has_unmanaged_errors(&self) -> bool {
+        self.label_diffs.iter().any(LabelDiff::is_unmanaged_error)
+            || self
+                .milestone_diffs
+                .iter()
+                .any(MilestoneDiff::is_unmanaged_error)
+    }
+
     /// Setting differences detected.
     #[must_use]
     pub fn setting_diffs(&self) -> &[SettingDiff] {
@@ -289,7 +299,7 @@ impl RepoState {
                     &desired_labels.items,
                     &desired_labels.deprecated,
                     &desired_labels.renames,
-                    desired_labels.prune_unmanaged,
+                    desired_labels.unmanaged,
                 )?
             }
             None => Vec::new(),
@@ -306,7 +316,7 @@ impl RepoState {
                     &desired_milestones.items,
                     &desired_milestones.deprecated,
                     &desired_milestones.renames,
-                    desired_milestones.prune_unmanaged,
+                    desired_milestones.unmanaged,
                 )?
             }
             None => Vec::new(),
@@ -332,7 +342,7 @@ impl RepoState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::repo::{MergeCommitMessage, MergeCommitTitle, MilestoneState};
+    use crate::domain::repo::{MergeCommitMessage, MergeCommitTitle, MilestoneState, Unmanaged};
     use std::collections::BTreeMap;
 
     #[test]
@@ -368,7 +378,7 @@ mod tests {
         let desired_labels = RepoLabelsSpec {
             deprecated: Vec::new(),
             renames: BTreeMap::new(),
-            prune_unmanaged: false,
+            unmanaged: Unmanaged::Warn,
             migrations: BTreeMap::new(),
             items: vec![
                 RepoLabel::new("type:feat", "1d76db", "Feature"),
@@ -432,7 +442,7 @@ mod tests {
             Some(RepoLabelsSpec {
                 deprecated: Vec::new(),
                 renames: BTreeMap::new(),
-                prune_unmanaged: false,
+                unmanaged: Unmanaged::Warn,
                 migrations: BTreeMap::new(),
                 items: vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
             }),
@@ -450,7 +460,7 @@ mod tests {
             Some(RepoMilestonesSpec {
                 deprecated: Vec::new(),
                 renames: BTreeMap::new(),
-                prune_unmanaged: false,
+                unmanaged: Unmanaged::Warn,
                 items: Vec::new(),
             }),
             None,
