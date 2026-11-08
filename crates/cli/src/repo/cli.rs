@@ -317,7 +317,6 @@ mod tests {
             .chain(words);
         match crate::cli::parse(command_line)? {
             Invocation::Repo(arguments) => Ok(arguments),
-            #[cfg(any(feature = "issues", feature = "project"))]
             _ => unreachable!("a repo command line parses to the repo group"),
         }
     }

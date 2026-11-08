@@ -48,7 +48,7 @@ fn check(resolved: ResolvedCheck) -> Result<Exit, Exit> {
         .target
         .project()
         .map(|_| GhProject::new(resolved.target.clone()));
-    let report = Audit::new(Fetched(tree), project, resolved.rules)
+    let report = Audit::new(Fetched(tree), project, resolved.rules.clone())
         .run()
         .map_err(Exit::failed)?;
     let mut text = report.to_string();
@@ -56,6 +56,9 @@ fn check(resolved: ResolvedCheck) -> Result<Exit, Exit> {
     if !pending.plan().is_empty() {
         text = format!("{}\n{pending}", text.trim_end());
         code = code.max(1);
+    }
+    for warning in &resolved.warnings {
+        text = format!("{}\nwarning: {warning}", text.trim_end());
     }
     Ok(Exit::new(text, code))
 }

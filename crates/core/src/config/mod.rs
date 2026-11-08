@@ -8,6 +8,7 @@ pub use crate::domain::repo::{
     Unmanaged,
 };
 use crate::workflow::{LoadError, Workflow, WorkflowConfig};
+pub mod migrate;
 mod milestone_format;
 pub use milestone_format::{MilestoneFormat, TitlePattern};
 
@@ -22,6 +23,9 @@ pub struct Config {
     /// The `[workflow]` block, when the file has one.
     #[serde(default)]
     pub workflow: Option<WorkflowConfig>,
+    /// Deprecations of the loaded file, for the commands that read the deprecated keys to print.
+    #[serde(skip)]
+    pub warnings: Vec<String>,
 }
 
 impl Config {
@@ -219,10 +223,6 @@ pub struct ProjectConfig {
     /// Project title, if specified.
     #[serde(default)]
     pub title: Option<String>,
-    /// Legacy column aliases. The sync no longer reads them: board columns must
-    /// match `[workflow].statuses`. Removed with the config migration (#58).
-    #[serde(default)]
-    pub status_mapping: std::collections::HashMap<String, String>,
 }
 
 /// Settings for issues rules.
@@ -343,6 +343,14 @@ pub enum ConfigError {
         /// The table that still sets it, for example `github.labels`.
         table: String,
     },
+    /// The removed `[github.project.status_mapping]` is still set.
+    #[error(
+        "{path}: [github.project.status_mapping] was removed; board columns must equal [workflow].statuses. Run `tools config migrate` to rewrite the file"
+    )]
+    RemovedStatusMapping {
+        /// File path.
+        path: PathBuf,
+    },
     /// `tools.toml` was not found.
     #[error("tools.toml not found in current directory or any parent")]
     NotFound,
@@ -374,7 +382,8 @@ pub fn load_from_str(contents: &str) -> Result<Config, ConfigError> {
 /// Parses `contents` and validates its `[workflow]` block.
 fn parse(contents: &str, path: &Path) -> Result<Config, ConfigError> {
     reject_prune_unmanaged(contents, path)?;
-    let config: Config = toml::from_str(contents).map_err(|source| ConfigError::Parse {
+    reject_status_mapping(contents, path)?;
+    let mut config: Config = toml::from_str(contents).map_err(|source| ConfigError::Parse {
         path: path.to_path_buf(),
         source,
     })?;
@@ -386,7 +395,47 @@ fn parse(contents: &str, path: &Path) -> Result<Config, ConfigError> {
                 source: Box::new(source),
             })?;
     }
+    config.warnings = deprecations(contents);
     Ok(config)
+}
+
+/// Fails, naming `tools config migrate`, when the removed `[github.project.status_mapping]` is
+/// still set.
+fn reject_status_mapping(contents: &str, path: &Path) -> Result<(), ConfigError> {
+    let set = contents.parse::<toml::Table>().ok().is_some_and(|root| {
+        root.get("github")
+            .and_then(|github| github.get("project"))
+            .is_some_and(|project| project.get("status_mapping").is_some())
+    });
+    if set {
+        Err(ConfigError::RemovedStatusMapping {
+            path: path.to_path_buf(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
+/// The deprecations of a file that still loads.
+fn deprecations(contents: &str) -> Vec<String> {
+    let Ok(root) = contents.parse::<toml::Table>() else {
+        return Vec::new();
+    };
+    let has_rules = root
+        .get("github")
+        .and_then(|github| github.get("issues"))
+        .is_some_and(|issues| issues.get("rules").is_some());
+    match (has_rules, root.contains_key("workflow")) {
+        (false, _) => Vec::new(),
+        (true, true) => vec![
+            "[github.issues.rules] is deprecated and will be removed with #59 (the issue audit still reads it)"
+                .to_owned(),
+        ],
+        (true, false) => vec![
+            "[github.issues.rules] is deprecated and will be removed with #59; run `tools config migrate` to add the [workflow] equivalent"
+                .to_owned(),
+        ],
+    }
 }
 
 /// Fails with a message naming the replacement when a table still sets the removed

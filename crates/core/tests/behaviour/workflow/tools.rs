@@ -123,3 +123,28 @@ fn the_tools_preset_names_no_epic_and_no_effort_limit() {
     assert!(!ids.contains(&"epic-is-untouched"), "{ids:?}");
     assert_eq!(ids.len(), 6);
 }
+
+#[test]
+fn an_area_prefix_list_accepts_each_prefix_and_ignores_case_and_accents() {
+    let workflow = Workflow::from_toml(
+        "[workflow]\nextends = \"builtin:tools\"\n[workflow.params]\narea_prefix = [\"area:\", \"domain:\"]\n",
+    )
+    .expect("a list param loads");
+    let ready = |label: &str| {
+        let board = snapshot(
+            vec![card(
+                1,
+                "Backlog",
+                Lifecycle::Open,
+                &["type:feat", label],
+                true,
+            )],
+            &[],
+        );
+        let evaluation = evaluate(&workflow, &board, &Remote::default());
+        decision(&evaluation, &number(1)).destination().to_string()
+    };
+    assert_eq!(ready("domain:web"), "Ready");
+    assert_eq!(ready("Área:core"), "Ready");
+    assert_eq!(ready("zone:web"), "Backlog");
+}
