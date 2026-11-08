@@ -6,8 +6,6 @@ Every pull request that changes config, the CLI, the action, the release flow or
 
 ## [Unreleased]
 
-<!-- TODO(bump): add the #93 entries (doc label check becomes opt-in), then delete this line. `just bump-version` refuses to run while it is here. -->
-
 > **Release-day break.** `jaoppb/tools@v0.2.0` defaults to `version: latest`. Once v0.3.0 is published it resolves to a release that has no `issues-check`, `repo-sync` or `project-sync` assets, and the install step fails. Pin `version: v0.2.0` to stay on v0.2.0, or move to `jaoppb/tools@v0.3.0` with `version: v0.3.0`. There are no compatibility shims.
 >
 > **Migration guide:** [v0.2.0 → v0.3.0](docs/migrations/v0.3.0.md).
@@ -38,6 +36,7 @@ Every pull request that changes config, the CLI, the action, the release flow or
 
 ### Changed
 
+- `tools repo check`'s offline template and doc checks are opt-in: doc label lists are read only from the files named in `[github.labels].docs` (default empty, paths relative to `tools.toml`, rejected in `[github.overrides.<repo>.labels]`), and templates only when `[github.issue_templates]` is declared. The step runs only on `check` of the configured repository alone that covers labels, so a repository without `AGENTS.md` or `CONTRIBUTING.md` no longer fails, and a one-entry `[github].repositories` list now skips it (#93, #103)
 - A task whose story is not on the Project waits for that story (fetched on demand); before it was never held (#57, #84)
 - A param in `[workflow.params]` must keep the TOML type of the preset value, with a load error naming line and column; `area_prefix` is a list, and `tools config check` reports a single value and `migrate` wraps it (#58, #90, #92, #99)
 - `[github.issues.rules]` is deprecated: `tools issues check` still reads it and prints a warning, `tools project` no longer does (#58, #90)
