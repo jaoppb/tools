@@ -10,7 +10,10 @@ unset $(git rev-parse --local-env-vars)
 
 SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/release-tag.sh"
 readonly SCRIPT
-ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+# Two assignments: a failed mktemp must stop the script before the trap below can
+# remove anything (`cd ""` succeeds in bash 5.2 and would leave ROOT as the cwd).
+ROOT="$(mktemp -d)"
+ROOT="$(cd "${ROOT}" && pwd -P)"
 readonly ROOT
 trap 'rm -rf "${ROOT}"' EXIT
 
