@@ -16,7 +16,8 @@ permissions:
 jobs:
   # The `just` jobs and the flake check run in the flake devShell (`.github/actions/nix-devshell`),
   # so `just check` uses the toolchain pinned by flake.lock, as it does locally. Each job needs
-  # `actions: write` because that action purges superseded Nix store caches.
+  # `actions: write` because that action purges superseded Nix store caches. rust-cache keys on
+  # the runner's rustc, not the devShell's, so its `key` adds flake.lock, which pins the one used.
   cargo:
     name: Workspace Check & Test
     runs-on: ubuntu-latest
@@ -33,7 +34,6 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          # rust-cache keys on the runner's rustc, not the devShell's; flake.lock pins the one used.
           key: ${{ hashFiles('flake.lock') }}
 
       - name: Run workspace checks, lints, and tests

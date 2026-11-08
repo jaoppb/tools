@@ -190,7 +190,7 @@ area_prefix = ["area:", "domain:"]   # a list: any prefix counts, ignoring case 
 
 ### Prerequisites
 
-- **[Nix](https://nixos.org/)** with flakes enabled (required): the [`flake.nix`](flake.nix) devShell provides the Rust toolchain, `just`, Lefthook and the GitHub CLI (`gh`) at the versions pinned by `flake.lock`, the same ones CI uses. Every `just` recipe except `just --list` fails outside it.
+- **[Nix](https://nixos.org/)** with flakes enabled (required): the [`flake.nix`](flake.nix) devShell provides the Rust toolchain, `just`, Lefthook and the GitHub CLI (`gh`) at the versions pinned by `flake.lock`, the same ones CI uses. Every `just` recipe fails outside it; only `just --list` works anywhere.
 - *(Optional)* **[direnv](https://direnv.net/)**: enters the devShell automatically through [`.envrc`](.envrc) (`direnv allow`).
 
 ### Local Environment Setup

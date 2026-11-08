@@ -38,7 +38,7 @@ This repository enforces strict issue hygiene and commit conventions as document
 
 ### Prerequisites
 
-- **[Nix](https://nixos.org/) with flakes enabled (required):** the `flake.nix` devShell provides the Rust toolchain, `just`, Lefthook and the GitHub CLI (`gh`) at the versions pinned by `flake.lock`. CI runs every `just` job in the same devShell, so `just check` means the same thing locally and in CI. Every `just` recipe except `just --list` fails outside it.
+- **[Nix](https://nixos.org/) with flakes enabled (required):** the `flake.nix` devShell provides the Rust toolchain, `just`, Lefthook and the GitHub CLI (`gh`) at the versions pinned by `flake.lock`. CI runs every `just` job in the same devShell, so `just check` means the same thing locally and in CI. Every `just` recipe fails outside it; only `just --list` works anywhere.
 - *(Optional)* **[direnv](https://direnv.net/):** enters the devShell automatically through `.envrc` (`direnv allow`).
 
 ### Initial Setup

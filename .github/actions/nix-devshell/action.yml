@@ -9,15 +9,15 @@ runs:
       with:
         github_access_token: ${{ github.token }}
 
-    # Keyed on the flake, so a toolchain bump in flake.lock starts a new cache. A key miss
-    # restores the newest older store, saves a new one, and purges the older entries of this
-    # ref (purging needs `actions: write` on the job). No GC before saving: nothing roots the
-    # devShell closure, so a GC would drop exactly what the cache is for.
+    # Keyed on the flake, so a toolchain bump in flake.lock starts a new cache. A key miss starts
+    # from an empty store (nothing restored by prefix: with no GC, an older store would carry its
+    # old toolchain into every later cache), fetches from cache.nixos.org, saves the new store and
+    # purges this ref's older entries (purging needs `actions: write` on the job). No GC before
+    # saving: nothing roots the devShell closure, so a GC would drop exactly what the cache is for.
     - name: Restore and save Nix store
       uses: nix-community/cache-nix-action@v7
       with:
         primary-key: nix-devshell-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-        restore-prefixes-first-match: nix-devshell-${{ runner.os }}-
         purge: true
         purge-prefixes: nix-devshell-${{ runner.os }}-
         purge-created: 0
