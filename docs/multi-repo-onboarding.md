@@ -2,7 +2,7 @@
 
 This guide walks through standardizing and onboarding an entire GitHub organization (e.g. `gatuno-manga` with repositories such as `web`, `api`, `app`, `infra`) to `tools`.
 
-Already onboarded on an older release? Follow the [migration guides](migrations/) (`docs/migrations/<version>.md`, e.g. [v0.2.0](migrations/v0.2.0.md)) in order.
+Already onboarded on an older release? Follow the [migration guides](migrations/) (`docs/migrations/<version>.md`, e.g. [v0.2.0](migrations/v0.2.0.md), then [v0.3.0](migrations/v0.3.0.md)) in order.
 
 ---
 
