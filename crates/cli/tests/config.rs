@@ -68,6 +68,33 @@ fn check_exits_one_while_a_migration_is_pending_and_zero_after_it() {
 }
 
 #[test]
+fn a_string_area_prefix_is_pending_and_migrate_wraps_it() {
+    let path = file(
+        "area-prefix",
+        &format!(
+            "{HEAD}[workflow]\nextends = \"builtin:tools\"\n[workflow.params]\narea_prefix = \"area:\"\n"
+        ),
+    );
+    let (text, code) = go(&["check"], &path);
+    assert_eq!(code, 1, "{text}");
+    assert!(text.contains("area_prefix"), "{text}");
+    assert_eq!(go(&["migrate"], &path).1, 0);
+    let (text, code) = go(&["check"], &path);
+    assert_eq!(code, 0, "{text}");
+}
+
+#[test]
+fn check_exits_two_with_the_location_for_a_param_a_list_does_not_fix() {
+    let path = file(
+        "param-type",
+        &format!("{HEAD}[workflow]\nextends = \"builtin:tools\"\n[workflow.params]\nstarted = 3\n"),
+    );
+    let (text, code) = go(&["check"], &path);
+    assert_eq!(code, 2, "{text}");
+    assert!(text.contains("line 7, column 11"), "{text}");
+}
+
+#[test]
 fn check_exits_two_for_a_file_that_does_not_load() {
     let path = file(
         "bad",

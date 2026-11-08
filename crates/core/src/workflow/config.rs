@@ -11,6 +11,7 @@ use toml::Spanned;
 use crate::domain::{StatusName, Statuses, StatusesError};
 use crate::workflow::error::LoadError;
 use crate::workflow::expr::Expr;
+use crate::workflow::params::{self, PresetParams};
 use crate::workflow::schema::{CURRENT, ROOTS, VERSION};
 
 const COSMO: &str = include_str!("presets/cosmo.toml");
@@ -22,6 +23,18 @@ fn preset(name: &str) -> Option<&'static str> {
         "builtin:tools" => Some(TOOLS),
         _ => None,
     }
+}
+
+/// The params the preset `name` ships; `None` for an unknown preset.
+pub(crate) fn preset_params(name: &str) -> Option<PresetParams> {
+    let file: File = toml::from_str(preset(name)?).ok()?;
+    Some(
+        file.workflow
+            .params
+            .into_iter()
+            .map(|(name, value)| (name, value.into_inner()))
+            .collect(),
+    )
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -254,6 +267,7 @@ impl WorkflowConfig {
                 let file: File = toml::from_str(text)?;
                 let base = Block::new(&file.workflow, false);
                 check_schema(&base, Locator(None))?;
+                check_params(&local, &base, at)?;
                 local.merge(base)
             }
         };
@@ -293,6 +307,26 @@ fn check_schema(block: &Block, at: Locator<'_>) -> Result<(), LoadError> {
         }
         _ => Ok(()),
     }
+}
+
+/// Every local param the preset also ships keeps the preset's TOML shape.
+fn check_params(local: &Block, preset: &Block, at: Locator<'_>) -> Result<(), LoadError> {
+    for (name, param) in &local.params {
+        let Some(base) = preset.params.get(name) else {
+            continue;
+        };
+        if !params::fits(&base.value, &param.value) {
+            return Err(at.locate(
+                param.span.as_ref(),
+                LoadError::ParamType {
+                    name: name.clone(),
+                    preset: params::describe(&base.value),
+                    local: params::describe(&param.value),
+                },
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn build(block: Block, at: Locator<'_>) -> Result<Workflow, LoadError> {
@@ -432,34 +466,8 @@ fn params_value(
     params: &BTreeMap<String, At<toml::Value>>,
     at: Locator<'_>,
 ) -> Result<Value, LoadError> {
-    let entries = params
-        .iter()
-        .map(|(name, param)| {
-            scalar_or_list(&param.value)
-                .map(|value| (name.clone(), value))
-                .ok_or_else(|| at.locate(param.span.as_ref(), LoadError::Param(name.clone())))
-        })
-        .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
-    Ok(entries.into())
-}
-
-fn scalar_or_list(value: &toml::Value) -> Option<Value> {
-    match value {
-        toml::Value::Array(items) => items
-            .iter()
-            .map(scalar)
-            .collect::<Option<Vec<_>>>()
-            .map(Value::from),
-        other => scalar(other),
-    }
-}
-
-fn scalar(value: &toml::Value) -> Option<Value> {
-    match value {
-        toml::Value::String(text) => Some(Value::from(text.as_str())),
-        toml::Value::Integer(number) => Some(Value::Int(*number)),
-        toml::Value::Float(number) => Some(Value::Float(*number)),
-        toml::Value::Boolean(flag) => Some(Value::Bool(*flag)),
-        _ => None,
-    }
+    params::cel_value(params.iter().map(|(name, param)| (name, &param.value))).map_err(|name| {
+        let span = params.get(name).and_then(|param| param.span.as_ref());
+        at.locate(span, LoadError::Param(name.clone()))
+    })
 }
