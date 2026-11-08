@@ -8,12 +8,12 @@ default  = "Backlog"
 
 [workflow.params]
 type_prefix = "type:"
-area_prefix = "area:"
+area_prefix = ["area:"]
 started     = ["In progress", "In review"]
 
 [workflow.facts]
 has_type   = 'issue.labels.filter(l, l.startsWith(params.type_prefix)).size() == 1'
-has_area   = 'issue.labels.exists(l, fold(l).startsWith(fold(params.area_prefix)))'
+has_area   = 'issue.labels.exists(l, params.area_prefix.exists(p, fold(l).startsWith(fold(p))))'
 triaged    = 'has_type && has_area && issue.milestone != null'
 unblocked  = 'issue.blockers.all(b, b.state == "closed")'
 gate_holds = 'triaged && unblocked'

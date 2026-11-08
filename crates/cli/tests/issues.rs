@@ -11,7 +11,6 @@ fn parse(words: &[&str]) -> Result<Arguments, UsageError> {
         .map(str::to_owned);
     match parse_command_line(command_line)? {
         Invocation::Issues(arguments) => Ok(arguments),
-        #[cfg(any(feature = "repo", feature = "project"))]
         _ => unreachable!("an issues command line parses to the issues group"),
     }
 }

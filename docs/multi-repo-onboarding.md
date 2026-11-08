@@ -89,14 +89,27 @@ items = [
     { title = "v0.2.0", description = "Next milestone", state = "open" },
 ]
 
-[github.issues.rules]
-cycle = true
-labels = true
-membership = false
-milestone = true
-parent = false
-release = true
+# Standalone issues (no parent, no Project membership). Use "builtin:cosmo" for epic/story/task.
+[workflow]
+extends = "builtin:tools"
+
+[workflow.params]
+area_prefix = ["area:"]          # a list; the default, shown for reference
 ```
+
+### The `[workflow]` block
+
+`tools project check|sync` need a `[workflow]` block; `extends` picks `builtin:tools` (standalone issues: type, area, milestone, no open blockers) or `builtin:cosmo` (epic/story/task, parent waits, Priority and Effort required). `[workflow.params]` overrides the vocabulary of the preset (`area_prefix` is a list) without shadowing a rule.
+
+A `tools.toml` written for an earlier release (`[github.project.status_mapping]`, `[github.issues.rules]`) is converted in place:
+
+```bash
+tools config check               # lists what is pending; exit 1 until migrated
+tools config migrate --dry-run   # prints the migrated file
+tools config migrate             # writes it; comments are kept, a second run changes nothing
+```
+
+`membership = false` together with `parent = false` selects `builtin:tools`, otherwise `builtin:cosmo`; `area_prefixes` and `milestone_format` become params; with `priority` or `effort` off (the old default) a `triaged` fact is written that keeps the relaxed gate, because `builtin:cosmo` alone requires both. `[github.issues.rules]` stays until the issue audit moves to the workflow. A `status_mapping` that renames board columns cannot be migrated: rename the columns on the board to the `statuses` names.
 
 ### Per-Repository Overrides
 

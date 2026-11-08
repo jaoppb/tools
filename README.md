@@ -19,7 +19,7 @@ A monorepo for developer tools, declarative repository management utilities, and
   - [Repository Settings](#repository-settings)
   - [Labels Schema](#labels-schema)
   - [Milestones Definition](#milestones-definition)
-  - [Issue Workflow Rules](#issue-workflow-rules)
+  - [Workflow (`[workflow]`)](#workflow-workflow)
 - [Developer Quickstart & Tooling](#developer-quickstart--tooling)
   - [Prerequisites](#prerequisites)
   - [Local Environment Setup](#local-environment-setup)
@@ -95,6 +95,12 @@ tools repo sync                  # reconcile everything configured in tools.toml
 tools repo sync --settings       # or --labels, --milestones, --project
 ```
 
+**`tools config`**: `tools.toml` itself.
+```bash
+tools config check               # list removed keys the file still carries (exit 1 while a migration is pending)
+tools config migrate             # rewrite them into [workflow]; --dry-run prints the file instead of writing it
+```
+
 **`tools issues`**: workflow integrity and rule auditor for GitHub issues.
 ```bash
 tools issues check               # milestones, taxonomy, blockers; also previews pending label migrations (exit 1 if any)
@@ -165,15 +171,18 @@ items = [
 ]
 ```
 
-### Issue Workflow Rules
-Enforces issue invariants during `just issues-check`:
+### Workflow (`[workflow]`)
+Statuses, rules and vocabulary of the issue workflow are data in `tools.toml`; `tools project` evaluates them. A preset supplies the defaults and the file overrides what differs:
 ```toml
-[github.issues.rules]
-cycle = true       # Prohibit cyclic dependency chains
-labels = true      # Require exactly one type:* label and >=1 area:* label
-milestone = true   # Require every open issue to be assigned a milestone
-release = true     # Enforce milestone format conventions
+[workflow]
+extends = "builtin:tools"      # standalone issues; "builtin:cosmo" adds epic/story/task, Priority and Effort
+
+[workflow.params]              # opaque to the engine, read by the preset's facts
+area_prefix = ["area:", "domain:"]   # a list: any prefix counts, ignoring case and accents
 ```
+`[workflow.facts]` and `[[workflow.status]]` shadow a preset fact or rule by reusing its name or `id`. See [the workflow engine spec](docs/workflow-engine-spec.md) for the fact schema.
+
+`[github.project.status_mapping]` is removed (board columns must equal `[workflow].statuses`) and fails to load; `[github.issues.rules]` is deprecated, still read by `tools issues check` until the audit moves to the workflow, and loads with a warning. `tools config migrate` converts both.
 
 ---
 
