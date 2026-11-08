@@ -132,4 +132,24 @@ mod tests {
         assert!(toml::from_str::<MilestonesConfig>("unmanaged = \"loud\"").is_err());
         assert!(toml::from_str::<MilestonesConfig>("prune_unmanaged = true").is_err());
     }
+
+    #[test]
+    fn state_defaults_to_open_and_reads_lowercase() {
+        let config: MilestonesConfig =
+            toml::from_str(r#"items = [{ title = "v1" }, { title = "v2", state = "closed" }]"#)
+                .unwrap();
+        let spec = RepoMilestonesSpec::from(config);
+        assert_eq!(spec.items[0].state, MilestoneState::Open);
+        assert_eq!(spec.items[1].state, MilestoneState::Closed);
+        assert!(
+            toml::from_str::<MilestonesConfig>(r#"items = [{ title = "v", state = "CLOSED" }]"#)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn strict_tables_reject_unknown_keys() {
+        assert!(toml::from_str::<MilestonesConfig>("typo = 1").is_err());
+        assert!(toml::from_str::<MilestonesOverlayConfig>("typo = 1").is_err());
+    }
 }

@@ -1,6 +1,6 @@
 //! The rules of the issue lifecycle, over a snapshot of the Project.
 //!
-//! This layer imports only `std` and `serde`: it never sees `gh`, JSON or the network.
+//! This layer imports only `std`: it never sees `gh`, JSON, TOML or the network.
 
 pub mod audit;
 pub mod card;

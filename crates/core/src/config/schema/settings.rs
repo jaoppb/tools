@@ -85,3 +85,35 @@ impl From<RepositorySettingsConfig> for RepoSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_table_takes_the_defaults() {
+        let settings = RepoSettings::from(toml::from_str::<RepositorySettingsConfig>("").unwrap());
+        assert!(settings.allow_merge_commit);
+        assert!(!settings.allow_squash_merge);
+        assert!(!settings.allow_rebase_merge);
+        assert!(settings.delete_branch_on_merge);
+        assert_eq!(settings.merge_commit_title, MergeCommitTitle::PrTitle);
+        assert_eq!(settings.merge_commit_message, MergeCommitMessage::PrBody);
+    }
+
+    #[test]
+    fn the_merge_commit_enums_read_screaming_snake_case() {
+        let settings = RepoSettings::from(
+            toml::from_str::<RepositorySettingsConfig>(
+                "merge_commit_title = \"MERGE_MESSAGE\"\nmerge_commit_message = \"BLANK\"",
+            )
+            .unwrap(),
+        );
+        assert_eq!(settings.merge_commit_title, MergeCommitTitle::MergeMessage);
+        assert_eq!(settings.merge_commit_message, MergeCommitMessage::Blank);
+        assert!(
+            toml::from_str::<RepositorySettingsConfig>("merge_commit_title = \"pr_title\"")
+                .is_err()
+        );
+    }
+}

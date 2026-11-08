@@ -96,3 +96,53 @@ impl From<LabelsOverlayConfig> for RepoLabelsOverlay {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::repo::Unmanaged;
+
+    #[test]
+    fn a_full_table_maps_into_the_domain_spec() {
+        let config: LabelsConfig = toml::from_str(
+            r##"
+            deprecated = ["bug"]
+            renames = { old = "new" }
+            unmanaged = "ignore"
+            migrations = { ui = "area:web" }
+            items = [{ name = "type:feat", color = "#1D76DB" }]
+            "##,
+        )
+        .unwrap();
+        let spec = RepoLabelsSpec::from(config);
+        assert_eq!(spec.deprecated, ["bug"]);
+        assert_eq!(spec.renames["old"], "new");
+        assert_eq!(spec.unmanaged, Unmanaged::Ignore);
+        assert_eq!(spec.migrations["ui"], "area:web");
+        assert_eq!(spec.items, [RepoLabel::new("type:feat", "1d76db", "")]);
+    }
+
+    #[test]
+    fn an_empty_table_takes_the_defaults() {
+        let spec = RepoLabelsSpec::from(toml::from_str::<LabelsConfig>("").unwrap());
+        assert_eq!(spec, RepoLabelsSpec::default());
+    }
+
+    #[test]
+    fn strict_tables_reject_unknown_keys() {
+        assert!(toml::from_str::<LabelsConfig>("typo = 1").is_err());
+        assert!(toml::from_str::<LabelsOverlayConfig>("typo = 1").is_err());
+        assert!(toml::from_str::<LabelsConfig>("unmanaged = \"loud\"").is_err());
+    }
+
+    #[test]
+    fn an_overlay_leaves_unmanaged_unset_unless_given() {
+        let overlay: LabelsOverlayConfig = toml::from_str("").unwrap();
+        assert_eq!(RepoLabelsOverlay::from(overlay).unmanaged, None);
+        let overlay: LabelsOverlayConfig = toml::from_str("unmanaged = \"prune\"").unwrap();
+        assert_eq!(
+            RepoLabelsOverlay::from(overlay).unmanaged,
+            Some(Unmanaged::Prune)
+        );
+    }
+}
