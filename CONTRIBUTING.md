@@ -87,6 +87,8 @@ Every open issue must strictly follow the label schema (declared in `tools.toml`
   - `area:issues-check` — `tools issues` in `crates/cli` (workflow and integrity auditor)
   - `area:tooling` — Flake, Nix, Just, CI, Cargo workspace
   - `area:docs` — Documentation and workflow specifications
+- **Pull requests only:**
+  - `skip-changelog` — The pull request needs no `CHANGELOG.md` entry
 <!-- labels:end -->
 
 Run `just issues-check` locally to verify that all open issues conform to these rules.
@@ -135,6 +137,7 @@ type: subject (#issue)
 - **PR Titles:** Follow the same format as commit titles (`type: subject (#issue)`).
 - **PR Description:** Include `Closes #issue` to automatically close the associated issue upon merge.
 - **CI Gates:** All PRs must pass `cargo fmt`, `cargo clippy`, `cargo test`, and `just arch-check`.
+- **Changelog:** A PR that touches `crates/`, `action.yml`, `scripts/` or `.github/workflows/` adds one bullet under `Unreleased` in `CHANGELOG.md` (ending `(#issue, #PR)`), or carries the `skip-changelog` label. The `Changelog` workflow runs `just changelog-check origin/main <labels>`; run it locally the same way.
 
 ---
 
@@ -144,6 +147,7 @@ Releases never touch `main` directly:
 
 1. File a `type:chore` issue for the bump (template, area, milestone).
 2. From an up-to-date `main`, run `just bump-version <major|minor|patch|X.Y.Z> --issue <n>` (add `--dry-run` to preview the version, branch, and PR text without changing anything). It needs an authenticated `gh`, creates `chore/<n>`, commits `chore: bump version to X.Y.Z (#n)`, pushes the branch, and opens the PR.
+   The script also rotates the `Unreleased` section of `CHANGELOG.md` into `## [X.Y.Z] - <date>` and stages it with the version files. It refuses an empty section and a leftover `TODO(bump)` line; resolve those on `main` first. The `Release` workflow publishes that section as the GitHub release notes.
 3. Merge the PR with a merge commit. The `Tag Release` workflow then tags the merge commit `vX.Y.Z` and calls the `Release` workflow, which validates the tag against the `Cargo.toml` version and publishes the GitHub Release with binaries. Pushing a `vX.Y.Z` tag by hand still triggers `Release` directly.
 
 `Tag Release` tags a push to `main` only when that push changed `[workspace.package].version`. A later `Cargo.toml` change that keeps the version never tags, even when the tag is missing: the run logs a notice naming the missing tag. A push it cannot compare (a new branch, or rewritten history) logs a warning and tags nothing.

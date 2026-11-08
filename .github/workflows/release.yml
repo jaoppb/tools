@@ -58,6 +58,8 @@ jobs:
         uses: taiki-e/create-gh-release-action@v1
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
+          # The release notes are this version's CHANGELOG section, which links its migration guide.
+          changelog: CHANGELOG.md
           token: ${{ secrets.GITHUB_TOKEN }}
 
   upload-assets:

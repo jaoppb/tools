@@ -7,7 +7,7 @@ This repository is a monorepo for developer tools, repository management utiliti
 - **Hierarchy.** Standalone issues under release milestones. Native GitHub sub-issues are supported when breaking down a task into constituent steps.
 - **Workflow.** `tools.toml` `[workflow]` (a `builtin:` preset plus overrides) is the single source of truth for statuses and the Ready gate that `tools project` evaluates; `[github.project.status_mapping]` no longer exists and `[github.issues.rules]` is deprecated until the audit moves to the workflow. `tools config check` lists what a file still carries and `tools config migrate` rewrites it.
 - **Milestones.** Every open issue must belong to a release milestone declared in `tools.toml` `[github.milestones]`, the single source of truth (`just repo-check` compares it with GitHub). Docs and templates do not list milestones.
-- **Labels.** `tools.toml` `[github.labels]` is the single source of truth, and `[github.issue_templates]` maps each template file to the label it applies and its title prefix. The hand-written issue templates and the list below must agree with them; `just repo-check` (an offline step of `tools repo check`, also run by CI) fails on drift: a template whose `labels:` or `title:` differs from its entry, an undeclared label, a template with no entry (while `require_label = true`, the default), or a list out of step. No label vocabulary lives in Rust. Every issue carries exactly one `type:` label and at least one `area:` label.
+- **Labels.** `tools.toml` `[github.labels]` is the single source of truth, and `[github.issue_templates]` maps each template file to the label it applies and its title prefix. The hand-written issue templates and the list below must agree with them; `just repo-check` (an offline step of `tools repo check`, also run by CI) fails on drift: a template whose `labels:` or `title:` differs from its entry, an undeclared label, a template with no entry (while `require_label = true`, the default), or a list out of step. No label vocabulary lives in Rust. Every issue carries exactly one `type:` label and at least one `area:` label; `skip-changelog` is a pull request label, never an issue label.
 <!-- labels:start -->
   - `type:feat`
   - `type:fix`
@@ -20,6 +20,7 @@ This repository is a monorepo for developer tools, repository management utiliti
   - `area:issues-check`
   - `area:tooling`
   - `area:docs`
+  - `skip-changelog`
 <!-- labels:end -->
 - **Creation and Triage.** File issues using the corresponding template from `.github/ISSUE_TEMPLATE/`. Upon creation or triage:
   - Select the template matching the issue type (which applies the `type:` label).
@@ -32,6 +33,7 @@ This repository is a monorepo for developer tools, repository management utiliti
   - Pull request title: `type: subject (#issue)`.
   - Closing keywords: Use `Closes #issue` in the PR body and the branch's final commit. Use `Refs #issue` for intermediate commits.
   - Merge method: **Merge commit only**. Rebase and squash are disabled; every commit reaches `main`.
+- **Changelog.** `CHANGELOG.md` (Keep a Changelog, `Unreleased` on top) is the single place for what changed per release. A pull request that touches `crates/`, `action.yml`, `scripts/` or `.github/workflows/` adds one `Unreleased` bullet ending `(#issue, #PR)` under Breaking, Added, Changed, Fixed or Removed, or carries the `skip-changelog` label; `tools changelog check` (CI job `changelog`) fails otherwise. `just bump-version` rotates `Unreleased` into the new version heading and refuses an empty one or a leftover `TODO(bump)` line, and the Release workflow publishes that section as the GitHub release notes. Each version section links its migration guide.
 - **Migration guides.** Every release milestone gets `docs/migrations/<version>.md` (for example `docs/migrations/v0.2.0.md`), covering only the step from the previous release: one section per consumer-visible change (what changed, what you must do, and a before/after `tools.toml` snippet where a key is involved) and a forward pointer where a later release changed it again. The version-bump issue's Definition of Done must include "`docs/migrations/<version>.md` exists".
 
 | Issue workflow rule | Enforcer | Status |

@@ -15,7 +15,12 @@ fn parse(words: &[&str]) -> Result<Arguments, UsageError> {
         .map(str::to_owned);
     match parse_command_line(command_line)? {
         Invocation::Config(arguments) => Ok(arguments),
-        #[cfg(any(feature = "issues", feature = "repo", feature = "project"))]
+        #[cfg(any(
+            feature = "issues",
+            feature = "repo",
+            feature = "project",
+            feature = "changelog"
+        ))]
         _ => unreachable!("a config command line parses to the config group"),
     }
 }

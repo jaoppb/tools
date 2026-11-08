@@ -1,0 +1,42 @@
+name: Changelog
+
+# A separate workflow so that adding or removing the skip label re-runs only this check, not the
+# whole CI. The job runs in the flake devShell like the CI jobs (.github/actions/nix-devshell).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    name: Changelog Entry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    env:
+      BASE_REF: ${{ github.base_ref }}
+      LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # The check diffs the pull request against its merge base with the target branch.
+          fetch-depth: 0
+
+      - name: Set up the flake devShell
+        uses: ./.github/actions/nix-devshell
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('flake.lock') }}
+
+      - name: Check that the change is in CHANGELOG.md
+        run: nix develop --command just changelog-check "origin/${BASE_REF}" "${LABELS}"

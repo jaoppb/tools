@@ -48,6 +48,9 @@ impl UsageError {
 pub enum Invocation {
     /// `tools config check|migrate`.
     Config(crate::config::cli::Arguments),
+    /// `tools changelog check`.
+    #[cfg(feature = "changelog")]
+    Changelog(crate::changelog::cli::Arguments),
     /// `tools issues check|migrate`.
     #[cfg(feature = "issues")]
     Issues(crate::issues::cli::Arguments),
@@ -90,6 +93,8 @@ pub fn command() -> Command {
                 .help("GitHub repository name override"),
         );
     let root = root.subcommand(crate::config::cli::command());
+    #[cfg(feature = "changelog")]
+    let root = root.subcommand(crate::changelog::cli::command());
     #[cfg(feature = "issues")]
     let root = root.subcommand(crate::issues::cli::command());
     #[cfg(feature = "repo")]
@@ -113,6 +118,15 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Invocation, 
             |(verb, verb_matches)| {
                 Ok(Invocation::Config(
                     crate::config::cli::Arguments::from_matches(verb, verb_matches),
+                ))
+            },
+        ),
+        #[cfg(feature = "changelog")]
+        Some(("changelog", group)) => group.subcommand().map_or_else(
+            || Err(missing_verb()),
+            |(verb, verb_matches)| {
+                Ok(Invocation::Changelog(
+                    crate::changelog::cli::Arguments::from_matches(verb, verb_matches),
                 ))
             },
         ),
