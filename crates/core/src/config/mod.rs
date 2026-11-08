@@ -10,7 +10,12 @@ pub use crate::domain::repo::{
 use crate::workflow::{LoadError, Workflow, WorkflowConfig};
 pub mod migrate;
 mod milestone_format;
+mod schema;
 pub use milestone_format::{MilestoneFormat, TitlePattern};
+use schema::{
+    LabelsConfig, LabelsOverlayConfig, MilestonesConfig, MilestonesOverlayConfig,
+    RepositorySettingsConfig,
+};
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -69,22 +74,14 @@ impl Config {
         &self.github.issues.rules
     }
 
-    /// The repository settings configuration, if specified.
+    /// The legacy-to-canonical label mappings of `[github.labels].migrations`, empty when unset.
     #[must_use]
-    pub const fn repo_settings(&self) -> Option<&RepositorySettingsConfig> {
-        self.github.repository.settings.as_ref()
-    }
-
-    /// The repository labels configuration, if specified.
-    #[must_use]
-    pub const fn labels(&self) -> Option<&LabelsConfig> {
-        self.github.labels.as_ref()
-    }
-
-    /// The repository milestones configuration, if specified.
-    #[must_use]
-    pub const fn milestones(&self) -> Option<&MilestonesConfig> {
-        self.github.milestones.as_ref()
+    pub fn label_migrations(&self) -> std::collections::BTreeMap<String, String> {
+        self.github
+            .labels
+            .as_ref()
+            .map(|labels| labels.migrations().clone())
+            .unwrap_or_default()
     }
 
     /// The repository project configuration, if specified.
@@ -115,15 +112,25 @@ impl Config {
         };
         let overlay = self.github.overrides.get(repo_name);
         let labels = match overlay.and_then(|o| o.labels.as_ref()) {
-            Some(over) => Some(over.apply_to(self.github.labels.as_ref())?),
-            None => self.github.labels.clone(),
+            Some(over) => {
+                let base = self.github.labels.clone().map(RepoLabelsSpec::from);
+                Some(RepoLabelsOverlay::from(over.clone()).apply_to(base.as_ref())?)
+            }
+            None => self.github.labels.clone().map(RepoLabelsSpec::from),
         };
         let milestones = match overlay.and_then(|o| o.milestones.as_ref()) {
-            Some(over) => Some(over.apply_to(self.github.milestones.as_ref())?),
-            None => self.github.milestones.clone(),
+            Some(over) => {
+                let base = self.github.milestones.clone().map(RepoMilestonesSpec::from);
+                Some(RepoMilestonesOverlay::from(over.clone()).apply_to(base.as_ref())?)
+            }
+            None => self.github.milestones.clone().map(RepoMilestonesSpec::from),
         };
         Ok(RepoSpec::new(
-            self.github.repository.settings.clone(),
+            self.github
+                .repository
+                .settings
+                .clone()
+                .map(RepoSettings::from),
             labels,
             milestones,
             project,
@@ -137,10 +144,10 @@ impl Config {
 pub struct RepoOverrideConfig {
     /// Labels overlay.
     #[serde(default)]
-    pub labels: Option<RepoLabelsOverlay>,
+    pub labels: Option<LabelsOverlayConfig>,
     /// Milestones overlay.
     #[serde(default)]
-    pub milestones: Option<RepoMilestonesOverlay>,
+    pub milestones: Option<MilestonesOverlayConfig>,
 }
 
 /// GitHub configuration namespace.
@@ -232,15 +239,6 @@ pub struct IssuesConfig {
     #[serde(default)]
     pub rules: RulesConfig,
 }
-
-/// Repository merge and branch settings configuration (alias for [`RepoSettings`]).
-pub type RepositorySettingsConfig = RepoSettings;
-
-/// Repository labels configuration (alias for [`RepoLabelsSpec`]).
-pub type LabelsConfig = RepoLabelsSpec;
-
-/// Repository milestones configuration (alias for [`RepoMilestonesSpec`]).
-pub type MilestonesConfig = RepoMilestonesSpec;
 
 /// Granular boolean toggles for each issues-check rule.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -559,7 +557,11 @@ mod tests {
         assert_eq!(target.repository(), "tools");
         assert_eq!(target.project(), Some(4));
 
-        let settings = config.repo_settings().expect("settings should exist");
+        let settings = config
+            .spec_for("tools")
+            .unwrap()
+            .settings
+            .expect("settings should exist");
         assert!(settings.allow_merge_commit);
         assert!(!settings.allow_squash_merge);
         assert!(!settings.allow_rebase_merge);
@@ -595,7 +597,11 @@ mod tests {
             ]
         "##;
         let config: Config = toml::from_str(toml_str).expect("should parse");
-        let labels = config.labels().expect("labels should exist");
+        let labels = config
+            .spec_for("tools")
+            .unwrap()
+            .labels
+            .expect("labels should exist");
         assert_eq!(labels.deprecated, vec!["bug", "epic"]);
         assert_eq!(labels.unmanaged, Unmanaged::Prune);
         assert_eq!(labels.items.len(), 2);
@@ -603,7 +609,11 @@ mod tests {
         assert_eq!(labels.items[0].color, "1d76db"); // normalized: no # and lowercase
         assert_eq!(labels.items[0].description, "New feature");
 
-        let milestones = config.milestones().expect("milestones should exist");
+        let milestones = config
+            .spec_for("tools")
+            .unwrap()
+            .milestones
+            .expect("milestones should exist");
         assert_eq!(milestones.deprecated, vec!["v0.9"]);
         assert_eq!(milestones.items.len(), 2);
         assert_eq!(milestones.items[0].title, "v0");
@@ -642,13 +652,21 @@ mod tests {
         assert_eq!(project.number, Some(4));
         assert_eq!(project.title.as_deref(), Some("Tools Roadmap"));
 
-        let labels = config.labels().expect("labels should exist");
+        let labels = config
+            .spec_for("tools")
+            .unwrap()
+            .labels
+            .expect("labels should exist");
         assert_eq!(
             labels.renames.get("enhancement"),
             Some(&"type:feat".to_string())
         );
 
-        let milestones = config.milestones().expect("milestones should exist");
+        let milestones = config
+            .spec_for("tools")
+            .unwrap()
+            .milestones
+            .expect("milestones should exist");
         assert_eq!(milestones.renames.get("v0.9"), Some(&"v1".to_string()));
 
         let repo_spec = config.spec_for("tools").unwrap();
@@ -692,7 +710,11 @@ mod tests {
             migrations = { "legacy-bug" = "type:fix", "ui" = "area:web" }
         "#;
         let config: Config = toml::from_str(toml_str).expect("should parse");
-        let labels = config.labels().expect("labels config exists");
+        let labels = config
+            .spec_for("web")
+            .unwrap()
+            .labels
+            .expect("labels config exists");
         assert_eq!(
             labels.migrations.get("legacy-bug"),
             Some(&"type:fix".to_string())
@@ -828,7 +850,13 @@ mod tests {
             "[github.repository]\nowner = \"o\"\nname = \"r\"\n\n[github.labels]\nitems = []\n\n[github.milestones]\nitems = []\n",
         )
         .unwrap();
-        assert_eq!(config.labels().unwrap().unmanaged, Unmanaged::Warn);
-        assert_eq!(config.milestones().unwrap().unmanaged, Unmanaged::Error);
+        assert_eq!(
+            config.spec_for("r").unwrap().labels.unwrap().unmanaged,
+            Unmanaged::Warn
+        );
+        assert_eq!(
+            config.spec_for("r").unwrap().milestones.unwrap().unmanaged,
+            Unmanaged::Error
+        );
     }
 }
