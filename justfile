@@ -50,8 +50,8 @@ arch-check:
     cargo test -p tools-architecture-tests
 
 # Fail when the change since `base` touches crates/, action.yml, scripts/ or .github/workflows/ without CHANGELOG.md (waived by the skip-changelog label in `labels`, comma-separated)
-changelog-check base labels="":
-    cargo run -q -p tools -- changelog check --base "{{ base }}" --labels "{{ labels }}" --skip-label skip-changelog
+changelog-check $base $labels="":
+    cargo run -q -p tools -- changelog check --base "$base" --labels "$labels" --skip-label skip-changelog --changelog CHANGELOG.md --watch crates/ --watch action.yml --watch scripts/ --watch .github/workflows/
 
 # Audit open GitHub issues against repository workflow rules
 issues-check:

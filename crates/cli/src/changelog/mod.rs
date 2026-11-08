@@ -1,5 +1,5 @@
 //! `tools changelog check`: a change to the product or its release flow records itself in
-//! `CHANGELOG.md`.
+//! the changelog.
 //!
 //! Exits with 0 when the change touches none of the watched paths, touches `CHANGELOG.md`, or the
 //! pull request carries the skip label; with 1 when it touches a watched path without the
@@ -12,10 +12,6 @@ use std::process::Command;
 use crate::Exit;
 use cli::Arguments;
 
-const CHANGELOG: &str = "CHANGELOG.md";
-/// Paths whose change a release note must mention: a directory ends in `/`, a file does not.
-const WATCHED: [&str; 4] = ["crates/", "action.yml", "scripts/", ".github/workflows/"];
-
 /// Runs `tools changelog check`.
 ///
 /// # Errors
@@ -23,25 +19,51 @@ const WATCHED: [&str; 4] = ["crates/", "action.yml", "scripts/", ".github/workfl
 /// Returns an [`Exit`] with code 2 when git cannot list the changed files.
 pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
     let changed = changed_files(arguments.base())?;
-    Ok(verdict(
-        &changed,
-        arguments.labels(),
-        arguments.skip_label(),
-    ))
+    Ok(verdict(&Policy::from(arguments), &changed))
 }
 
-/// The verdict for the files a change touches and the labels on its pull request.
+/// What a repository demands of a change, and what waives it.
+#[derive(Debug, Clone, Copy)]
+pub struct Policy<'a> {
+    /// Paths whose change needs an entry: a directory ends in `/`, a file does not.
+    pub watch: &'a [String],
+    /// The changelog file a change must touch.
+    pub changelog: &'a str,
+    /// The labels on the pull request.
+    pub labels: &'a [String],
+    /// The label that waives the entry.
+    pub skip_label: &'a str,
+}
+
+impl<'a> From<&'a Arguments> for Policy<'a> {
+    fn from(arguments: &'a Arguments) -> Self {
+        Self {
+            watch: arguments.watch(),
+            changelog: arguments.changelog(),
+            labels: arguments.labels(),
+            skip_label: arguments.skip_label(),
+        }
+    }
+}
+
+/// The verdict for the files a change touches.
 #[must_use]
-pub fn verdict(changed: &[String], labels: &[String], skip_label: &str) -> Exit {
+pub fn verdict(policy: &Policy<'_>, changed: &[String]) -> Exit {
+    let Policy {
+        watch,
+        changelog,
+        labels,
+        skip_label,
+    } = *policy;
     let watched: Vec<&str> = changed
         .iter()
         .map(String::as_str)
-        .filter(|path| is_watched(path))
+        .filter(|path| is_watched(watch, path))
         .collect();
     if watched.is_empty() {
         return Exit::new("no watched path changed: no changelog entry needed", 0);
     }
-    if changed.iter().any(|path| path == CHANGELOG) {
+    if changed.iter().any(|path| path == changelog) {
         return Exit::new("CHANGELOG.md is part of the change", 0);
     }
     if labels.iter().any(|label| label == skip_label) {
@@ -53,7 +75,7 @@ pub fn verdict(changed: &[String], labels: &[String], skip_label: &str) -> Exit 
     let files: Vec<String> = watched.iter().map(|path| format!("  {path}")).collect();
     Exit::new(
         format!(
-            "this change touches {} without touching {CHANGELOG}:\n{}\n\
+            "this change touches {} without touching {changelog}:\n{}\n\
              add one bullet under `Unreleased` ending `(#issue, #PR)`, or label the pull request \
              `{skip_label}` when nothing consumer-visible changed",
             if watched.len() == 1 {
@@ -67,12 +89,12 @@ pub fn verdict(changed: &[String], labels: &[String], skip_label: &str) -> Exit 
     )
 }
 
-fn is_watched(path: &str) -> bool {
-    WATCHED.iter().any(|watched| {
+fn is_watched(watch: &[String], path: &str) -> bool {
+    watch.iter().any(|watched| {
         if watched.ends_with('/') {
             path.starts_with(watched)
         } else {
-            path == *watched
+            path == watched
         }
     })
 }

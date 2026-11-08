@@ -7,6 +7,8 @@ pub const CHECK: &str = "check";
 const BASE: &str = "base";
 const LABELS: &str = "labels";
 const SKIP_LABEL: &str = "skip-label";
+const WATCH: &str = "watch";
+const CHANGELOG: &str = "changelog";
 
 /// The parsed arguments of `tools changelog check`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,16 +16,28 @@ pub struct Arguments {
     base: String,
     labels: Vec<String>,
     skip_label: String,
+    watch: Vec<String>,
+    changelog: String,
 }
 
 impl Arguments {
-    /// Reads the arguments of the `check` verb. `base` and `skip-label` are required flags, so
-    /// clap has already rejected a command line without them.
+    /// Reads the arguments of the `check` verb; clap has already rejected a command line without
+    /// the required flags.
     #[must_use]
     pub fn from_matches(_verb: &str, matches: &ArgMatches) -> Self {
-        let text = |name: &str| matches.get_one::<String>(name).cloned().unwrap_or_default();
+        let text = |name: &str| {
+            matches
+                .get_one::<String>(name)
+                .cloned()
+                .expect("clap requires this flag")
+        };
         Self {
             base: text(BASE),
+            watch: matches
+                .get_many::<String>(WATCH)
+                .map(|values| values.cloned().collect())
+                .unwrap_or_default(),
+            changelog: text(CHANGELOG),
             labels: matches
                 .get_many::<String>(LABELS)
                 .map(|values| {
@@ -49,6 +63,18 @@ impl Arguments {
         &self.labels
     }
 
+    /// The paths whose change needs an entry: a directory ends in `/`, a file does not.
+    #[must_use]
+    pub fn watch(&self) -> &[String] {
+        &self.watch
+    }
+
+    /// The changelog file a change must touch.
+    #[must_use]
+    pub fn changelog(&self) -> &str {
+        &self.changelog
+    }
+
     /// The label that waives the changelog entry.
     #[must_use]
     pub fn skip_label(&self) -> &str {
@@ -65,8 +91,7 @@ pub fn command() -> Command {
         .subcommand(
             Command::new(CHECK)
                 .about(
-                    "Exit 1 when the change touches crates/, action.yml, scripts/ or \
-                     .github/workflows/ without touching CHANGELOG.md",
+                    "Exit 1 when the change touches a watched path without touching the changelog",
                 )
                 .arg(
                     Arg::new(BASE)
@@ -82,6 +107,23 @@ pub fn command() -> Command {
                         .action(ArgAction::Append)
                         .value_delimiter(',')
                         .help("Comma-separated labels on the pull request"),
+                )
+                .arg(
+                    Arg::new(WATCH)
+                        .long(WATCH)
+                        .value_name("PATH")
+                        .required(true)
+                        .action(ArgAction::Append)
+                        .help(
+                            "Path whose change needs an entry, repeatable; a directory ends in /",
+                        ),
+                )
+                .arg(
+                    Arg::new(CHANGELOG)
+                        .long(CHANGELOG)
+                        .value_name("FILE")
+                        .required(true)
+                        .help("Changelog file the change must touch"),
                 )
                 .arg(
                     Arg::new(SKIP_LABEL)

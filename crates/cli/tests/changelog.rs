@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use tools::changelog::{run, verdict};
+use tools::changelog::{Policy, run, verdict};
 use tools::cli::{Invocation, UsageError, parse as parse_command_line};
 
 fn parse(words: &[&str]) -> Result<tools::changelog::cli::Arguments, UsageError> {
@@ -19,17 +19,27 @@ fn parse(words: &[&str]) -> Result<tools::changelog::cli::Arguments, UsageError>
     }
 }
 
+const WATCH: [&str; 4] = ["crates/", "action.yml", "scripts/", ".github/workflows/"];
+
+/// The verdict of this repository's policy.
+fn judge(changed: &[&str], labels: &[&str], skip_label: &str) -> tools::Exit {
+    let (watch, labels) = (names(&WATCH), names(labels));
+    let policy = Policy {
+        watch: &watch,
+        changelog: "CHANGELOG.md",
+        labels: &labels,
+        skip_label,
+    };
+    verdict(&policy, &names(changed))
+}
+
 fn names(items: &[&str]) -> Vec<String> {
     items.iter().map(|item| (*item).to_owned()).collect()
 }
 
 #[test]
 fn a_change_outside_the_watched_paths_needs_no_entry() {
-    let exit = verdict(
-        &names(&["README.md", "docs/a.md", "tools.toml"]),
-        &[],
-        "skip",
-    );
+    let exit = judge(&["README.md", "docs/a.md", "tools.toml"], &[], "skip");
     assert_eq!(exit.code, 0);
 }
 
@@ -41,7 +51,7 @@ fn every_watched_path_demands_an_entry() {
         "scripts/bump-version.sh",
         ".github/workflows/ci.yml",
     ] {
-        let exit = verdict(&names(&[path]), &[], "skip");
+        let exit = judge(&[path], &[], "skip");
         assert_eq!(exit.code, 1, "{path}");
         assert!(exit.text.contains(path), "{}", exit.text);
         assert!(exit.text.contains("`skip`"), "{}", exit.text);
@@ -50,13 +60,13 @@ fn every_watched_path_demands_an_entry() {
 
 #[test]
 fn a_look_alike_path_is_not_watched() {
-    let exit = verdict(
-        &names(&[
+    let exit = judge(
+        &[
             "action.yml.bak",
             "crates-notes.md",
             ".github/ISSUE_TEMPLATE/fix.yml",
             "docs/scripts/a",
-        ]),
+        ],
         &[],
         "skip",
     );
@@ -65,40 +75,38 @@ fn a_look_alike_path_is_not_watched() {
 
 #[test]
 fn touching_the_changelog_satisfies_the_check() {
-    let exit = verdict(
-        &names(&["crates/cli/src/lib.rs", "CHANGELOG.md"]),
-        &[],
-        "skip",
-    );
+    let exit = judge(&["crates/cli/src/lib.rs", "CHANGELOG.md"], &[], "skip");
     assert_eq!(exit.code, 0);
 }
 
 #[test]
 fn only_the_root_changelog_counts() {
-    let exit = verdict(
-        &names(&["crates/cli/src/lib.rs", "docs/CHANGELOG.md"]),
-        &[],
-        "skip",
-    );
+    let exit = judge(&["crates/cli/src/lib.rs", "docs/CHANGELOG.md"], &[], "skip");
     assert_eq!(exit.code, 1);
 }
 
 #[test]
 fn the_skip_label_waives_the_entry() {
-    let exit = verdict(
-        &names(&["action.yml"]),
-        &names(&["type:chore", "skip"]),
-        "skip",
-    );
+    let exit = judge(&["action.yml"], &["type:chore", "skip"], "skip");
     assert_eq!(exit.code, 0);
-    assert_eq!(
-        verdict(&names(&["action.yml"]), &names(&["skipped"]), "skip").code,
-        1
-    );
+    assert_eq!(judge(&["action.yml"], &["skipped"], "skip").code, 1);
+}
+
+/// The flags every run needs besides `--base`, `--labels` and `--skip-label`.
+const POLICY_FLAGS: [&str; 4] = ["--watch", "crates/", "--changelog", "CHANGELOG.md"];
+
+/// `check` with the given flags and this repository's watched paths and changelog.
+fn check(flags: &[&str]) -> Result<tools::changelog::cli::Arguments, UsageError> {
+    let words: Vec<&str> = ["check"]
+        .into_iter()
+        .chain(flags.iter().copied())
+        .chain(POLICY_FLAGS)
+        .collect();
+    parse(&words)
 }
 
 #[test]
-fn the_command_line_reads_base_labels_and_skip_label() {
+fn the_command_line_reads_every_flag() {
     let arguments = parse(&[
         "check",
         "--base",
@@ -107,32 +115,47 @@ fn the_command_line_reads_base_labels_and_skip_label() {
         "a, b,,c",
         "--skip-label",
         "skip",
+        "--watch",
+        "crates/",
+        "--watch",
+        "action.yml",
+        "--changelog",
+        "CHANGELOG.md",
     ])
     .expect("parses");
     assert_eq!(arguments.base(), "origin/main");
     assert_eq!(arguments.labels(), ["a", "b", "c"]);
     assert_eq!(arguments.skip_label(), "skip");
+    assert_eq!(arguments.watch(), ["crates/", "action.yml"]);
+    assert_eq!(arguments.changelog(), "CHANGELOG.md");
 }
 
 #[test]
-fn the_command_line_needs_a_base_and_a_skip_label() {
-    assert!(parse(&["check", "--skip-label", "skip"]).is_err());
-    assert!(parse(&["check", "--base", "main"]).is_err());
+fn the_command_line_needs_base_skip_label_watch_and_changelog() {
+    assert!(check(&["--skip-label", "skip"]).is_err());
+    assert!(check(&["--base", "main"]).is_err());
+    let flags = ["--base", "main", "--skip-label", "s"];
+    let without = |flag: &str| {
+        let mut words = vec!["check"];
+        words.extend(flags);
+        words.extend(
+            POLICY_FLAGS
+                .chunks(2)
+                .filter(|pair| pair[0] != flag)
+                .flatten(),
+        );
+        parse(&words)
+    };
+    assert!(without("--watch").is_err());
+    assert!(without("--changelog").is_err());
+    assert!(without("--none").is_ok());
     assert!(parse(&[]).is_err());
 }
 
 #[test]
 fn labels_may_be_empty() {
-    let arguments = parse(&[
-        "check",
-        "--base",
-        "main",
-        "--labels",
-        "",
-        "--skip-label",
-        "skip",
-    ])
-    .expect("parses");
+    let arguments =
+        check(&["--base", "main", "--labels", "", "--skip-label", "skip"]).expect("parses");
     assert!(arguments.labels().is_empty());
 }
 
@@ -171,36 +194,26 @@ fn run_diffs_the_branch_against_its_merge_base() {
     let in_dir = |words: &[&str]| {
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&dir).expect("enter");
-        let result = run(&parse(words).expect("parses"));
+        let result = run(&check(words).expect("parses"));
         std::env::set_current_dir(previous).expect("leave");
         result
     };
 
-    let failing = in_dir(&["check", "--base", "main", "--skip-label", "skip"]).expect("runs");
+    let failing = in_dir(&["--base", "main", "--skip-label", "skip"]).expect("runs");
     assert_eq!(failing.code, 1, "{}", failing.text);
-    let waived = in_dir(&[
-        "check",
-        "--base",
-        "main",
-        "--labels",
-        "skip",
-        "--skip-label",
-        "skip",
-    ])
-    .expect("runs");
+    let waived =
+        in_dir(&["--base", "main", "--labels", "skip", "--skip-label", "skip"]).expect("runs");
     assert_eq!(waived.code, 0);
 
     std::fs::write(dir.join("CHANGELOG.md"), "x").expect("write");
     git(&dir, &["add", "."]);
     git(&dir, &["commit", "--quiet", "-m", "changelog"]);
-    let recorded = in_dir(&["check", "--base", "main", "--skip-label", "skip"]).expect("runs");
+    let recorded = in_dir(&["--base", "main", "--skip-label", "skip"]).expect("runs");
     assert_eq!(recorded.code, 0, "{}", recorded.text);
 
-    let unknown =
-        in_dir(&["check", "--base", "nowhere", "--skip-label", "skip"]).expect_err("fails");
+    let unknown = in_dir(&["--base", "nowhere", "--skip-label", "skip"]).expect_err("fails");
     assert_eq!(unknown.code, 2);
-    let option =
-        in_dir(&["check", "--base=--output=x", "--skip-label", "skip"]).expect_err("fails");
+    let option = in_dir(&["--base=--output=x", "--skip-label", "skip"]).expect_err("fails");
     assert_eq!(option.code, 2);
     std::fs::remove_dir_all(&dir).ok();
 }

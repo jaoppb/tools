@@ -22,7 +22,7 @@ FILE="${3:-CHANGELOG.md}"
 [ -f "$FILE" ] || die "$FILE not found."
 
 grep -qxF "## [Unreleased]" "$FILE" || die "$FILE has no '## [Unreleased]' heading."
-if grep -qF "## [$VERSION]" "$FILE"; then
+if grep -qE "^## \\[$VERSION\\]" "$FILE"; then
     die "$FILE already has a section for $VERSION."
 fi
 
@@ -55,4 +55,4 @@ awk -v version="$VERSION" -v date="$DATE" -v previous="$previous" -v url="$repo_
     }
     { print }
 ' "$FILE" >"$tmp"
-cat "$tmp" >"$FILE"
+cat "$tmp" >"$FILE" # keep the file's mode and ownership

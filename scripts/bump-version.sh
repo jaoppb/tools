@@ -126,13 +126,11 @@ fi
 # The release notes come from CHANGELOG.md: rotate a copy now so an empty Unreleased section,
 # a leftover TODO(bump) marker or a missing link fails before anything changes.
 RELEASE_DATE="$(date -u +%F)"
+[ -f CHANGELOG.md ] || die "CHANGELOG.md not found."
 ROTATION_PREVIEW="$(mktemp)"
+trap 'rm -f "$ROTATION_PREVIEW"' EXIT
 cp CHANGELOG.md "$ROTATION_PREVIEW"
-if ! "$ROTATE_CHANGELOG" "$NEW_VERSION" "$RELEASE_DATE" "$ROTATION_PREVIEW"; then
-    rm -f "$ROTATION_PREVIEW"
-    exit 1
-fi
-rm -f "$ROTATION_PREVIEW"
+"$ROTATE_CHANGELOG" "$NEW_VERSION" "$RELEASE_DATE" "$ROTATION_PREVIEW" || exit 1
 
 if [ "$DRY_RUN" = "1" ]; then
     echo "Dry run: all preconditions pass, including the CHANGELOG rotation (cargo check is not run), and nothing is changed."
