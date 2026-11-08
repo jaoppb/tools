@@ -84,6 +84,16 @@ impl Config {
             .unwrap_or_default()
     }
 
+    /// The docs of `[github.labels].docs` whose label block `tools repo check` compares with the
+    /// declared labels; empty when unset.
+    #[must_use]
+    pub fn label_docs(&self) -> &[String] {
+        self.github
+            .labels
+            .as_ref()
+            .map_or(&[], |labels| labels.docs())
+    }
+
     /// The repository owner (user or organization).
     #[must_use]
     pub fn owner(&self) -> &str {

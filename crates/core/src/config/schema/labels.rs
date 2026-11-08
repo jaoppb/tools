@@ -2,8 +2,8 @@
 
 use super::{UnmanagedConfig, default_labels};
 use crate::domain::repo::{RepoLabel, RepoLabelsOverlay, RepoLabelsSpec};
-use serde::Deserialize;
-use std::collections::BTreeMap;
+use serde::{Deserialize, Deserializer};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One declared label.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -42,6 +42,10 @@ pub struct LabelsConfig {
     /// Desired labels to enforce.
     #[serde(default)]
     items: Vec<LabelConfig>,
+    /// Docs, relative to the directory holding `tools.toml`, whose label block `tools repo check`
+    /// compares with the declared labels. Configuration only: it never reaches the domain.
+    #[serde(default, deserialize_with = "unique_docs")]
+    docs: Vec<String>,
 }
 
 impl LabelsConfig {
@@ -49,6 +53,24 @@ impl LabelsConfig {
     #[must_use]
     pub const fn migrations(&self) -> &BTreeMap<String, String> {
         &self.migrations
+    }
+
+    /// The docs whose label block is checked; empty means no doc is checked.
+    #[must_use]
+    pub fn docs(&self) -> &[String] {
+        &self.docs
+    }
+}
+
+/// The `docs` list, rejecting the same string listed twice (paths are compared as written).
+fn unique_docs<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+    let paths = Vec::<String>::deserialize(deserializer)?;
+    let mut seen = BTreeSet::new();
+    match paths.iter().find(|path| !seen.insert(path.as_str())) {
+        Some(path) => Err(serde::de::Error::custom(format!(
+            "`{path}` is listed twice in docs"
+        ))),
+        None => Ok(paths),
     }
 }
 
@@ -124,8 +146,29 @@ mod tests {
 
     #[test]
     fn an_empty_table_takes_the_defaults() {
-        let spec = RepoLabelsSpec::from(toml::from_str::<LabelsConfig>("").unwrap());
-        assert_eq!(spec, RepoLabelsSpec::default());
+        let config = toml::from_str::<LabelsConfig>("").unwrap();
+        assert!(config.docs().is_empty());
+        assert_eq!(RepoLabelsSpec::from(config), RepoLabelsSpec::default());
+    }
+
+    #[test]
+    fn docs_are_kept_in_order_and_a_duplicate_is_rejected() {
+        let config: LabelsConfig =
+            toml::from_str(r#"docs = ["CONTRIBUTING.md", "AGENTS.md"]"#).unwrap();
+        assert_eq!(config.docs(), ["CONTRIBUTING.md", "AGENTS.md"]);
+
+        let error = toml::from_str::<LabelsConfig>(r#"docs = ["AGENTS.md", "AGENTS.md"]"#)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("`AGENTS.md` is listed twice in docs"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn an_overlay_rejects_docs() {
+        assert!(toml::from_str::<LabelsOverlayConfig>(r#"docs = ["AGENTS.md"]"#).is_err());
     }
 
     #[test]
