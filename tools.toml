@@ -79,3 +79,6 @@ membership = false
 milestone = true
 parent = false
 release = true
+
+[workflow]
+extends = "builtin:tools"

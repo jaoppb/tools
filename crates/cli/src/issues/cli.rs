@@ -48,6 +48,8 @@ pub struct ResolvedCheck {
     pub rules: RulesConfig,
     /// Resolved legacy-to-canonical label migrations.
     pub migrations: BTreeMap<String, String>,
+    /// Deprecations of the configuration file, to print after the report.
+    pub warnings: Vec<String>,
 }
 
 impl Arguments {
@@ -83,7 +85,7 @@ impl Arguments {
     /// Fails when configuration cannot be read or target lacks owner/repo.
     pub fn resolve(&self) -> Result<ResolvedCheck, ResolveError> {
         let loaded = load_or_find(self.config_path.as_deref());
-        let (cfg_target, mut rules, migrations) = match loaded {
+        let (cfg_target, mut rules, migrations, warnings) = match loaded {
             Ok(cfg) => {
                 let target = cfg.target();
                 let migrations = cfg
@@ -92,9 +94,16 @@ impl Arguments {
                     .as_ref()
                     .map(|labels| labels.migrations.clone())
                     .unwrap_or_default();
-                (Some(target), cfg.github.issues.rules, migrations)
+                (
+                    Some(target),
+                    cfg.github.issues.rules,
+                    migrations,
+                    cfg.warnings,
+                )
             }
-            Err(ConfigError::NotFound) => (None, RulesConfig::default(), BTreeMap::new()),
+            Err(ConfigError::NotFound) => {
+                (None, RulesConfig::default(), BTreeMap::new(), Vec::new())
+            }
             Err(err) => return Err(ResolveError::Config(err)),
         };
 
@@ -132,6 +141,7 @@ impl Arguments {
             target,
             rules,
             migrations,
+            warnings,
         })
     }
 }

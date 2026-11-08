@@ -12,7 +12,6 @@ fn parse(words: &[&str]) -> Result<Arguments, UsageError> {
         .map(str::to_owned);
     match parse_command_line(command_line)? {
         Invocation::Repo(arguments) => Ok(arguments),
-        #[cfg(any(feature = "issues", feature = "project"))]
         _ => unreachable!("a repo command line parses to the repo group"),
     }
 }

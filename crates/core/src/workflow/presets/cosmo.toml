@@ -8,7 +8,7 @@ default  = "Backlog"
 
 [workflow.params]
 type_prefix  = "type:"
-area_prefix  = "area:"
+area_prefix  = ["area:"]
 epic_label   = "epic"
 effort_limit = 8
 started      = ["In progress", "In review"]
@@ -16,7 +16,7 @@ started      = ["In progress", "In review"]
 [workflow.facts]
 is_epic          = 'issue.labels.exists(l, l == params.epic_label)'
 has_type         = 'issue.labels.filter(l, l.startsWith(params.type_prefix)).size() == 1'
-has_area         = 'issue.labels.exists(l, fold(l).startsWith(fold(params.area_prefix)))'
+has_area         = 'issue.labels.exists(l, params.area_prefix.exists(p, fold(l).startsWith(fold(p))))'
 triaged          = 'has_type && has_area && issue.milestone != null && has(issue.fields.Priority) && has(issue.fields.Effort) && issue.fields.Effort <= params.effort_limit'
 unblocked        = 'issue.blockers.all(b, b.state == "closed")'
 waits_for_parent = 'issue.parent != null && !issue.parent.is_epic && issue.parent.state == "open" && !(issue.parent.next in params.started)'

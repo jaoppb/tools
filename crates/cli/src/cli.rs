@@ -46,6 +46,8 @@ impl UsageError {
 /// A parsed command line: the group and verb it names, with their arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Invocation {
+    /// `tools config check|migrate`.
+    Config(crate::config::cli::Arguments),
     /// `tools issues check|migrate`.
     #[cfg(feature = "issues")]
     Issues(crate::issues::cli::Arguments),
@@ -87,6 +89,7 @@ pub fn command() -> Command {
                 .action(ArgAction::Append)
                 .help("GitHub repository name override"),
         );
+    let root = root.subcommand(crate::config::cli::command());
     #[cfg(feature = "issues")]
     let root = root.subcommand(crate::issues::cli::command());
     #[cfg(feature = "repo")]
@@ -105,6 +108,14 @@ pub fn command() -> Command {
 pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Invocation, UsageError> {
     let matches = command().try_get_matches_from(arguments)?;
     match matches.subcommand() {
+        Some(("config", group)) => group.subcommand().map_or_else(
+            || Err(missing_verb()),
+            |(verb, verb_matches)| {
+                Ok(Invocation::Config(
+                    crate::config::cli::Arguments::from_matches(verb, verb_matches),
+                ))
+            },
+        ),
         #[cfg(feature = "issues")]
         Some(("issues", group)) => group.subcommand().map_or_else(
             || Err(missing_verb()),
