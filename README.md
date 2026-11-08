@@ -41,7 +41,7 @@ Key capabilities include:
 - **Issue Workflow Auditing:** Enforce structural integrity on open issues, including strict label taxonomies (`type:*` and `area:*`), mandatory milestone assignments, cyclic dependency detection, and automated migration from legacy labels.
 - **GitHub Projects V2 Synchronization:** Map and synchronize project board statuses, dependency blockers, and native sub-issue hierarchies.
 
-Upgrading between releases? See the [migration guides](docs/migrations/) (`docs/migrations/<version>.md`, one per release, newest: [v0.2.0](docs/migrations/v0.2.0.md)).
+Upgrading between releases? See the [migration guides](docs/migrations/) (`docs/migrations/<version>.md`, one per release, newest: [v0.3.0](docs/migrations/v0.3.0.md)).
 
 ---
 
