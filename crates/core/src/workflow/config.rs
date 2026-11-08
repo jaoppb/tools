@@ -11,30 +11,49 @@ use toml::Spanned;
 use crate::domain::{StatusName, Statuses, StatusesError};
 use crate::workflow::error::LoadError;
 use crate::workflow::expr::Expr;
-use crate::workflow::params::{self, PresetParams};
+use crate::workflow::params;
 use crate::workflow::schema::{CURRENT, ROOTS, VERSION};
 
 const COSMO: &str = include_str!("presets/cosmo.toml");
 const TOOLS: &str = include_str!("presets/tools.toml");
 
-fn preset(name: &str) -> Option<&'static str> {
-    match name {
-        "builtin:cosmo" => Some(COSMO),
-        "builtin:tools" => Some(TOOLS),
-        _ => None,
-    }
+/// The preset `name`, parsed; `None` for an unknown preset.
+fn preset(name: &str) -> Option<Result<File, toml::de::Error>> {
+    let text = match name {
+        "builtin:cosmo" => COSMO,
+        "builtin:tools" => TOOLS,
+        _ => return None,
+    };
+    Some(toml::from_str(text))
 }
 
-/// The params the preset `name` ships; `None` for an unknown preset.
-pub(crate) fn preset_params(name: &str) -> Option<PresetParams> {
-    let file: File = toml::from_str(preset(name)?).ok()?;
-    Some(
-        file.workflow
-            .params
-            .into_iter()
-            .map(|(name, value)| (name, value.into_inner()))
-            .collect(),
-    )
+/// The local params of a `[workflow]` table that are a scalar where its preset
+/// has a list they fit once wrapped, for `tools config check|migrate`. Empty
+/// without `extends` or for an unknown preset; a preset that does not parse is
+/// reported by [`WorkflowConfig::compile`] when the file loads.
+pub(crate) fn wrappable_params(workflow: &toml::Table) -> Vec<String> {
+    let preset = workflow
+        .get("extends")
+        .and_then(toml::Value::as_str)
+        .and_then(preset)
+        .and_then(Result::ok);
+    let (Some(preset), Some(local)) = (
+        preset,
+        workflow.get("params").and_then(toml::Value::as_table),
+    ) else {
+        return Vec::new();
+    };
+    local
+        .iter()
+        .filter(|(name, value)| {
+            preset
+                .workflow
+                .params
+                .get(*name)
+                .is_some_and(|base| params::wraps(base.get_ref(), value))
+        })
+        .map(|(name, _)| name.clone())
+        .collect()
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -258,13 +277,12 @@ impl WorkflowConfig {
         let block = match &local.extends {
             None => local,
             Some(extends) => {
-                let text = preset(&extends.value).ok_or_else(|| {
+                let file = preset(&extends.value).ok_or_else(|| {
                     at.locate(
                         extends.span.as_ref(),
                         LoadError::Preset(extends.value.clone()),
                     )
-                })?;
-                let file: File = toml::from_str(text)?;
+                })??;
                 let base = Block::new(&file.workflow, false);
                 check_schema(&base, Locator(None))?;
                 check_params(&local, &base, at)?;
@@ -466,8 +484,13 @@ fn params_value(
     params: &BTreeMap<String, At<toml::Value>>,
     at: Locator<'_>,
 ) -> Result<Value, LoadError> {
-    params::cel_value(params.iter().map(|(name, param)| (name, &param.value))).map_err(|name| {
-        let span = params.get(name).and_then(|param| param.span.as_ref());
-        at.locate(span, LoadError::Param(name.clone()))
-    })
+    let entries = params
+        .iter()
+        .map(|(name, param)| {
+            params::to_cel(&param.value)
+                .map(|value| (name.clone(), value))
+                .ok_or_else(|| at.locate(param.span.as_ref(), LoadError::Param(name.clone())))
+        })
+        .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
+    Ok(entries.into())
 }

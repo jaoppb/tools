@@ -1,11 +1,9 @@
-//! `[workflow.params]`: their TOML shape against the preset, and the CEL value
-//! every expression reads as `params`.
+//! `[workflow.params]` values: their TOML shape against the preset, and the
+//! CEL value every expression reads under `params`.
 //!
 //! A local param keeps the TOML type of the preset's value: a list stays a
 //! list of the same element kind, a string stays a string, an integer stays an
 //! integer. Params the preset does not ship are not typed.
-
-use std::collections::{BTreeMap, HashMap};
 
 use cel::Value;
 
@@ -44,8 +42,8 @@ pub(crate) fn fits(preset: &toml::Value, local: &toml::Value) -> bool {
 /// Whether `local`, a scalar where the preset has a list, fits once wrapped in
 /// a one-element list.
 pub(crate) fn wraps(preset: &toml::Value, local: &toml::Value) -> bool {
-    let wrapped = toml::Value::Array(vec![local.clone()]);
-    matches!(preset, toml::Value::Array(_)) && !local.is_array() && fits(preset, &wrapped)
+    matches!(preset, toml::Value::Array(items)
+        if !local.is_array() && element_kind(items).is_none_or(|shared| shared == kind(local)))
 }
 
 /// The shape of a value in words: `a string`, `a list of strings`.
@@ -61,23 +59,9 @@ pub(crate) fn describe(value: &toml::Value) -> String {
     }
 }
 
-/// The params as one CEL map; the name of the first param CEL cannot carry
-/// (neither a scalar nor a list of scalars) otherwise.
-pub(crate) fn cel_value<'a>(
-    params: impl IntoIterator<Item = (&'a String, &'a toml::Value)>,
-) -> Result<Value, &'a String> {
-    params
-        .into_iter()
-        .map(|(name, param)| {
-            scalar_or_list(param)
-                .map(|value| (name.clone(), value))
-                .ok_or(name)
-        })
-        .collect::<Result<HashMap<_, _>, _>>()
-        .map(Value::from)
-}
-
-fn scalar_or_list(value: &toml::Value) -> Option<Value> {
+/// The CEL value of a param: a scalar or a list of scalars; `None` for
+/// anything else (a table, a datetime, a nested list).
+pub(crate) fn to_cel(value: &toml::Value) -> Option<Value> {
     match value {
         toml::Value::Array(items) => items
             .iter()
@@ -97,30 +81,6 @@ fn scalar(value: &toml::Value) -> Option<Value> {
         _ => None,
     }
 }
-
-/// The local params of a `[workflow]` table that are a scalar where its
-/// preset has a list they fit once wrapped, for `tools config check|migrate`.
-/// Empty without `extends` or for an unknown preset.
-pub(crate) fn wrappable(workflow: &toml::Table) -> Vec<String> {
-    let preset = workflow
-        .get("extends")
-        .and_then(toml::Value::as_str)
-        .and_then(crate::workflow::config::preset_params);
-    let (Some(preset), Some(local)) = (
-        preset,
-        workflow.get("params").and_then(toml::Value::as_table),
-    ) else {
-        return Vec::new();
-    };
-    local
-        .iter()
-        .filter(|(name, value)| preset.get(*name).is_some_and(|base| wraps(base, value)))
-        .map(|(name, _)| name.clone())
-        .collect()
-}
-
-/// The params a preset ships, by name.
-pub(crate) type PresetParams = BTreeMap<String, toml::Value>;
 
 #[cfg(test)]
 mod tests {

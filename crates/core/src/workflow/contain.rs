@@ -8,7 +8,7 @@
 
 use std::any::Any;
 use std::cell::Cell;
-use std::panic::{self, AssertUnwindSafe, PanicHookInfo};
+use std::panic::{self, PanicHookInfo, UnwindSafe};
 use std::sync::Once;
 
 thread_local! {
@@ -20,14 +20,10 @@ static HOOK: Once = Once::new();
 
 /// Runs `work`. A panic inside it is caught and returned as its message, and
 /// the panic hook prints nothing for it.
-///
-/// `work` is run as if unwind safe: the caller must not leave state it shares
-/// with the rest of the run half-updated when `work` panics. The engine passes
-/// an execution that only reads the program and the context.
-pub(crate) fn contain<T>(work: impl FnOnce() -> T) -> Result<T, String> {
+pub(crate) fn contain<T>(work: impl FnOnce() -> T + UnwindSafe) -> Result<T, String> {
     HOOK.call_once(install_hook);
     let outer = CONTAINING.replace(true);
-    let outcome = panic::catch_unwind(AssertUnwindSafe(work));
+    let outcome = panic::catch_unwind(work);
     CONTAINING.set(outer);
     outcome.map_err(|payload| message(payload.as_ref()))
 }
@@ -59,7 +55,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::thread::{self, ThreadId};
 
-    use super::{contain, install_hook};
+    use super::{HOOK, contain, install_hook};
 
     #[test]
     fn a_value_passes_through() {
@@ -94,9 +90,11 @@ mod tests {
     }
 
     /// The hook is process-wide: the recorder keeps only this thread's panics,
-    /// so a test panicking on another thread does not disturb the count.
+    /// so a test panicking on another thread does not disturb the count. The
+    /// production hook is installed first, so restoring `original` puts it back.
     #[test]
     fn the_hook_is_silent_only_inside_contain() {
+        HOOK.call_once(install_hook);
         let seen: Arc<Mutex<Vec<String>>> = Arc::default();
         let me: ThreadId = thread::current().id();
         let original = panic::take_hook();

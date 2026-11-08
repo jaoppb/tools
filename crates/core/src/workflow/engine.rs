@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::panic::AssertUnwindSafe;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -471,9 +472,10 @@ impl fmt::Display for Failure {
 
 /// Runs `program`, containing a panic of the interpreter. Unwind safe in
 /// practice: the execution only reads `program` and `context`, and a child
-/// scope of the root context holds every variable it binds.
+/// scope of the root context holds every variable it binds, so a panic leaves
+/// nothing the rest of the run sees half-updated.
 fn execute(program: &Program, context: &Context<'_, '_>) -> Result<Value, Failure> {
-    match contain(|| program.execute(context)) {
+    match contain(AssertUnwindSafe(|| program.execute(context))) {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => Err(Failure::Error(error.to_string())),
         Err(message) => Err(Failure::Panic(message)),
@@ -584,7 +586,81 @@ fn fold(text: Arc<String>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Failure, Violation};
+    use std::sync::Arc;
+
+    use cel::Context;
+
+    use super::{Failure, Run, Violation};
+    use crate::domain::IssueNumber;
+    use crate::workflow::config::Workflow;
+    use crate::workflow::explain::RuleResult;
+    use crate::workflow::subject::{ParentResolver, ResolveError, Subject};
+
+    struct NoParents;
+
+    impl ParentResolver for NoParents {
+        fn fetch(&self, _: &IssueNumber) -> Result<Subject, ResolveError> {
+            Err(ResolveError::NotFound)
+        }
+    }
+
+    /// A run whose `fold` panics: the loader accepts the helper, and the
+    /// interpreter raises the panic from inside `Program::execute`.
+    fn panicking<'a>(workflow: &'a Workflow) -> Run<'a> {
+        let mut run = Run::new(workflow, &NoParents);
+        let mut root = Context::default();
+        root.add_function("fold", |_: Arc<String>| -> String { panic!("boom") })
+            .ok();
+        run.root = root;
+        run
+    }
+
+    #[test]
+    fn a_panic_in_a_rule_freezes_with_the_rules_before_it_in_the_trace() {
+        let workflow = Workflow::from_toml(
+            "[workflow]\nstatuses = [\"Todo\"]\n\n[[workflow.status]]\nid = \"first\"\nwhen = 'false'\nset = \"Todo\"\n\n[[workflow.status]]\nid = \"second\"\nwhen = 'fold(\"x\") == \"x\"'\nset = \"Todo\"\n\n[[workflow.status]]\nid = \"third\"\nwhen = 'true'\nset = \"Todo\"\n",
+        )
+        .expect("loads");
+        let run = panicking(&workflow);
+        let context = run.root.new_inner_scope();
+        let (traces, outcome) = run.eval_rules(&context);
+        let results: Vec<&RuleResult> = traces.iter().map(|trace| &trace.result).collect();
+        assert_eq!(
+            results,
+            [
+                &RuleResult::NotMatched,
+                &RuleResult::Error("the interpreter panicked: boom".to_owned()),
+                &RuleResult::NotReached,
+            ]
+        );
+        assert_eq!(
+            outcome.map(|rule| rule.map(|rule| rule.id.to_string())),
+            Err(Violation::Panic {
+                origin: "rule \"second\"".to_owned(),
+                message: "boom".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_panic_in_a_fact_freezes_with_the_facts_before_it() {
+        let workflow = Workflow::from_toml(
+            "[workflow]\nstatuses = [\"Todo\"]\n\n[workflow.facts]\na = 'true'\nb = 'a && fold(\"x\") == \"x\"'\n",
+        )
+        .expect("loads");
+        let run = panicking(&workflow);
+        let mut context = run.root.new_inner_scope();
+        let (facts, failure) = run.eval_facts(&mut context);
+        let names: Vec<&str> = facts.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["a"]);
+        assert_eq!(
+            failure,
+            Some(Violation::Panic {
+                origin: "fact \"b\"".to_owned(),
+                message: "boom".to_owned(),
+            })
+        );
+    }
 
     #[test]
     fn a_panic_is_its_own_violation_and_an_error_in_the_trace() {

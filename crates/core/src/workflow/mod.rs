@@ -21,4 +21,4 @@ pub use crate::workflow::error::LoadError;
 pub use crate::workflow::explain::{Explain, RuleResult};
 pub use crate::workflow::subject::{FieldValue, ParentResolver, ResolveError, Subject};
 
-pub(crate) use crate::workflow::params::wrappable as wrappable_params;
+pub(crate) use crate::workflow::config::wrappable_params;
