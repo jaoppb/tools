@@ -85,7 +85,10 @@ case "$TARGET" in
         ;;
 esac
 
-if [ "$NEW_VERSION" = "$CURRENT_VERSION" ] || [ "$(printf '%s\n%s\n' "$CURRENT_VERSION" "$NEW_VERSION" | sort -V | tail -n1)" != "$NEW_VERSION" ]; then
+[[ "$NEW_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || die "New version '$NEW_VERSION' is not X.Y.Z."
+if (( BASH_REMATCH[1] < MAJOR
+    || (BASH_REMATCH[1] == MAJOR && BASH_REMATCH[2] < MINOR)
+    || (BASH_REMATCH[1] == MAJOR && BASH_REMATCH[2] == MINOR && BASH_REMATCH[3] <= PATCH) )); then
     die "New version $NEW_VERSION must be greater than the current version $CURRENT_VERSION."
 fi
 
@@ -117,7 +120,7 @@ if git ls-remote --exit-code --heads origin "$BUMP_BRANCH" >/dev/null 2>&1; then
 fi
 
 if [ "$DRY_RUN" = "1" ]; then
-    echo "Dry run: all preconditions pass and nothing is changed."
+    echo "Dry run: all preconditions pass (cargo check is not run) and nothing is changed."
     echo "Version: $CURRENT_VERSION -> $NEW_VERSION (tag $TAG is created after the PR merges)"
     echo "Branch:  $BUMP_BRANCH"
     echo "Commit:  $TITLE"
@@ -127,12 +130,17 @@ fi
 
 echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION"
 
+START_SHA="$(git rev-parse HEAD)"
 # Roll back to the starting branch with a clean tree if a step before the push fails
 cleanup() {
     rm -f Cargo.toml.tmp
     git restore --staged --worktree . 2>/dev/null || true
     if [ "$(git branch --show-current)" = "$BUMP_BRANCH" ]; then
-        git switch --quiet "$BRANCH" 2>/dev/null || true
+        if [ -n "$BRANCH" ]; then
+            git switch --quiet "$BRANCH" 2>/dev/null || true
+        else
+            git switch --quiet --detach "$START_SHA" 2>/dev/null || true
+        fi
         git branch -D "$BUMP_BRANCH" >/dev/null 2>&1 || true
     fi
 }
