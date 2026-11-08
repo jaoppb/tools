@@ -35,6 +35,8 @@
             just
             lefthook
           ];
+          # Checked by the justfile's `_devshell` guard: recipes run only with this toolchain.
+          TOOLS_DEVSHELL = "1";
         };
       }
     );

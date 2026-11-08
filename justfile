@@ -1,5 +1,11 @@
 # Tools monorepo task recipes
 
+# Recipes run only inside the flake devShell (`nix develop`, or direnv with `.envrc`), so local runs
+# and CI use the same toolchain, pinned by flake.lock. `eager` makes just evaluate this guard before
+# running any recipe, even under `set lazy`, so it covers every recipe, new ones included;
+# `just --list` evaluates nothing and still works anywhere. flake.nix sets TOOLS_DEVSHELL.
+eager _devshell := if env("TOOLS_DEVSHELL", "") == "" { error("run just inside the flake devShell: 'nix develop -c just <recipe>', or enter it with 'nix develop' or 'direnv allow'") } else { "" }
+
 default:
     @just --list
 
@@ -9,11 +15,19 @@ setup:
 
 # Run workspace checks, lints, and test suite
 check:
-    cargo fmt --all -- --check
+    just fmt-check
     cargo check --workspace
-    cargo clippy --workspace -- -D warnings
+    just lint
     cargo test --workspace
     just check-features
+
+# Check Rust formatting
+fmt-check:
+    cargo fmt --all -- --check
+
+# Lint the workspace with Clippy, denying warnings
+lint:
+    cargo clippy --workspace -- -D warnings
 
 # Build every cargo feature group alone, and with none, to keep partial builds compiling
 check-features:

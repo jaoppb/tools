@@ -45,10 +45,11 @@ This repository is a monorepo for developer tools, repository management utiliti
 
 ## 2. Developer setup & Git hooks
 
-- **Lefthook.** Local Git hooks are managed by Lefthook to automate formatting, linting, and quality checks.
+- **Nix devShell (mandatory).** The `flake.nix` devShell, pinned by `flake.lock`, is the only supported toolchain: enter it with `nix develop` (or `direnv allow` with the checked-in `.envrc`), or run one recipe with `nix develop -c just <recipe>`. The justfile's `_devshell` guard, a top-level assignment just evaluates before any recipe, makes every recipe (new ones included) fail outside it; only `just --list` works anywhere. CI runs every `just` job through `nix develop --command` (`.github/actions/nix-devshell` installs Nix and caches the store); only the `action-test` job stays Nix-free, because it tests the root `action.yml` as consumers use it.
+- **Lefthook.** Local Git hooks are managed by Lefthook to automate formatting, linting, and quality checks. Hooks call `just` recipes, so they run inside the devShell too.
 - **Setup.** Run `just setup` to configure Git hooks in your local clone.
 - **Hooks:**
-  - `pre-commit`: Validates Rust code formatting (`cargo fmt --all -- --check`) and workspace lints (`cargo clippy --workspace -- -D warnings`) when Rust or Cargo manifest files change.
+  - `pre-commit`: Validates Rust code formatting (`just fmt-check`) and workspace lints (`just lint`) when Rust or Cargo manifest files change.
   - `pre-push`: Runs full workspace validation (`just check`) and issue workflow audit (`just issues-check`).
   - Local custom overrides can be placed in `lefthook-local.yml` (ignored by git).
 
