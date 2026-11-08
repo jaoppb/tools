@@ -64,7 +64,7 @@ pub enum RepoSyncError {
     /// Failed to apply updated state.
     #[error("{0}")]
     Write(String),
-    /// State drifted in check mode.
+    /// State drifted in check mode, or an undeclared item at severity `error` remains after sync.
     #[error("{0}")]
     Drift(Box<RepoSyncOutcome>),
 }
@@ -104,21 +104,28 @@ impl fmt::Display for RepoSyncOutcome {
 
         write!(formatter, "{}", self.plan)?;
 
+        let unmanaged_failure = self.plan.has_unmanaged_errors();
         match self.mode {
             RepoSyncMode::Check => {
                 if self.plan.has_actionable_drift() {
                     writeln!(formatter, "drift detected (check failed)")
+                } else if unmanaged_failure {
+                    writeln!(formatter, "undeclared items detected (check failed)")
                 } else {
-                    writeln!(formatter, "unmanaged items detected (pruning disabled)")
+                    writeln!(formatter, "undeclared items reported (warnings only)")
                 }
             }
             RepoSyncMode::Preview => writeln!(formatter, "dry-run: no changes applied"),
             RepoSyncMode::Apply => {
                 if self.plan.has_actionable_drift() {
-                    writeln!(formatter, "repository successfully updated")
+                    writeln!(formatter, "repository successfully updated")?;
                 } else {
-                    writeln!(formatter, "no changes applied (unmanaged items ignored)")
+                    writeln!(formatter, "no changes applied")?;
                 }
+                if unmanaged_failure {
+                    writeln!(formatter, "undeclared items remain (sync failed)")?;
+                }
+                Ok(())
             }
         }
     }
@@ -142,7 +149,8 @@ impl<P: RepoPort> RepoSync<P> {
     ///
     /// # Errors
     ///
-    /// Returns [`RepoSyncError`] if reading or writing fails, or if in [`RepoSyncMode::Check`] and actionable drift is found.
+    /// Returns [`RepoSyncError`] if reading or writing fails, if in [`RepoSyncMode::Check`] actionable drift is found,
+    /// or if an undeclared item whose policy is `error` remains (after applying, in [`RepoSyncMode::Apply`]).
     pub fn run(&self, mode: RepoSyncMode) -> Result<RepoSyncOutcome, RepoSyncError> {
         let current_state = self.port.get_state(&self.desired)?;
         let plan = current_state
@@ -156,7 +164,7 @@ impl<P: RepoPort> RepoSync<P> {
 
         match mode {
             RepoSyncMode::Check => {
-                if outcome.plan().has_actionable_drift() {
+                if outcome.plan().has_actionable_drift() || outcome.plan().has_unmanaged_errors() {
                     Err(RepoSyncError::Drift(Box::new(outcome)))
                 } else {
                     Ok(outcome)
@@ -165,7 +173,11 @@ impl<P: RepoPort> RepoSync<P> {
             RepoSyncMode::Preview => Ok(outcome),
             RepoSyncMode::Apply => {
                 self.apply(outcome.plan())?;
-                Ok(outcome)
+                if outcome.plan().has_unmanaged_errors() {
+                    Err(RepoSyncError::Drift(Box::new(outcome)))
+                } else {
+                    Ok(outcome)
+                }
             }
         }
     }
@@ -192,6 +204,7 @@ mod tests {
     use super::*;
     use crate::domain::repo::{
         RepoLabel, RepoLabelsSpec, RepoProject, RepoProjectSpec, RepoSettings, SettingDiff,
+        Severity, Unmanaged,
     };
     use std::sync::Mutex;
 
@@ -249,19 +262,20 @@ mod tests {
     fn outcome_distinguishes_actionable_drift_from_unmanaged_items() {
         let unmanaged_label = LabelDiff::Unmanaged {
             name: "random-tag".into(),
+            severity: Severity::Warn,
         };
         let plan = RepoPlan::new(Vec::new(), vec![unmanaged_label], Vec::new(), Vec::new());
         let outcome = RepoSyncOutcome::new(plan.clone(), RepoSyncMode::Check);
         assert!(outcome.plan().has_diffs());
         assert!(!outcome.plan().has_actionable_drift());
-        assert!(outcome.to_string().contains("unmanaged items detected"));
+        assert!(
+            outcome
+                .to_string()
+                .contains("undeclared items reported (warnings only)")
+        );
 
         let apply_unmanaged = RepoSyncOutcome::new(plan, RepoSyncMode::Apply);
-        assert!(
-            apply_unmanaged
-                .to_string()
-                .contains("no changes applied (unmanaged items ignored)")
-        );
+        assert!(apply_unmanaged.to_string().contains("no changes applied"));
 
         let setting_diff = SettingDiff::AllowMergeCommit {
             current: false,
@@ -326,7 +340,7 @@ mod tests {
         let desired_labels = RepoLabelsSpec {
             deprecated: vec!["old-label".into()],
             renames: Default::default(),
-            prune_unmanaged: false,
+            unmanaged: Unmanaged::Warn,
             migrations: Default::default(),
             items: vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
         };
@@ -341,5 +355,110 @@ mod tests {
         assert_eq!(outcome.mode(), RepoSyncMode::Apply);
         assert_eq!(sync.port.applied_labels.lock().unwrap().len(), 1);
         assert_eq!(sync.port.applied_projects.lock().unwrap().len(), 1);
+    }
+
+    fn milestone_state(titles: &[&str]) -> RepoState {
+        let milestones = titles
+            .iter()
+            .zip(1u64..)
+            .map(|(title, number)| crate::domain::repo::RepoMilestone {
+                number,
+                title: (*title).into(),
+                description: String::new(),
+                state: crate::domain::repo::MilestoneState::Open,
+            })
+            .collect();
+        RepoState::new(None, None, Some(milestones), None)
+    }
+
+    fn milestone_spec(policy: Unmanaged) -> RepoSpec {
+        let milestones = crate::domain::repo::RepoMilestonesSpec {
+            unmanaged: policy,
+            items: vec![crate::domain::repo::RepoMilestoneSpec {
+                title: "v0.3.0".into(),
+                description: String::new(),
+                state: crate::domain::repo::MilestoneState::Open,
+            }],
+            ..Default::default()
+        };
+        RepoSpec::new(None, None, Some(milestones), None)
+    }
+
+    #[test]
+    fn check_fails_on_an_undeclared_milestone_and_names_it() {
+        let sync = RepoSync::new(
+            MockRepoPort::new(milestone_state(&["v0.3.0", "v0.4.0"])),
+            milestone_spec(Unmanaged::Error),
+        );
+        let Err(RepoSyncError::Drift(outcome)) = sync.run(RepoSyncMode::Check) else {
+            panic!("expected the check to fail");
+        };
+        let text = outcome.to_string();
+        assert!(text.contains("'v0.4.0'"), "{text}");
+        assert!(
+            text.contains("undeclared items detected (check failed)"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn check_passes_when_every_milestone_is_declared() {
+        let sync = RepoSync::new(
+            MockRepoPort::new(milestone_state(&["v0.3.0"])),
+            milestone_spec(Unmanaged::Error),
+        );
+        assert!(sync.run(RepoSyncMode::Check).is_ok());
+    }
+
+    #[test]
+    fn check_only_warns_under_warn_and_says_nothing_under_ignore() {
+        let warn = RepoSync::new(
+            MockRepoPort::new(milestone_state(&["v0.3.0", "v0.4.0"])),
+            milestone_spec(Unmanaged::Warn),
+        );
+        let outcome = warn.run(RepoSyncMode::Check).unwrap();
+        assert!(outcome.to_string().contains("'v0.4.0'"));
+        let ignore = RepoSync::new(
+            MockRepoPort::new(milestone_state(&["v0.3.0", "v0.4.0"])),
+            milestone_spec(Unmanaged::Ignore),
+        );
+        let outcome = ignore.run(RepoSyncMode::Check).unwrap();
+        assert!(!outcome.plan().has_diffs());
+    }
+
+    #[test]
+    fn sync_prunes_under_prune_and_leaves_no_failure() {
+        let sync = RepoSync::new(
+            MockRepoPort::new(milestone_state(&["v0.3.0", "v0.4.0"])),
+            milestone_spec(Unmanaged::Prune),
+        );
+        sync.run(RepoSyncMode::Apply).unwrap();
+        assert_eq!(sync.port.applied_milestones.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn sync_applies_the_rest_then_fails_while_an_error_item_remains() {
+        let mut spec = milestone_spec(Unmanaged::Error);
+        spec.labels = Some(RepoLabelsSpec {
+            items: vec![RepoLabel::new("type:feat", "1d76db", "Feature")],
+            ..Default::default()
+        });
+        let state = RepoState::new(
+            None,
+            Some(Vec::new()),
+            milestone_state(&["v0.3.0", "v0.4.0"]).milestones,
+            None,
+        );
+        let sync = RepoSync::new(MockRepoPort::new(state), spec);
+        let Err(RepoSyncError::Drift(outcome)) = sync.run(RepoSyncMode::Apply) else {
+            panic!("expected sync to fail");
+        };
+        assert_eq!(sync.port.applied_labels.lock().unwrap().len(), 1);
+        let text = outcome.to_string();
+        assert!(text.contains("'v0.4.0'"), "{text}");
+        assert!(
+            text.contains("undeclared items remain (sync failed)"),
+            "{text}"
+        );
     }
 }

@@ -3,8 +3,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use crate::domain::repo::unmanaged::default_milestones;
 use crate::domain::repo::{
-    DeleteReason, ReconcileHandler, RepoPlanError, overlay_by_key, reconcile_by_key, union_names,
+    DeleteReason, ReconcileHandler, RepoPlanError, Severity, Unmanaged, overlay_by_key,
+    reconcile_by_key, union_names,
 };
 
 /// Repository milestone state.
@@ -41,7 +43,8 @@ pub struct RepoMilestoneSpec {
 }
 
 /// Repository milestones specification and reconciliation policy.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RepoMilestonesSpec {
     /// Deprecated milestone titles to close/prune.
     #[serde(default)]
@@ -49,18 +52,31 @@ pub struct RepoMilestonesSpec {
     /// Rename mappings from old milestone title to new milestone title.
     #[serde(default)]
     pub renames: BTreeMap<String, String>,
-    /// Whether to prune unmanaged milestones.
-    #[serde(default)]
-    pub prune_unmanaged: bool,
+    /// What to do with milestones that exist on GitHub but are not declared (`ignore`, `warn`,
+    /// `error` or `prune`).
+    #[serde(default = "default_milestones")]
+    pub unmanaged: Unmanaged,
     /// Desired milestones to enforce.
     #[serde(default)]
     pub items: Vec<RepoMilestoneSpec>,
 }
 
+impl Default for RepoMilestonesSpec {
+    fn default() -> Self {
+        Self {
+            deprecated: Vec::new(),
+            renames: BTreeMap::new(),
+            unmanaged: Unmanaged::milestones(),
+
+            items: Vec::new(),
+        }
+    }
+}
+
 /// Repository-scoped milestones overlay applied on top of the shared [`RepoMilestonesSpec`].
 ///
 /// Items override shared items with the same title and are otherwise appended; `deprecated` is a
-/// union; `renames` are merged with overlay entries winning; `prune_unmanaged` replaces the shared
+/// union; `renames` are merged with overlay entries winning; `unmanaged` replaces the shared
 /// value only when set.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,9 +87,9 @@ pub struct RepoMilestonesOverlay {
     /// Additional or overriding rename mappings.
     #[serde(default)]
     pub renames: BTreeMap<String, String>,
-    /// Overrides whether to prune unmanaged milestones when set.
+    /// Overrides what to do with undeclared milestones when set.
     #[serde(default)]
-    pub prune_unmanaged: Option<bool>,
+    pub unmanaged: Option<Unmanaged>,
     /// Additional or overriding milestones.
     #[serde(default)]
     pub items: Vec<RepoMilestoneSpec>,
@@ -92,8 +108,8 @@ impl RepoMilestonesOverlay {
         let mut spec = base.cloned().unwrap_or_default();
         union_names(&mut spec.deprecated, self.deprecated.clone());
         spec.renames.extend(self.renames.clone());
-        if let Some(prune) = self.prune_unmanaged {
-            spec.prune_unmanaged = prune;
+        if let Some(unmanaged) = self.unmanaged {
+            spec.unmanaged = unmanaged;
         }
         overlay_by_key(&mut spec.items, self.items.clone(), |item| &item.title)?;
         Ok(spec)
@@ -127,14 +143,14 @@ impl RepoMilestone {
         desired: &[RepoMilestoneSpec],
         deprecated: &[String],
         renames: &BTreeMap<String, String>,
-        prune_unmanaged: bool,
+        unmanaged: Unmanaged,
     ) -> Result<Vec<MilestoneDiff>, RepoPlanError> {
         reconcile_by_key(
             current,
             desired,
             deprecated,
             renames,
-            prune_unmanaged,
+            unmanaged,
             MilestoneReconciler,
         )
     }
@@ -177,9 +193,10 @@ impl ReconcileHandler<RepoMilestone, RepoMilestoneSpec, MilestoneDiff> for Miles
         }
     }
 
-    fn unmanaged(&self, current: &RepoMilestone) -> MilestoneDiff {
+    fn unmanaged(&self, current: &RepoMilestone, severity: Severity) -> MilestoneDiff {
         MilestoneDiff::Unmanaged {
             title: current.title.clone(),
+            severity,
         }
     }
 }
@@ -196,7 +213,7 @@ pub enum MilestoneDiff {
         /// Desired milestone specification.
         desired: RepoMilestoneSpec,
     },
-    /// Milestone is marked deprecated (or unmanaged with pruning enabled) and should be deleted.
+    /// Milestone is marked deprecated (or unmanaged with policy `prune`) and should be deleted.
     Delete {
         /// Milestone number on GitHub.
         number: u64,
@@ -205,14 +222,28 @@ pub enum MilestoneDiff {
         /// Reason for deletion.
         reason: DeleteReason,
     },
-    /// Milestone exists on GitHub but is unmanaged (reported when pruning is disabled).
+    /// Milestone exists on GitHub but is not declared (reported unless the policy is `ignore` or `prune`).
     Unmanaged {
         /// Milestone title.
         title: String,
+        /// Whether it only warns or fails the run.
+        severity: Severity,
     },
 }
 
 impl MilestoneDiff {
+    /// Whether this is an undeclared item whose policy fails the run.
+    #[must_use]
+    pub const fn is_unmanaged_error(&self) -> bool {
+        matches!(
+            self,
+            Self::Unmanaged {
+                severity: Severity::Error,
+                ..
+            }
+        )
+    }
+
     /// Whether this difference requires an action or indicates a configuration drift.
     #[must_use]
     pub const fn is_actionable(&self) -> bool {
@@ -258,10 +289,10 @@ impl std::fmt::Display for MilestoneDiff {
             } => {
                 write!(formatter, "milestone '{title}': delete ({reason})")
             }
-            Self::Unmanaged { title } => {
+            Self::Unmanaged { title, severity } => {
                 write!(
                     formatter,
-                    "milestone '{title}': unmanaged (exists on GitHub but not in tools.toml)"
+                    "milestone '{title}' exists on GitHub but is not declared in tools.toml ({severity}); declare it under [github.milestones].items or add it to deprecated"
                 )
             }
         }
@@ -310,8 +341,14 @@ mod tests {
         let deprecated = vec!["v0.9".into()];
         let renames = BTreeMap::new();
 
-        let diffs =
-            RepoMilestone::diff(&current, &desired_items, &deprecated, &renames, false).unwrap();
+        let diffs = RepoMilestone::diff(
+            &current,
+            &desired_items,
+            &deprecated,
+            &renames,
+            Unmanaged::Warn,
+        )
+        .unwrap();
         assert_eq!(diffs.len(), 4);
 
         // 1. v0 updated description
@@ -338,7 +375,7 @@ mod tests {
         // 4. historical unmanaged
         assert!(matches!(
             &diffs[3],
-            MilestoneDiff::Unmanaged { title } if title == "historical"
+            MilestoneDiff::Unmanaged { title, .. } if title == "historical"
         ));
     }
 
@@ -358,7 +395,8 @@ mod tests {
         }];
         let renames = BTreeMap::new();
 
-        let diffs = RepoMilestone::diff(&current, &desired_items, &[], &renames, false).unwrap();
+        let diffs =
+            RepoMilestone::diff(&current, &desired_items, &[], &renames, Unmanaged::Warn).unwrap();
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
             MilestoneDiff::Update { current, desired } => {
@@ -380,7 +418,7 @@ mod tests {
         }];
         let renames = BTreeMap::new();
 
-        let diffs = RepoMilestone::diff(&current, &[], &[], &renames, true).unwrap();
+        let diffs = RepoMilestone::diff(&current, &[], &[], &renames, Unmanaged::Prune).unwrap();
         assert_eq!(diffs.len(), 1);
         assert!(matches!(
             &diffs[0],
@@ -404,7 +442,8 @@ mod tests {
         let mut renames = BTreeMap::new();
         renames.insert("v0.9".into(), "v1.0".into());
 
-        let diffs = RepoMilestone::diff(&current, &desired, &[], &renames, false).unwrap();
+        let diffs =
+            RepoMilestone::diff(&current, &desired, &[], &renames, Unmanaged::Warn).unwrap();
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
             MilestoneDiff::Update { current, desired } => {
@@ -433,7 +472,8 @@ mod tests {
         }];
         let renames = BTreeMap::new();
 
-        let diffs = RepoMilestone::diff(&current, &desired_items, &[], &renames, false).unwrap();
+        let diffs =
+            RepoMilestone::diff(&current, &desired_items, &[], &renames, Unmanaged::Warn).unwrap();
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
             MilestoneDiff::Update { current, desired } => {
@@ -463,7 +503,8 @@ mod tests {
         let deprecated = vec!["V0".into()];
         let renames = BTreeMap::new();
 
-        let diffs = RepoMilestone::diff(&current, &desired, &deprecated, &renames, false).unwrap();
+        let diffs = RepoMilestone::diff(&current, &desired, &deprecated, &renames, Unmanaged::Warn)
+            .unwrap();
         // Should NOT emit a Delete; desired takes precedence and it is in sync
         assert!(diffs.is_empty());
     }
@@ -492,7 +533,8 @@ mod tests {
         let mut renames = BTreeMap::new();
         renames.insert("v0.9".into(), "v1.0".into());
 
-        let err = RepoMilestone::diff(&current, &desired, &[], &renames, false).unwrap_err();
+        let err =
+            RepoMilestone::diff(&current, &desired, &[], &renames, Unmanaged::Warn).unwrap_err();
         assert!(matches!(err, RepoPlanError::Collision(_)));
         assert!(err.to_string().contains("v0.9"));
         assert!(err.to_string().contains("v1.0"));
@@ -503,7 +545,7 @@ mod tests {
         let base = RepoMilestonesSpec {
             deprecated: vec!["v0".into()],
             renames: BTreeMap::new(),
-            prune_unmanaged: false,
+            unmanaged: Unmanaged::Warn,
             items: vec![RepoMilestoneSpec {
                 title: "v1".into(),
                 description: "shared".into(),
@@ -512,7 +554,7 @@ mod tests {
         };
         let overlay = RepoMilestonesOverlay {
             deprecated: vec!["v0".into(), "v9".into()],
-            prune_unmanaged: Some(true),
+            unmanaged: Some(Unmanaged::Prune),
             items: vec![
                 RepoMilestoneSpec {
                     title: "v1".into(),
@@ -529,10 +571,136 @@ mod tests {
         };
         let merged = overlay.apply_to(Some(&base)).unwrap();
         assert_eq!(merged.deprecated, vec!["v0", "v9"]);
-        assert!(merged.prune_unmanaged);
+        assert_eq!(merged.unmanaged, Unmanaged::Prune);
         assert_eq!(merged.items.len(), 2);
         assert_eq!(merged.items[0].description, "local");
         assert_eq!(merged.items[0].state, MilestoneState::Closed);
         assert_eq!(merged.items[1].title, "v2");
+    }
+
+    fn remote(number: u64, title: &str) -> RepoMilestone {
+        RepoMilestone {
+            number,
+            title: title.into(),
+            description: String::new(),
+            state: MilestoneState::Open,
+        }
+    }
+
+    fn declared(title: &str) -> RepoMilestoneSpec {
+        RepoMilestoneSpec {
+            title: title.into(),
+            description: String::new(),
+            state: MilestoneState::Open,
+        }
+    }
+
+    #[test]
+    fn declared_milestone_is_in_sync_under_every_policy() {
+        for policy in [
+            Unmanaged::Ignore,
+            Unmanaged::Warn,
+            Unmanaged::Error,
+            Unmanaged::Prune,
+        ] {
+            let diffs = RepoMilestone::diff(
+                &[remote(1, "v0.4.0")],
+                &[declared("v0.4.0")],
+                &[],
+                &BTreeMap::new(),
+                policy,
+            )
+            .unwrap();
+            assert!(diffs.is_empty(), "{policy:?}: {diffs:?}");
+        }
+    }
+
+    #[test]
+    fn undeclared_milestone_is_named_with_the_fix_and_fails_under_error() {
+        let diffs = RepoMilestone::diff(
+            &[remote(1, "v0.4.0")],
+            &[declared("v0.3.0"), declared("v0.4.1")],
+            &[],
+            &BTreeMap::new(),
+            Unmanaged::Error,
+        )
+        .unwrap();
+        let unmanaged: Vec<_> = diffs
+            .iter()
+            .filter(|diff| matches!(diff, MilestoneDiff::Unmanaged { .. }))
+            .collect();
+        assert_eq!(unmanaged.len(), 1);
+        assert!(unmanaged[0].is_unmanaged_error());
+        assert!(!unmanaged[0].is_actionable());
+        let text = unmanaged[0].to_string();
+        assert!(text.contains("'v0.4.0'"), "{text}");
+        assert!(text.contains("not declared in tools.toml"), "{text}");
+        assert!(text.contains("[github.milestones].items"), "{text}");
+        assert!(text.contains("deprecated"), "{text}");
+    }
+
+    #[test]
+    fn undeclared_milestone_only_warns_under_warn_and_is_silent_under_ignore() {
+        let current = [remote(1, "v0.4.0")];
+        let warn =
+            RepoMilestone::diff(&current, &[], &[], &BTreeMap::new(), Unmanaged::Warn).unwrap();
+        assert_eq!(warn.len(), 1);
+        assert!(!warn[0].is_unmanaged_error());
+        let ignore =
+            RepoMilestone::diff(&current, &[], &[], &BTreeMap::new(), Unmanaged::Ignore).unwrap();
+        assert!(ignore.is_empty());
+    }
+
+    #[test]
+    fn deprecated_milestone_is_deleted_not_reported_as_undeclared() {
+        let diffs = RepoMilestone::diff(
+            &[remote(1, "v0.9.0")],
+            &[],
+            &["v0.9.0".to_string()],
+            &BTreeMap::new(),
+            Unmanaged::Error,
+        )
+        .unwrap();
+        assert!(matches!(
+            diffs.as_slice(),
+            [MilestoneDiff::Delete {
+                reason: DeleteReason::Deprecated,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn closed_undeclared_milestone_gets_the_same_severity() {
+        let mut closed = remote(2, "v0.1.0");
+        closed.state = MilestoneState::Closed;
+        let diffs =
+            RepoMilestone::diff(&[closed], &[], &[], &BTreeMap::new(), Unmanaged::Error).unwrap();
+        assert!(diffs[0].is_unmanaged_error());
+    }
+
+    #[test]
+    fn unmanaged_defaults_to_error_for_milestones_and_warn_for_labels() {
+        assert_eq!(RepoMilestonesSpec::default().unmanaged, Unmanaged::Error);
+        let overlay_only = RepoMilestonesOverlay::default().apply_to(None).unwrap();
+        assert_eq!(overlay_only.unmanaged, Unmanaged::Error);
+        let spec: RepoMilestonesSpec = toml::from_str("items = []").unwrap();
+        assert_eq!(spec.unmanaged, Unmanaged::Error);
+    }
+
+    #[test]
+    fn unmanaged_policy_parses_every_value_and_rejects_others() {
+        for (word, policy) in [
+            ("ignore", Unmanaged::Ignore),
+            ("warn", Unmanaged::Warn),
+            ("error", Unmanaged::Error),
+            ("prune", Unmanaged::Prune),
+        ] {
+            let spec: RepoMilestonesSpec =
+                toml::from_str(&format!("unmanaged = \"{word}\"")).unwrap();
+            assert_eq!(spec.unmanaged, policy);
+        }
+        assert!(toml::from_str::<RepoMilestonesSpec>("unmanaged = \"loud\"").is_err());
+        assert!(toml::from_str::<RepoMilestonesSpec>("prune_unmanaged = true").is_err());
     }
 }
