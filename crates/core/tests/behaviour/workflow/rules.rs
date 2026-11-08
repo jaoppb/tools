@@ -100,6 +100,50 @@ fn a_runtime_error_in_a_rule_freezes_the_issue_without_falling_through() {
     );
 }
 
+/// #92: cel-interpreter 0.10 reached a `todo!()` here and the panic aborted
+/// the whole run. Without a preset the param is untyped, so the string loads.
+#[test]
+fn a_comprehension_over_a_string_param_freezes_every_card_and_the_run_completes() {
+    let workflow = Workflow::from_toml(
+        "[workflow]\nstatuses = [\"Backlog\", \"Ready\"]\n\n[workflow.params]\narea_prefix = \"area:\"\n\n[workflow.facts]\nhas_area = 'issue.labels.exists(l, params.area_prefix.exists(p, l.startsWith(p)))'\n\n[[workflow.status]]\nid = \"gate\"\nwhen = 'has_area'\nset = \"Ready\"\n",
+    )
+    .expect("a param without a preset value is not typed");
+    let cards = vec![open_card(20, "Backlog"), open_card(21, "Backlog")];
+    let evaluation = evaluate(&workflow, &snapshot(cards, &[]), &Remote::default());
+    assert_eq!(evaluation.iter().count(), 2);
+    for card in [20, 21] {
+        let frozen = decision(&evaluation, &number(card));
+        assert_eq!(frozen.destination(), "Backlog");
+        assert!(
+            matches!(frozen.violation(), Some(Violation::Eval { origin, .. }) if origin == "fact \"has_area\""),
+            "{:?}",
+            frozen.violation()
+        );
+    }
+}
+
+/// #92: a typo in a user rule must cost that card only, never the run.
+#[test]
+fn a_rule_ranging_over_a_string_freezes_its_card_and_the_others_still_move() {
+    let workflow = Workflow::from_toml(
+        "[workflow]\nstatuses = [\"Backlog\", \"Ready\", \"Done\"]\n\n[[workflow.status]]\nid = \"typo\"\nwhen = 'issue.number == 20 && \"x\".exists(c, true)'\nset = \"Done\"\n\n[[workflow.status]]\nid = \"rest\"\nwhen = 'true'\nset = \"Ready\"\n",
+    )
+    .expect("the rule compiles");
+    let cards = vec![open_card(20, "Backlog"), open_card(21, "Backlog")];
+    let evaluation = evaluate(&workflow, &snapshot(cards, &[]), &Remote::default());
+    let frozen = decision(&evaluation, &number(20));
+    assert_eq!(frozen.destination(), "Backlog");
+    assert!(
+        matches!(frozen.violation(), Some(Violation::Eval { origin, .. }) if origin == "rule \"typo\"")
+    );
+    assert!(matches!(
+        frozen.explain().result_of("typo"),
+        Some(RuleResult::Error(_))
+    ));
+    assert!(frozen.explain().to_string().contains("[ERROR      ] typo"));
+    assert_eq!(decision(&evaluation, &number(21)).destination(), "Ready");
+}
+
 #[test]
 fn a_param_override_changes_the_gate_without_shadowing_a_rule() {
     let workflow = Workflow::from_toml(

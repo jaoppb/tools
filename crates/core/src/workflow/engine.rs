@@ -5,10 +5,11 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use cel::{Context, Value};
+use cel::{Context, Program, Value};
 
 use crate::domain::{IssueNumber, Snapshot, StatusName};
 use crate::workflow::config::{Rule, RuleId, Set, Workflow};
+use crate::workflow::contain::contain;
 use crate::workflow::explain::{Explain, RuleResult, RuleTrace};
 use crate::workflow::subject::{FieldValue, ParentResolver, ResolveError, Subject};
 
@@ -37,6 +38,14 @@ pub enum Violation {
         /// The interpreter's message.
         message: String,
     },
+    /// The interpreter panicked while evaluating a fact or a `when`: a bug of
+    /// the interpreter, contained to this issue.
+    Panic {
+        /// `fact "x"` or `rule "x"`.
+        origin: String,
+        /// The panic's message.
+        message: String,
+    },
 }
 
 impl fmt::Display for Violation {
@@ -48,6 +57,9 @@ impl fmt::Display for Violation {
             }
             Self::ParentFrozen { parent } => write!(out, "parent {parent} is frozen"),
             Self::Eval { origin, message } => write!(out, "{origin} failed: {message}"),
+            Self::Panic { origin, message } => {
+                write!(out, "{origin} panicked in the interpreter: {message}")
+            }
         }
     }
 }
@@ -364,18 +376,12 @@ impl<'a> Run<'a> {
     ) -> (Vec<(String, Value)>, Option<Violation>) {
         let mut facts: Vec<(String, Value)> = Vec::new();
         for (name, expr) in &self.workflow.facts {
-            match expr.program().execute(context) {
+            match execute(expr.program(), context) {
                 Ok(value) => {
                     context.add_variable_from_value(name.as_str(), value.clone());
                     facts.push((name.clone(), value));
                 }
-                Err(error) => {
-                    let violation = Violation::Eval {
-                        origin: format!("fact {name:?}"),
-                        message: error.to_string(),
-                    };
-                    return (facts, Some(violation));
-                }
+                Err(failure) => return (facts, Some(failure.violation(format!("fact {name:?}")))),
             }
         }
         (facts, None)
@@ -399,7 +405,7 @@ impl<'a> Run<'a> {
             })
             .collect();
         for (rule, trace) in self.workflow.rules.iter().zip(&mut traces) {
-            let failure = match rule.when.program().execute(context) {
+            let failure = match execute(rule.when.program(), context) {
                 Ok(Value::Bool(true)) => {
                     trace.result = RuleResult::Fired;
                     return (traces, Ok(Some(rule)));
@@ -408,14 +414,11 @@ impl<'a> Run<'a> {
                     trace.result = RuleResult::NotMatched;
                     continue;
                 }
-                Ok(other) => format!("expected bool, got {other:?}"),
-                Err(error) => error.to_string(),
+                Ok(other) => Failure::Error(format!("expected bool, got {other:?}")),
+                Err(failure) => failure,
             };
-            trace.result = RuleResult::Error(failure.clone());
-            let violation = Violation::Eval {
-                origin: format!("rule {:?}", rule.id.as_str()),
-                message: failure,
-            };
+            trace.result = RuleResult::Error(failure.to_string());
+            let violation = failure.violation(format!("rule {:?}", rule.id.as_str()));
             return (traces, Err(violation));
         }
         (traces, Ok(None))
@@ -436,6 +439,44 @@ impl<'a> Run<'a> {
             value: map.into(),
             decision: decision(subject, current, current, partial, Some(violation)),
         }
+    }
+}
+
+/// Why an expression has no value.
+enum Failure {
+    /// The interpreter returned an error.
+    Error(String),
+    /// The interpreter panicked; this is the panic's message.
+    Panic(String),
+}
+
+impl Failure {
+    fn violation(self, origin: String) -> Violation {
+        match self {
+            Self::Error(message) => Violation::Eval { origin, message },
+            Self::Panic(message) => Violation::Panic { origin, message },
+        }
+    }
+}
+
+/// The text of the rule trace, which marks both kinds as an error.
+impl fmt::Display for Failure {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Error(message) => out.write_str(message),
+            Self::Panic(message) => write!(out, "the interpreter panicked: {message}"),
+        }
+    }
+}
+
+/// Runs `program`, containing a panic of the interpreter. Unwind safe in
+/// practice: the execution only reads `program` and `context`, and a child
+/// scope of the root context holds every variable it binds.
+fn execute(program: &Program, context: &Context<'_, '_>) -> Result<Value, Failure> {
+    match contain(|| program.execute(context)) {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(Failure::Error(error.to_string())),
+        Err(message) => Err(Failure::Panic(message)),
     }
 }
 
@@ -539,4 +580,36 @@ fn root_context() -> Context<'static, 'static> {
 /// `fold(s)`: lowercase and ascii-fold, for accent-insensitive comparison.
 fn fold(text: Arc<String>) -> String {
     deunicode::deunicode(&text).to_ascii_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Failure, Violation};
+
+    #[test]
+    fn a_panic_is_its_own_violation_and_an_error_in_the_trace() {
+        let failure = Failure::Panic("not yet implemented".to_owned());
+        assert_eq!(
+            failure.to_string(),
+            "the interpreter panicked: not yet implemented"
+        );
+        let violation = failure.violation("rule \"r\"".to_owned());
+        assert_eq!(
+            violation,
+            Violation::Panic {
+                origin: "rule \"r\"".to_owned(),
+                message: "not yet implemented".to_owned(),
+            }
+        );
+        assert_eq!(
+            violation.to_string(),
+            "rule \"r\" panicked in the interpreter: not yet implemented"
+        );
+    }
+
+    #[test]
+    fn an_error_stays_an_eval_violation() {
+        let violation = Failure::Error("no such key".to_owned()).violation("fact \"f\"".to_owned());
+        assert_eq!(violation.to_string(), "fact \"f\" failed: no such key");
+    }
 }

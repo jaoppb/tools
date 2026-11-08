@@ -6,6 +6,7 @@
 //! in `[workflow.params]`, the facts and the rules of a preset.
 
 mod config;
+mod contain;
 mod engine;
 mod error;
 mod explain;
