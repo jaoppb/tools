@@ -12,6 +12,7 @@ merge_commit_message = "PR_BODY"
 
 [github.labels]
 unmanaged = "warn"
+docs = ["AGENTS.md", "CONTRIBUTING.md"]
 deprecated = [
     "bug",
     "documentation",

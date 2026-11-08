@@ -5,9 +5,10 @@ use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
 use tools_core::application::RepoSyncMode;
-use tools_core::config::{Config, ConfigError, IssueTemplatesConfig, find_config, load_or_find};
+use tools_core::config::{Config, ConfigError, find_config, load_or_find};
 use tools_core::domain::repo::{Repo, RepoPlanError, RepoSpec};
 
+use super::consistency::LocalFiles;
 use crate::cli::{CONFIG, OWNER, repos_of};
 
 /// The verb that audits drift without writing.
@@ -95,9 +96,18 @@ pub struct ResolvedRepo {
     pub target: Target,
     /// Each target repository with its desired specification, overlay applied.
     pub repos: Vec<(Repo, RepoSpec)>,
-    /// The `[github.issue_templates]` table, if declared.
-    pub issue_templates: Option<IssueTemplatesConfig>,
+    /// What the offline step compares with the local files; `None` when this run skips the step,
+    /// as `tools repo check --help` states.
+    pub local_files: Option<LocalFiles>,
 }
+
+/// When the offline step runs, as `tools repo check --help` states it.
+const LOCAL_FILES_HELP: &str = "\
+Before any GitHub call, `check` compares local files next to tools.toml with it: the issue
+templates when [github.issue_templates] is declared, and the label block of each doc listed in
+[github.labels].docs. With neither declared, no file is read. The step runs only when the check
+targets the configured repository alone (no --repo, no --org/--owner, no [github].repositories
+list) and covers labels (no scope flag, or --labels); otherwise it is skipped. A problem exits 1.";
 
 impl Arguments {
     /// Reads the arguments of the `check` or `sync` verb; the global flags travel with `matches`.
@@ -142,15 +152,15 @@ impl Arguments {
         self.mode
     }
 
-    /// Whether the offline template and doc consistency check applies to `resolved`: a `--check`
-    /// of the configured repository alone (no `--org` or `--repo` override), plain or with
-    /// `--labels`.
-    #[must_use]
-    pub fn checks_files(&self, resolved: &ResolvedRepo) -> bool {
+    /// Whether this run includes the offline step on the local files: a `check` of the configured
+    /// repository alone (no `--repo`, no `--org`/`--owner`, no `[github].repositories` list) that
+    /// covers labels (no scope flag, or `--labels`). The files belong to the checkout holding
+    /// `tools.toml`, which is that repository and no other.
+    fn checks_local_files(&self, cfg: &Config) -> bool {
         self.mode == RepoSyncMode::Check
             && self.owner.is_none()
             && self.repos.is_empty()
-            && resolved.repos.len() == 1
+            && cfg.repositories().is_empty()
             && self.explicit_entities.is_none_or(|filter| filter.labels)
     }
 
@@ -220,10 +230,25 @@ impl Arguments {
             })
             .collect::<Result<Vec<_>, RepoResolveError>>()?;
 
+        // The gate leaves exactly one target, the configured repository, whose spec it compares.
+        let local_files = match repos.as_slice() {
+            [(_, spec)] if self.checks_local_files(&cfg) => Some(LocalFiles {
+                labels: spec.labels.as_ref().map_or_else(Vec::new, |labels| {
+                    labels
+                        .items
+                        .iter()
+                        .map(|label| label.name.clone())
+                        .collect()
+                }),
+                templates: cfg.issue_templates().cloned(),
+                docs: cfg.label_docs().to_vec(),
+            }),
+            _ => None,
+        };
         Ok(ResolvedRepo {
             target,
             repos,
-            issue_templates: cfg.issue_templates().cloned(),
+            local_files,
         })
     }
 
@@ -259,7 +284,9 @@ pub fn command() -> Command {
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(entity_flags(
-            Command::new(CHECK).about("Audit GitHub configuration drift without modifying state"),
+            Command::new(CHECK)
+                .about("Audit GitHub configuration drift without modifying state")
+                .after_help(LOCAL_FILES_HELP),
         ))
         .subcommand(entity_flags(
             Command::new(SYNC).about("Reconcile GitHub repository configuration with tools.toml"),
@@ -339,6 +366,83 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(args_repos.repos(), &["web", "api"]);
+    }
+
+    const LOCAL_FILES_CONFIG: &str = r#"
+        [github.repository]
+        owner = "jaoppb"
+        name = "tools"
+
+        [github.repository.settings]
+        allow_merge_commit = true
+
+        [github.labels]
+        docs = ["AGENTS.md"]
+        items = [{ name = "type:feat", color = "1d76db" }]
+
+        [github.milestones]
+        items = [{ title = "v1" }]
+
+        [github.project]
+        number = 4
+        title = "Roadmap"
+
+        [github.issue_templates]
+        items = [{ file = "feat.yml", label = "type:feat", title = "feat: " }]
+    "#;
+
+    fn local_files_of(words: &[&str], toml_str: &str) -> Option<LocalFiles> {
+        let config = tools_core::config::load_from_str(toml_str).unwrap();
+        parse(words.iter().map(|word| (*word).to_owned()))
+            .unwrap()
+            .resolve_with_config(config)
+            .unwrap()
+            .local_files
+    }
+
+    #[test]
+    fn local_files_carry_the_declared_templates_and_docs() {
+        let files = local_files_of(&["check"], LOCAL_FILES_CONFIG).expect("plain check runs it");
+        assert_eq!(files.labels, ["type:feat"]);
+        assert_eq!(files.docs, ["AGENTS.md"]);
+        assert_eq!(files.templates.expect("declared").items[0].file, "feat.yml");
+
+        let minimal = r#"
+            [github.repository]
+            owner = "jaoppb"
+            name = "tools"
+
+            [github.labels]
+            items = [{ name = "type:feat", color = "1d76db" }]
+        "#;
+        let files = local_files_of(&["check"], minimal).expect("plain check runs it");
+        assert!(files.templates.is_none());
+        assert!(files.docs.is_empty());
+    }
+
+    #[test]
+    fn local_files_are_checked_only_for_a_labels_check_of_the_configured_repository() {
+        for (words, runs) in [
+            (&["check"][..], true),
+            (&["check", "--labels"][..], true),
+            (&["check", "--labels", "--settings"][..], true),
+            (&["check", "--settings"][..], false),
+            (&["check", "--milestones"][..], false),
+            (&["check", "--project"][..], false),
+            (&["check", "--repo", "tools"][..], false),
+            (&["check", "--repo", "web"][..], false),
+            (&["check", "--org", "other", "--repo", "tools"][..], false),
+            (&["sync"][..], false),
+            (&["sync", "--labels"][..], false),
+        ] {
+            assert_eq!(
+                local_files_of(words, LOCAL_FILES_CONFIG).is_some(),
+                runs,
+                "{words:?}"
+            );
+        }
+        let listed = format!("{LOCAL_FILES_CONFIG}\n[github]\nrepositories = [\"tools\"]\n");
+        assert!(local_files_of(&["check"], &listed).is_none());
     }
 
     #[test]
