@@ -18,23 +18,31 @@ const TEMPLATE_CONFIG: &str = "config.yml";
 const BLOCK_START: &str = "<!-- labels:start -->";
 const BLOCK_END: &str = "<!-- labels:end -->";
 
+/// What the offline step compares with the files next to `tools.toml`: the labels declared for
+/// the configured repository, and the declared templates and docs that restate them. Templates
+/// and docs are both opt-in; with neither, no file is read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalFiles {
+    /// The label names declared for the repository, its overlay applied.
+    pub labels: Vec<String>,
+    /// The `[github.issue_templates]` table, if declared.
+    pub templates: Option<IssueTemplatesConfig>,
+    /// The docs of `[github.labels].docs` whose label block is checked, relative to `tools.toml`.
+    pub docs: Vec<String>,
+}
+
 /// Checks the declared templates and docs under `root` against the declared labels.
 ///
 /// Returns one message per problem; an empty list means everything agrees. Without a
-/// `[github.issue_templates]` table the templates are not checked, and only the `docs` listed
-/// (paths relative to `root`) are read, so with neither nothing is read at all.
+/// `[github.issue_templates]` table the templates are not checked, and only the listed docs are
+/// read, so with neither nothing is read at all.
 #[must_use]
-pub fn check(
-    root: &Path,
-    declared: &[String],
-    templates: Option<&IssueTemplatesConfig>,
-    docs: &[String],
-) -> Vec<String> {
-    let declared: BTreeSet<&str> = declared.iter().map(String::as_str).collect();
-    let mut problems = templates.map_or_else(Vec::new, |templates| {
+pub fn check(root: &Path, files: &LocalFiles) -> Vec<String> {
+    let declared: BTreeSet<&str> = files.labels.iter().map(String::as_str).collect();
+    let mut problems = files.templates.as_ref().map_or_else(Vec::new, |templates| {
         check_templates(&root.join(TEMPLATE_DIR), templates, &declared)
     });
-    for doc in docs {
+    for doc in &files.docs {
         match fs::read_to_string(root.join(doc)) {
             Ok(text) => problems.extend(check_doc(doc, &text, &declared)),
             Err(error) => problems.push(format!("{doc}: cannot read: {error}")),
@@ -203,8 +211,12 @@ mod tests {
         docs: &[&str],
     ) -> Vec<String> {
         let dir = dir_with(name, files);
-        let docs: Vec<String> = docs.iter().map(|doc| (*doc).to_owned()).collect();
-        let problems = check(&dir, &["k:a".to_owned()], templates, &docs);
+        let local = LocalFiles {
+            labels: vec!["k:a".to_owned()],
+            templates: templates.cloned(),
+            docs: docs.iter().map(|doc| (*doc).to_owned()).collect(),
+        };
+        let problems = check(&dir, &local);
         let _ = fs::remove_dir_all(&dir);
         problems
     }

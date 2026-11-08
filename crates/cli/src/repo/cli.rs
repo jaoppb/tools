@@ -5,9 +5,10 @@ use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
 use tools_core::application::RepoSyncMode;
-use tools_core::config::{Config, ConfigError, IssueTemplatesConfig, find_config, load_or_find};
+use tools_core::config::{Config, ConfigError, find_config, load_or_find};
 use tools_core::domain::repo::{Repo, RepoPlanError, RepoSpec};
 
+use super::consistency::LocalFiles;
 use crate::cli::{CONFIG, OWNER, repos_of};
 
 /// The verb that audits drift without writing.
@@ -98,16 +99,6 @@ pub struct ResolvedRepo {
     /// What the offline step compares with the local files; `None` when this run skips the step,
     /// as `tools repo check --help` states.
     pub local_files: Option<LocalFiles>,
-}
-
-/// The declared issue templates and docs that the offline step of `repo check` compares with the
-/// files next to `tools.toml`. Both are opt-in; with neither, no file is read.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LocalFiles {
-    /// The `[github.issue_templates]` table, if declared.
-    pub templates: Option<IssueTemplatesConfig>,
-    /// The docs of `[github.labels].docs` whose label block is checked.
-    pub docs: Vec<String>,
 }
 
 /// When the offline step runs, as `tools repo check --help` states it.
@@ -239,10 +230,21 @@ impl Arguments {
             })
             .collect::<Result<Vec<_>, RepoResolveError>>()?;
 
-        let local_files = self.checks_local_files(&cfg).then(|| LocalFiles {
-            templates: cfg.issue_templates().cloned(),
-            docs: cfg.label_docs().to_vec(),
-        });
+        // The gate leaves exactly one target, the configured repository, whose spec it compares.
+        let local_files = match repos.as_slice() {
+            [(_, spec)] if self.checks_local_files(&cfg) => Some(LocalFiles {
+                labels: spec.labels.as_ref().map_or_else(Vec::new, |labels| {
+                    labels
+                        .items
+                        .iter()
+                        .map(|label| label.name.clone())
+                        .collect()
+                }),
+                templates: cfg.issue_templates().cloned(),
+                docs: cfg.label_docs().to_vec(),
+            }),
+            _ => None,
+        };
         Ok(ResolvedRepo {
             target,
             repos,
@@ -381,6 +383,10 @@ mod tests {
         [github.milestones]
         items = [{ title = "v1" }]
 
+        [github.project]
+        number = 4
+        title = "Roadmap"
+
         [github.issue_templates]
         items = [{ file = "feat.yml", label = "type:feat", title = "feat: " }]
     "#;
@@ -397,6 +403,7 @@ mod tests {
     #[test]
     fn local_files_carry_the_declared_templates_and_docs() {
         let files = local_files_of(&["check"], LOCAL_FILES_CONFIG).expect("plain check runs it");
+        assert_eq!(files.labels, ["type:feat"]);
         assert_eq!(files.docs, ["AGENTS.md"]);
         assert_eq!(files.templates.expect("declared").items[0].file, "feat.yml");
 
@@ -421,6 +428,7 @@ mod tests {
             (&["check", "--labels", "--settings"][..], true),
             (&["check", "--settings"][..], false),
             (&["check", "--milestones"][..], false),
+            (&["check", "--project"][..], false),
             (&["check", "--repo", "tools"][..], false),
             (&["check", "--repo", "web"][..], false),
             (&["check", "--org", "other", "--repo", "tools"][..], false),

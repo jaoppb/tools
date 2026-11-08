@@ -44,7 +44,7 @@ pub struct LabelsConfig {
     items: Vec<LabelConfig>,
     /// Docs, relative to the directory holding `tools.toml`, whose label block `tools repo check`
     /// compares with the declared labels. Configuration only: it never reaches the domain.
-    #[serde(default, deserialize_with = "unique")]
+    #[serde(default, deserialize_with = "unique_docs")]
     docs: Vec<String>,
 }
 
@@ -62,8 +62,8 @@ impl LabelsConfig {
     }
 }
 
-/// A list of paths that rejects a path listed twice.
-fn unique<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+/// The `docs` list, rejecting the same string listed twice (paths are compared as written).
+fn unique_docs<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
     let paths = Vec::<String>::deserialize(deserializer)?;
     let mut seen = BTreeSet::new();
     match paths.iter().find(|path| !seen.insert(path.as_str())) {

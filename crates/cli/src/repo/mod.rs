@@ -11,7 +11,7 @@ use tools_core::adapters::github::{GhRepo, Target};
 use tools_core::application::{RepoSync, RepoSyncError};
 
 use crate::Exit;
-use cli::{Arguments, LocalFiles, ResolvedRepo};
+use cli::Arguments;
 
 /// Runs `tools repo check|sync`.
 ///
@@ -21,7 +21,8 @@ use cli::{Arguments, LocalFiles, ResolvedRepo};
 pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
     let resolved = arguments.resolve().map_err(Exit::failed)?;
     if let Some(files) = &resolved.local_files {
-        let problems = file_problems(arguments, &resolved, files);
+        // Reported alone, before any GitHub drift, so the two kinds never share a run.
+        let problems = consistency::check(&arguments.root(), files);
         if !problems.is_empty() {
             return Err(Exit::new(problems.join("\n"), 1));
         }
@@ -67,31 +68,4 @@ pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
     }
 
     Ok(Exit::new(outputs.join("\n"), 0))
-}
-
-/// Problems between `tools.toml` and the local templates and docs, checked from its directory.
-/// They are reported alone, before any GitHub drift, so the two kinds never share a run.
-fn file_problems(
-    arguments: &Arguments,
-    resolved: &ResolvedRepo,
-    files: &LocalFiles,
-) -> Vec<String> {
-    let names: Vec<String> = resolved
-        .repos
-        .first()
-        .and_then(|(_, spec)| spec.labels.as_ref())
-        .map(|labels| {
-            labels
-                .items
-                .iter()
-                .map(|label| label.name.clone())
-                .collect()
-        })
-        .unwrap_or_default();
-    consistency::check(
-        &arguments.root(),
-        &names,
-        files.templates.as_ref(),
-        &files.docs,
-    )
 }

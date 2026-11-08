@@ -141,7 +141,7 @@ merge_commit_message = "PR_BODY"
 ```
 
 ### Labels Schema
-Specifies canonical labels and marks deprecated legacy labels for automated cleanup or migration. Two offline checks of `tools repo check` are opt-in: `docs` lists the files (relative to `tools.toml`) whose `<!-- labels:start -->` … `<!-- labels:end -->` block must list exactly these labels, and a `[github.issue_templates]` table maps each file in `.github/ISSUE_TEMPLATE/` to the label and title prefix it must carry. They run before any GitHub call, only when the check targets the configured repository alone (no `--repo`, `--owner` or `[github] repositories` list) and covers labels (no scope flag, or `--labels`); see `tools repo check --help`:
+Specifies canonical labels and marks deprecated legacy labels for automated cleanup or migration. Two offline checks of `tools repo check` are opt-in: `docs` lists the files (relative to `tools.toml`) whose `<!-- labels:start -->` … `<!-- labels:end -->` block must list exactly these labels, and a `[github.issue_templates]` table maps each file in `.github/ISSUE_TEMPLATE/` to the label and title prefix it must carry. They run before any GitHub call, only when the check targets the configured repository alone (no `--repo`, `--owner` or `[github].repositories` list) and covers labels (no scope flag, or `--labels`); see `tools repo check --help`:
 ```toml
 [github.labels]
 docs = ["AGENTS.md", "CONTRIBUTING.md"]

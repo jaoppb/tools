@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use tools::repo::consistency;
+use tools::repo::consistency::{self, LocalFiles};
 use tools_core::config::load_from_path;
 
 #[test]
@@ -19,8 +19,11 @@ fn this_repository_templates_and_docs_match_tools_toml() {
         .into_iter()
         .map(|label| label.name)
         .collect();
-    assert_eq!(
-        consistency::check(&root, &names, config.issue_templates(), config.label_docs()),
-        Vec::<String>::new()
-    );
+    let files = LocalFiles {
+        labels: names,
+        templates: config.issue_templates().cloned(),
+        docs: config.label_docs().to_vec(),
+    };
+    assert!(!files.docs.is_empty(), "this repository declares its docs");
+    assert_eq!(consistency::check(&root, &files), Vec::<String>::new());
 }
