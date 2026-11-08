@@ -31,9 +31,16 @@ jobs:
           tag="v${version}"
           if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::notice::Version '${version}' is not a plain release version; not tagging"
-          elif git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-            echo "::notice::Tag ${tag} already exists; nothing to release"
           else
+            rc=0
+            git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1 || rc=$?
+            if [ "${rc}" -eq 0 ]; then
+              echo "::notice::Tag ${tag} already exists; nothing to release"
+              exit 0
+            elif [ "${rc}" -ne 2 ]; then
+              echo "::error::Could not query tags on origin (exit ${rc})"
+              exit 1
+            fi
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "${tag}" -m "${tag}"

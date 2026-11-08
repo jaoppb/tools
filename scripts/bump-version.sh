@@ -50,9 +50,7 @@ done
 
 BRANCH="$(git branch --show-current)"
 if [ "$BRANCH" != "main" ] && [ "${ALLOW_NON_MAIN:-0}" != "1" ]; then
-    echo "Error: Version bump must start from the 'main' branch (currently on '$BRANCH')." >&2
-    echo "Set ALLOW_NON_MAIN=1 to override." >&2
-    exit 1
+    die "Version bump must start from the 'main' branch (currently on '$BRANCH'). Set ALLOW_NON_MAIN=1 to override."
 fi
 
 CURRENT_VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
@@ -94,15 +92,28 @@ BODY="Bumps the workspace version from $CURRENT_VERSION to $NEW_VERSION. Merging
 
 Closes #$ISSUE"
 
+command -v gh >/dev/null 2>&1 || die "The GitHub CLI 'gh' is required to open the pull request."
+gh auth status >/dev/null 2>&1 || die "'gh' is not authenticated. Run 'gh auth login' first."
+if [ -n "$(git status --porcelain)" ]; then
+    die "Working tree is not clean. Commit or stash changes before bumping version."
+fi
+
+git fetch --quiet --tags origin main
+if [ "${ALLOW_NON_MAIN:-0}" != "1" ] && [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+    die "Local 'main' is not at origin/main. Update it first (git pull --ff-only)."
+fi
 if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
     die "Tag '$TAG' already exists."
 fi
 if git rev-parse --verify "refs/heads/$BUMP_BRANCH" >/dev/null 2>&1; then
     die "Branch '$BUMP_BRANCH' already exists locally."
 fi
+if git ls-remote --exit-code --heads origin "$BUMP_BRANCH" >/dev/null 2>&1; then
+    die "Branch '$BUMP_BRANCH' already exists on origin."
+fi
 
 if [ "$DRY_RUN" = "1" ]; then
-    echo "Dry run: nothing is changed."
+    echo "Dry run: all preconditions pass and nothing is changed."
     echo "Version: $CURRENT_VERSION -> $NEW_VERSION (tag $TAG is created after the PR merges)"
     echo "Branch:  $BUMP_BRANCH"
     echo "Commit:  $TITLE"
@@ -110,21 +121,16 @@ if [ "$DRY_RUN" = "1" ]; then
     exit 0
 fi
 
-command -v gh >/dev/null 2>&1 || die "The GitHub CLI 'gh' is required to open the pull request."
-gh auth status >/dev/null 2>&1 || die "'gh' is not authenticated. Run 'gh auth login' first."
-if git ls-remote --exit-code --heads origin "$BUMP_BRANCH" >/dev/null 2>&1; then
-    die "Branch '$BUMP_BRANCH' already exists on origin."
-fi
-if [ -n "$(git status --porcelain)" ]; then
-    die "Working tree is not clean. Commit or stash changes before bumping version."
-fi
-
 echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION"
 
-# Rollback changes if a step before the commit fails
+# Roll back to the starting branch with a clean tree if a step before the push fails
 cleanup() {
     rm -f Cargo.toml.tmp
     git restore --staged --worktree . 2>/dev/null || true
+    if [ "$(git branch --show-current)" = "$BUMP_BRANCH" ]; then
+        git switch --quiet "$BRANCH" 2>/dev/null || true
+        git branch -D "$BUMP_BRANCH" >/dev/null 2>&1 || true
+    fi
 }
 trap cleanup ERR
 
@@ -144,7 +150,9 @@ git commit -m "$TITLE" -m "Closes #$ISSUE"
 
 trap - ERR
 
-git push -u origin "$BUMP_BRANCH"
-gh pr create --base main --head "$BUMP_BRANCH" --title "$TITLE" --body "$BODY"
+if ! git push -u origin "$BUMP_BRANCH" || ! gh pr create --base main --head "$BUMP_BRANCH" --title "$TITLE" --body "$BODY"; then
+    echo "Error: push or PR creation failed. Fix the cause, then either retry 'git push -u origin $BUMP_BRANCH' and 'gh pr create', or discard with: git switch $BRANCH && git branch -D $BUMP_BRANCH && git push origin --delete $BUMP_BRANCH" >&2
+    exit 1
+fi
 
 echo "Opened the bump PR on $BUMP_BRANCH. Merging it tags $TAG and publishes the release."
