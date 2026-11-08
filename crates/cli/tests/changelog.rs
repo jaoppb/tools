@@ -187,7 +187,7 @@ fn run_diffs_the_branch_against_its_merge_base() {
     git(&dir, &["add", "."]);
     git(&dir, &["commit", "--quiet", "-m", "base"]);
     git(&dir, &["switch", "--quiet", "-c", "feature"]);
-    std::fs::write(dir.join("crates/a.rs"), "x").expect("write");
+    std::fs::write(dir.join("crates/é.rs"), "x").expect("write");
     git(&dir, &["add", "."]);
     git(&dir, &["commit", "--quiet", "-m", "code"]);
 

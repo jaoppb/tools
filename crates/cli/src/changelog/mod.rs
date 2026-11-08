@@ -64,7 +64,7 @@ pub fn verdict(policy: &Policy<'_>, changed: &[String]) -> Exit {
         return Exit::new("no watched path changed: no changelog entry needed", 0);
     }
     if changed.iter().any(|path| path == changelog) {
-        return Exit::new("CHANGELOG.md is part of the change", 0);
+        return Exit::new(format!("{changelog} is part of the change"), 0);
     }
     if labels.iter().any(|label| label == skip_label) {
         return Exit::new(
@@ -104,7 +104,7 @@ fn changed_files(base: &str) -> Result<Vec<String>, Exit> {
         return Err(Exit::failed(format!("`{base}` is not a git revision")));
     }
     let output = Command::new("git")
-        .args(["diff", "--name-only", &format!("{base}...HEAD")])
+        .args(["diff", "--name-only", "-z", &format!("{base}...HEAD")])
         .output()
         .map_err(|error| Exit::failed(format!("failed to run git: {error}")))?;
     if !output.status.success() {
@@ -113,8 +113,10 @@ fn changed_files(base: &str) -> Result<Vec<String>, Exit> {
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
+    // NUL-separated, so git does not quote a path with non-ASCII characters.
     Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
+        .split('\0')
+        .filter(|path| !path.is_empty())
         .map(str::to_owned)
         .collect())
 }
