@@ -43,14 +43,13 @@ This repository enforces strict issue hygiene and commit conventions as document
 
 ### Initial Setup
 
-After cloning the repository, enter the devShell and configure Git hooks:
+After cloning the repository, enter the devShell with `nix develop` (or `direnv allow` once), then configure Git hooks from inside it:
 
 ```bash
-nix develop        # or `direnv allow` once
 just setup
 ```
 
-To run one recipe without entering the devShell: `nix develop -c just check`.
+To run one recipe without entering the devShell, prefix it: `nix develop -c just setup`, `nix develop -c just check`.
 
 ### Git Hooks
 

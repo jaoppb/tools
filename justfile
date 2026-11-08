@@ -1,10 +1,10 @@
 # Tools monorepo task recipes
 
 # Recipes run only inside the flake devShell (`nix develop`, or direnv with `.envrc`), so local runs
-# and CI use the same toolchain, pinned by flake.lock. just evaluates every assignment before running
-# any recipe, so this guard covers every recipe, new ones included; `just --list` evaluates nothing
-# and still works anywhere. flake.nix sets TOOLS_DEVSHELL.
-_devshell := if env("TOOLS_DEVSHELL", "") == "" { error("run just inside the flake devShell: 'nix develop -c just <recipe>', or enter it with 'nix develop' or 'direnv allow'") } else { "" }
+# and CI use the same toolchain, pinned by flake.lock. `eager` makes just evaluate this guard before
+# running any recipe, even under `set lazy`, so it covers every recipe, new ones included;
+# `just --list` evaluates nothing and still works anywhere. flake.nix sets TOOLS_DEVSHELL.
+eager _devshell := if env("TOOLS_DEVSHELL", "") == "" { error("run just inside the flake devShell: 'nix develop -c just <recipe>', or enter it with 'nix develop' or 'direnv allow'") } else { "" }
 
 default:
     @just --list

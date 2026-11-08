@@ -200,12 +200,11 @@ area_prefix = ["area:", "domain:"]   # a list: any prefix counts, ignoring case 
    git clone https://github.com/jaoppb/tools.git
    cd tools
    ```
-2. Enter the devShell (`nix develop`, or `direnv allow` once), then initialize the Git hooks:
+2. Enter the devShell with `nix develop` (or `direnv allow` once), then initialize the Git hooks from inside it:
    ```bash
-   nix develop
    just setup
    ```
-   This configures Lefthook pre-commit (formatting and clippy lints) and pre-push hooks (workspace tests and issue checks). To run one recipe without entering the devShell, prefix it: `nix develop -c just check`.
+   This configures Lefthook pre-commit (formatting and clippy lints) and pre-push hooks (workspace tests and issue checks). To run one recipe without entering the devShell, prefix it: `nix develop -c just setup`, `nix develop -c just check`.
 
 ### Development Recipes
 
