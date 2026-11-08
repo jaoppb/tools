@@ -85,6 +85,10 @@ case "$TARGET" in
         ;;
 esac
 
+if [ "$NEW_VERSION" = "$CURRENT_VERSION" ] || [ "$(printf '%s\n%s\n' "$CURRENT_VERSION" "$NEW_VERSION" | sort -V | tail -n1)" != "$NEW_VERSION" ]; then
+    die "New version $NEW_VERSION must be greater than the current version $CURRENT_VERSION."
+fi
+
 TAG="v$NEW_VERSION"
 BUMP_BRANCH="chore/$ISSUE"
 TITLE="chore: bump version to $NEW_VERSION (#$ISSUE)"
@@ -136,6 +140,8 @@ trap cleanup ERR
 
 # Portable in-place replacement (works across GNU and BSD/macOS sed)
 sed "/\[workspace\.package\]/,/^\[/ s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
+
+git diff --quiet Cargo.toml && die "Cargo.toml has no [workspace.package] version line to update."
 
 cargo check --workspace
 

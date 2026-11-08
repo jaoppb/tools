@@ -145,7 +145,7 @@ Releases never touch `main` directly:
 2. From an up-to-date `main`, run `just bump-version <major|minor|patch|X.Y.Z> --issue <n>` (add `--dry-run` to preview the version, branch, and PR text without changing anything). It needs an authenticated `gh`, creates `chore/<n>`, commits `chore: bump version to X.Y.Z (#n)`, pushes the branch, and opens the PR.
 3. Merge the PR with a merge commit. The `Tag Release` workflow then tags the merge commit `vX.Y.Z` and calls the `Release` workflow, which validates the tag against the `Cargo.toml` version and publishes the GitHub Release with binaries. Pushing a `vX.Y.Z` tag by hand still triggers `Release` directly.
 
-If `Release` fails after the tag exists, use "Re-run failed jobs" on the same `Tag Release` run (a new run sees the tag and does nothing). If the `tag` job itself failed, re-run it before any other change to the root `Cargo.toml` lands on `main`, or the tag would land on that later commit.
+If `Release` fails after the tag exists, use "Re-run failed jobs" on the same `Tag Release` run (a new run sees the tag and does nothing). If the `tag` job itself failed, re-run it: the tag job tags the current `Cargo.toml` version whenever its tag is missing, so otherwise the next unrelated change to the root `Cargo.toml` on `main` would tag and release that commit under the bumped version.
 
 ---
 
