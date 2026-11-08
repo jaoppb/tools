@@ -137,6 +137,8 @@ Merge rules: `items` override by key (`name` for labels, `title` for milestones)
 
 ## 3. Provisioning Repositories (`tools repo`)
 
+The `just` recipes below run from a checkout of this repository inside its flake devShell (`nix develop`, or `nix develop -c just <recipe>` for one command); outside it they fail. The installed `tools` binary and `nix run github:jaoppb/tools` need no devShell.
+
 ### Step 3.1: Check Configuration Drift
 Run an audit across all configured repositories without modifying remote state:
 

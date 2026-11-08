@@ -14,32 +14,37 @@ permissions:
   contents: read
 
 jobs:
+  # The `just` jobs and the flake check run in the flake devShell (`.github/actions/nix-devshell`),
+  # so `just check` uses the toolchain pinned by flake.lock, as it does locally. Each job needs
+  # `actions: write` because that action purges superseded Nix store caches. rust-cache keys on
+  # the runner's rustc, not the devShell's, so its `key` adds flake.lock, which pins the one used.
   cargo:
     name: Workspace Check & Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - name: Set up the flake devShell
+        uses: ./.github/actions/nix-devshell
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
-
-      - name: Install Just
-        uses: extractions/setup-just@v2
+        with:
+          key: ${{ hashFiles('flake.lock') }}
 
       - name: Run workspace checks, lints, and tests
-        run: just check
+        run: nix develop --command just check
 
   issues-check:
     name: Audit Issue Workflow Rules
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: write
       issues: read
       pull-requests: read
     env:
@@ -49,23 +54,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Set up the flake devShell
+        uses: ./.github/actions/nix-devshell
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
-
-      - name: Install Just
-        uses: extractions/setup-just@v2
+        with:
+          key: ${{ hashFiles('flake.lock') }}
 
       - name: Run issues-check
-        run: just issues-check
+        run: nix develop --command just issues-check
 
   repo-check:
     name: Audit Repository Configuration
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: write
       issues: read
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -74,33 +79,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Set up the flake devShell
+        uses: ./.github/actions/nix-devshell
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
-
-      - name: Install Just
-        uses: extractions/setup-just@v2
+        with:
+          key: ${{ hashFiles('flake.lock') }}
 
       - name: Run repo-check
-        run: just repo-check
+        run: nix develop --command just repo-check
 
   nix:
     name: Flake Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v30
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up the flake devShell
+        uses: ./.github/actions/nix-devshell
 
       - name: Run nix flake check
         run: nix flake check
 
+  # Tests the consumer path of the root action.yml, which must not need Nix: a plain rustup
+  # toolchain on the runner, as a consumer would have.
   action-test:
     name: Test Composite Action
     runs-on: ubuntu-latest

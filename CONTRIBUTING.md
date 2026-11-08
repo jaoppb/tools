@@ -38,25 +38,26 @@ This repository enforces strict issue hygiene and commit conventions as document
 
 ### Prerequisites
 
-- **Rust:** Rust toolchain supporting edition 2024.
-- **[Just](https://github.com/casey/just):** Command runner for project tasks.
-- **[Lefthook](https://github.com/evilmartians/lefthook):** Git hooks manager.
-- **[GitHub CLI (`gh`)](https://cli.github.com/):** For CLI operations requiring GitHub authentication.
-- *(Optional)* **[Nix](https://nixos.org/):** A reproducible environment is available via `nix develop` (using `flake.nix`).
+- **[Nix](https://nixos.org/) with flakes enabled (required):** the `flake.nix` devShell provides the Rust toolchain, `just`, Lefthook and the GitHub CLI (`gh`) at the versions pinned by `flake.lock`. CI runs every `just` job in the same devShell, so `just check` means the same thing locally and in CI. Every `just` recipe fails outside it; only `just --list` works anywhere.
+- *(Optional)* **[direnv](https://direnv.net/):** enters the devShell automatically through `.envrc` (`direnv allow`).
 
 ### Initial Setup
 
-After cloning the repository, configure Git hooks:
+After cloning the repository, enter the devShell with `nix develop` (or `direnv allow` once), then configure Git hooks from inside it:
 
 ```bash
 just setup
 ```
 
+To run one recipe without entering the devShell, prefix it: `nix develop -c just setup`, `nix develop -c just check`.
+
 ### Git Hooks
 
 Lefthook automates code quality checks:
-- **`pre-commit`:** Runs `cargo fmt --all -- --check` and `cargo clippy --workspace -- -D warnings` whenever Rust or Cargo files are modified.
+- **`pre-commit`:** Runs `just fmt-check` and `just lint` (`cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`) whenever Rust or Cargo files are modified.
 - **`pre-push`:** Executes full workspace verification (`just check`) and the issue audit (`just issues-check`).
+
+The hooks call `just`, so they run only inside the devShell: commit and push from a shell where it is entered (or direnv is allowed). Outside it they fail with the command to use.
 
 Local overrides can be added to `lefthook-local.yml` (ignored by git).
 
