@@ -21,6 +21,7 @@ This repository enforces strict issue hygiene and commit conventions as document
   - [Branch Naming](#branch-naming)
   - [Commit Messages](#commit-messages)
 - [Pull Requests & Merge Policy](#pull-requests--merge-policy)
+- [Releasing](#releasing)
 - [Workspace Verification & Recipes](#workspace-verification--recipes)
 
 ---
@@ -133,6 +134,18 @@ type: subject (#issue)
 - **PR Titles:** Follow the same format as commit titles (`type: subject (#issue)`).
 - **PR Description:** Include `Closes #issue` to automatically close the associated issue upon merge.
 - **CI Gates:** All PRs must pass `cargo fmt`, `cargo clippy`, `cargo test`, and `just arch-check`.
+
+---
+
+## Releasing
+
+Releases never touch `main` directly:
+
+1. File a `type:chore` issue for the bump (template, area, milestone).
+2. From an up-to-date `main`, run `just bump-version <major|minor|patch|X.Y.Z> --issue <n>` (add `--dry-run` to preview the version, branch, and PR text without changing anything). It needs an authenticated `gh`, creates `chore/<n>`, commits `chore: bump version to X.Y.Z (#n)`, pushes the branch, and opens the PR.
+3. Merge the PR with a merge commit. The `Tag Release` workflow then tags the merge commit `vX.Y.Z` and calls the `Release` workflow, which validates the tag against the `Cargo.toml` version and publishes the GitHub Release with binaries. Pushing a `vX.Y.Z` tag by hand still triggers `Release` directly.
+
+If `Release` fails after the tag exists, use "Re-run failed jobs" on the same `Tag Release` run (a new run sees the tag and does nothing). If the `tag` job itself failed, re-run it: the tag job tags the current `Cargo.toml` version whenever its tag is missing, so otherwise the next unrelated change to the root `Cargo.toml` on `main` would tag and release that commit under the bumped version.
 
 ---
 

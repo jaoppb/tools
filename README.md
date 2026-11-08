@@ -232,7 +232,7 @@ Workspace recipes are managed with `just`:
 | `just issues-migrate` | Rewrites legacy labels to the configured taxonomy (writes; `just issues-check` previews) | `just issues-migrate` |
 | `just project-check` | Prints the planned Project Status moves, writes nothing | `just project-check` |
 | `just project-sync` | Writes the planned Project Status moves | `just project-sync` |
-| `just bump-version` | Bumps workspace version, updates `Cargo.lock`, tags, and commits | `just bump-version patch` |
+| `just bump-version` | Opens a PR that bumps the workspace version and `Cargo.lock` (see [Releasing](CONTRIBUTING.md#releasing)); `--dry-run` previews | `just bump-version patch --issue 90` |
 
 ---
 

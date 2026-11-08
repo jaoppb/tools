@@ -1,23 +1,61 @@
 #!/usr/bin/env bash
+# Open a pull request that bumps the workspace version.
+#
+# Usage: bump-version.sh <major|minor|patch|X.Y.Z> --issue <n> [--dry-run]
+#
+# Never pushes to main and never tags: the merged bump is tagged and released by
+# .github/workflows/tag-release.yml.
 set -euo pipefail
 
-TARGET="${1:-}"
-if [ -z "$TARGET" ]; then
-    echo "Usage: $0 <major|minor|patch|X.Y.Z>" >&2
+usage() {
+    echo "Usage: $0 <major|minor|patch|X.Y.Z> --issue <n> [--dry-run]" >&2
     exit 1
-fi
+}
+
+die() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
+TARGET=""
+ISSUE=""
+DRY_RUN=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --issue)
+            [ $# -ge 2 ] || usage
+            ISSUE="$2"
+            shift 2
+            ;;
+        --issue=*)
+            ISSUE="${1#--issue=}"
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=1
+            shift
+            ;;
+        -*)
+            usage
+            ;;
+        *)
+            [ -z "$TARGET" ] || usage
+            TARGET="$1"
+            shift
+            ;;
+    esac
+done
+[ -n "$TARGET" ] || usage
+[[ "$ISSUE" =~ ^[0-9]+$ ]] || die "--issue <n> is required and must be an issue number (file the bump issue first)."
 
 BRANCH="$(git branch --show-current)"
 if [ "$BRANCH" != "main" ] && [ "${ALLOW_NON_MAIN:-0}" != "1" ]; then
-    echo "Error: Version bump must be performed on the 'main' branch (currently on '$BRANCH')." >&2
-    echo "Set ALLOW_NON_MAIN=1 to override." >&2
-    exit 1
+    die "Version bump must start from the 'main' branch (currently on '$BRANCH'). Set ALLOW_NON_MAIN=1 to override."
 fi
 
 CURRENT_VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
 if [ -z "$CURRENT_VERSION" ] || [ "$CURRENT_VERSION" = "null" ]; then
-    echo "Error: Could not determine current version from Cargo.toml via cargo metadata." >&2
-    exit 1
+    die "Could not determine current version from Cargo.toml via cargo metadata."
 fi
 
 if [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(.*)$ ]]; then
@@ -25,8 +63,7 @@ if [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(.*)$ ]]; then
     MINOR="${BASH_REMATCH[2]}"
     PATCH="${BASH_REMATCH[3]}"
 else
-    echo "Error: Current version '$CURRENT_VERSION' does not follow semver format (X.Y.Z)." >&2
-    exit 1
+    die "Current version '$CURRENT_VERSION' does not follow semver format (X.Y.Z)."
 fi
 
 case "$TARGET" in
@@ -43,42 +80,93 @@ case "$TARGET" in
         if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             NEW_VERSION="$TARGET"
         else
-            echo "Error: Invalid target '$TARGET'. Expected 'major', 'minor', 'patch', or a semver string in format X.Y.Z (e.g., 1.2.3)." >&2
-            exit 1
+            die "Invalid target '$TARGET'. Expected 'major', 'minor', 'patch', or a semver string in format X.Y.Z (e.g., 1.2.3)."
         fi
         ;;
 esac
 
-TAG="v$NEW_VERSION"
-if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
-    echo "Error: Tag '$TAG' already exists." >&2
-    exit 1
+[[ "$NEW_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || die "New version '$NEW_VERSION' is not X.Y.Z."
+if (( BASH_REMATCH[1] < MAJOR
+    || (BASH_REMATCH[1] == MAJOR && BASH_REMATCH[2] < MINOR)
+    || (BASH_REMATCH[1] == MAJOR && BASH_REMATCH[2] == MINOR && BASH_REMATCH[3] <= PATCH) )); then
+    die "New version $NEW_VERSION must be greater than the current version $CURRENT_VERSION."
 fi
 
+TAG="v$NEW_VERSION"
+BUMP_BRANCH="chore/$ISSUE"
+TITLE="chore: bump version to $NEW_VERSION (#$ISSUE)"
+BODY="Bumps the workspace version from $CURRENT_VERSION to $NEW_VERSION. Merging this PR tags $TAG and publishes the release.
+
+Closes #$ISSUE"
+
+command -v gh >/dev/null 2>&1 || die "The GitHub CLI 'gh' is required to open the pull request."
+gh auth status >/dev/null 2>&1 || die "'gh' is not authenticated. Run 'gh auth login' first."
 if [ -n "$(git status --porcelain)" ]; then
-    echo "Error: Working tree is not clean. Commit or stash changes before bumping version." >&2
-    exit 1
+    die "Working tree is not clean. Commit or stash changes before bumping version."
+fi
+
+git fetch --quiet --tags origin main
+if [ "${ALLOW_NON_MAIN:-0}" != "1" ] && [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+    die "Local 'main' is not at origin/main. Update it first (git pull --ff-only)."
+fi
+if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+    die "Tag '$TAG' already exists."
+fi
+if git rev-parse --verify "refs/heads/$BUMP_BRANCH" >/dev/null 2>&1; then
+    die "Branch '$BUMP_BRANCH' already exists locally."
+fi
+if git ls-remote --exit-code --heads origin "$BUMP_BRANCH" >/dev/null 2>&1; then
+    die "Branch '$BUMP_BRANCH' already exists on origin."
+fi
+
+if [ "$DRY_RUN" = "1" ]; then
+    echo "Dry run: all preconditions pass (cargo check is not run) and nothing is changed."
+    echo "Version: $CURRENT_VERSION -> $NEW_VERSION (tag $TAG is created after the PR merges)"
+    echo "Branch:  $BUMP_BRANCH"
+    echo "Commit:  $TITLE"
+    printf 'PR title: %s\nPR body:\n%s\n' "$TITLE" "$BODY"
+    exit 0
 fi
 
 echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION"
 
-# Rollback changes if cargo check fails
+START_SHA="$(git rev-parse HEAD)"
+# Roll back to the starting branch with a clean tree if a step before the push fails
 cleanup() {
     rm -f Cargo.toml.tmp
-    git restore Cargo.toml Cargo.lock 2>/dev/null || true
+    git restore --staged --worktree . 2>/dev/null || true
+    if [ "$(git branch --show-current)" = "$BUMP_BRANCH" ]; then
+        if [ -n "$BRANCH" ]; then
+            git switch --quiet "$BRANCH" 2>/dev/null || true
+        else
+            git switch --quiet --detach "$START_SHA" 2>/dev/null || true
+        fi
+        git branch -D "$BUMP_BRANCH" >/dev/null 2>&1 || true
+    fi
 }
 trap cleanup ERR
 
 # Portable in-place replacement (works across GNU and BSD/macOS sed)
 sed "/\[workspace\.package\]/,/^\[/ s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
 
+git diff --quiet Cargo.toml && die "Cargo.toml has no [workspace.package] version line to update."
+
 cargo check --workspace
+
+# Release-file hook: steps that edit other tracked files for the release (for
+# example rotating the CHANGELOG "Unreleased" section) go here and add their
+# files to RELEASE_FILES.
+RELEASE_FILES=(Cargo.toml Cargo.lock)
+
+git switch -c "$BUMP_BRANCH"
+git add "${RELEASE_FILES[@]}"
+git commit -m "$TITLE" -m "Closes #$ISSUE"
 
 trap - ERR
 
-git add Cargo.toml Cargo.lock
-git commit -m "chore: bump version to $NEW_VERSION"
-git tag -a "$TAG" -m "$TAG"
-git push origin HEAD --follow-tags
+if ! git push -u origin "$BUMP_BRANCH" || ! gh pr create --base main --head "$BUMP_BRANCH" --title "$TITLE" --body "$BODY"; then
+    echo "Error: push or PR creation failed. Fix the cause, then either retry 'git push -u origin $BUMP_BRANCH' and 'gh pr create', or discard with: git switch $BRANCH && git branch -D $BUMP_BRANCH && git push origin --delete $BUMP_BRANCH" >&2
+    exit 1
+fi
 
-echo "Successfully bumped version to $NEW_VERSION and pushed commit + tag $TAG"
+echo "Opened the bump PR on $BUMP_BRANCH. Merging it tags $TAG and publishes the release."

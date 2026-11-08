@@ -4,9 +4,19 @@ on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+  # Called by tag-release.yml: tags pushed with GITHUB_TOKEN do not trigger the push event.
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z) to validate, release and build
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   validate-version:
@@ -15,10 +25,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
 
       - name: Validate tag matches Cargo.toml version
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Tag '${TAG}' does not match required format 'v<major>.<minor>.<patch>' (e.g. v0.1.0)"
@@ -39,10 +51,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
 
       - name: Create GitHub Release
         uses: taiki-e/create-gh-release-action@v1
         with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
   upload-assets:
@@ -66,10 +81,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
 
       - name: Build & Upload tools
         uses: taiki-e/upload-rust-binary-action@v1
         with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           bin: tools
           target: ${{ matrix.target }}
           archive: $bin-$tag-$target

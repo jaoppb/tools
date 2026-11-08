@@ -69,6 +69,6 @@ project-check:
 project-sync:
     cargo run -q -p tools -- project sync
 
-# Bump workspace package version (major, minor, patch, or X.Y.Z), refresh Cargo.lock, commit, tag, and push
-bump-version target:
-    ./scripts/bump-version.sh {{target}}
+# Open a PR bumping the workspace version (major, minor, patch, or X.Y.Z): `just bump-version minor --issue 90 [--dry-run]`
+bump-version target *args:
+    ./scripts/bump-version.sh {{target}} {{args}}
