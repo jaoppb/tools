@@ -97,7 +97,6 @@ tools repo sync --settings       # or --labels, --milestones, --project
 ```bash
 tools issues check               # milestones, taxonomy, blockers; also previews pending label migrations (exit 1 if any)
 tools issues migrate             # rewrite legacy labels (e.g. `bug`, `enhancement`) to the configured taxonomy
-tools issues migrate --default-area core --default-type chore
 ```
 
 **`tools project`**: GitHub Projects V2 board Status synchronization from issue states, blocked-by relationships, and native sub-issues.
@@ -219,7 +218,7 @@ Workspace recipes are managed with `just`:
 | `just repo-bootstrap` | Reconciles repository configuration (alias for `repo-sync`) | `just repo-bootstrap` |
 | `just org-sync` | Synchronizes configuration across an organization | `just org-sync org="my-org"` |
 | **Migration & Releases** | | |
-| `just issues-migrate` | Rewrites legacy labels to the configured taxonomy (writes; `just issues-check` previews) | `just issues-migrate --default-area core --default-type chore` |
+| `just issues-migrate` | Rewrites legacy labels to the configured taxonomy (writes; `just issues-check` previews) | `just issues-migrate` |
 | `just project-check` | Prints the planned Project Status moves, writes nothing | `just project-check` |
 | `just project-sync` | Writes the planned Project Status moves | `just project-sync` |
 | `just bump-version` | Bumps workspace version, updates `Cargo.lock`, tags, and commits | `just bump-version patch` |

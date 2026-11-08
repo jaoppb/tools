@@ -66,25 +66,8 @@ fn accepts_rule_flags_and_overrides() {
 }
 
 #[test]
-fn accepts_migration_flags() {
-    let migrate = parse(&["migrate"]).expect("migrate parses");
-    assert_eq!(migrate.default_area(), None);
-    assert_eq!(migrate.default_type(), None);
-
-    let defaults = parse(&[
-        "migrate",
-        "--default-area",
-        "core",
-        "--default-type",
-        "chore",
-    ])
-    .expect("defaults parse");
-    assert_eq!(defaults.default_area(), Some("core"));
-    assert_eq!(defaults.default_type(), Some("type:chore"));
-
-    let prefixed =
-        parse(&["migrate", "--default-type", "type:feat"]).expect("prefixed type parses");
-    assert_eq!(prefixed.default_type(), Some("type:feat"));
+fn accepts_migrate_and_org_flags() {
+    parse(&["migrate"]).expect("migrate parses");
 
     let org = parse(&["--org", "gatuno-manga", "--repo", "api", "check"]).expect("org parses");
     let resolved = org.resolve().expect("resolves org target");
@@ -92,26 +75,20 @@ fn accepts_migration_flags() {
 }
 
 #[test]
-fn apply_is_gone_and_defaults_belong_to_migrate() {
-    for words in [
-        &["migrate", "--apply"][..],
-        &["check", "--default-area", "core"],
-        &["check", "--default-type", "chore"],
-        &["migrate", "--no-parent"],
-    ] {
+fn apply_is_gone_and_migrate_takes_no_audit_flags() {
+    for words in [&["migrate", "--apply"][..], &["migrate", "--no-parent"]] {
         let failure = parse(words).expect_err("flag does not belong to the verb");
         assert_eq!(failure.exit_code(), 2);
     }
 }
 
 #[test]
-fn rejects_invalid_default_type() {
-    let failure =
-        parse(&["migrate", "--default-type", "invalid"]).expect_err("invalid default type fails");
-    assert_eq!(failure.exit_code(), 2);
-    assert!(
-        failure
-            .to_string()
-            .contains("invalid default type 'invalid'")
-    );
+fn default_label_flags_are_gone() {
+    for words in [
+        &["migrate", "--default-area", "core"][..],
+        &["migrate", "--default-type", "chore"],
+    ] {
+        let failure = parse(words).expect_err("the default label flags no longer exist");
+        assert_eq!(failure.exit_code(), 2);
+    }
 }

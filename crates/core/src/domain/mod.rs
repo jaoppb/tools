@@ -17,8 +17,8 @@ pub use crate::domain::audit::{
 pub use crate::domain::card::{Card, Cards, Standing};
 pub use crate::domain::facts::{Effort, Facts, Label, Labels, Milestone, Missing, Priority};
 pub use crate::domain::issue::{
-    CANONICAL_TYPES, IssueMigrationAction, IssueMigrationPlan, IssueNumber, Lifecycle, Role,
-    StatusName, Statuses, StatusesError, UnknownStatus, canonical_type_label, is_canonical_type,
+    IssueMigrationAction, IssueMigrationPlan, IssueNumber, Lifecycle, Role, StatusName, Statuses,
+    StatusesError, UnknownStatus,
 };
 pub use crate::domain::links::{Blocker, Blockers, Links, Parent};
 pub use crate::domain::repo::{

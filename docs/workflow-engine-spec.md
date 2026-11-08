@@ -19,7 +19,7 @@ Status: spike #54 done; the engine core, `[workflow]` config and presets landed 
 | Release = `v<N>.<N>.<N>` regardless of `milestone_format` | `domain/audit/release/mod.rs:5-41`, `rules/release/mod.rs` |
 | Violation text (`v0.1.0`, `type:`, `epic`, "AGENTS.md section 10") | `domain/audit/violation/mod.rs:143-221` |
 | Legacy label migrations (bug→type:fix, …) always merged | `domain/repo/label.rs:46-66` |
-| `CANONICAL_TYPES` for `--default-type` | `domain/issue/mod.rs:17-27`, `issues-check/src/cli.rs:267` |
+| ~~`CANONICAL_TYPES` for `--default-type`~~ flags removed in #62 | `domain/issue/mod.rs`, `crates/cli/src/issues/cli.rs` |
 | ~~`Target::cosmo()` (`jaoppb/cosmo`, project 4)~~ done in #60 | `adapters/github/target/mod.rs:67-71` + behaviour tests |
 | Dead `references`/`text` flags, unused `domain/audit/text` | `config/mod.rs:221-228` |
 | "Cosmo" wording | `adapters/github/project/mod.rs:1`, `query/item_of_issue.graphql:1` |
@@ -226,7 +226,7 @@ Spike / engine (`area:core`, `v0.3.0` unless noted):
 Independent of the engine:
 6. #60 chore: remove `Target::cosmo()`, "Cosmo" wording, dead `references`/`text` flags and `domain/audit/text`.
 7. #61 refactor: label `default_migrations` becomes config only.
-8. #62 refactor: `--default-type` validates against `[github.labels.items]`, not `CANONICAL_TYPES`; configured prefixes.
+8. #62 refactor: `--default-type`/`--default-area` removed from `issues migrate` (the workflow rules cannot add labels); `CANONICAL_TYPES` gone.
 9. #63 feat: action.yml `config-path` input, project-sync step, `REPO` input.
 10. #64 chore: single source of truth for issue templates and docs label/milestone lists against `tools.toml`.
 11. ~~#65~~ fix, done: story cycle overflows the stack in `domain/target` (the path was deleted by #57; the engine freezes cycles).

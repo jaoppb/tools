@@ -24,14 +24,7 @@ pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
     if arguments.is_migrate() {
         let gh_issues = GhIssues::new(resolved.target.clone());
         let tree = gh_issues.issues().map_err(Exit::failed)?;
-        let outcome = migrate(
-            &gh_issues,
-            &resolved,
-            &tree,
-            IssueMigrationMode::Apply,
-            arguments.default_area(),
-            arguments.default_type(),
-        )?;
+        let outcome = migrate(&gh_issues, &resolved, &tree, IssueMigrationMode::Apply)?;
         return Ok(Exit::new(outcome.to_string(), 0));
     }
     check(resolved)
@@ -50,14 +43,7 @@ impl RepositoryIssues for Fetched {
 fn check(resolved: ResolvedCheck) -> Result<Exit, Exit> {
     let gh_issues = GhIssues::new(resolved.target.clone());
     let tree = gh_issues.issues().map_err(Exit::failed)?;
-    let pending = migrate(
-        &gh_issues,
-        &resolved,
-        &tree,
-        IssueMigrationMode::Preview,
-        None,
-        None,
-    )?;
+    let pending = migrate(&gh_issues, &resolved, &tree, IssueMigrationMode::Preview)?;
     let project = resolved
         .target
         .project()
@@ -79,15 +65,8 @@ fn migrate(
     resolved: &ResolvedCheck,
     tree: &IssueTree,
     mode: IssueMigrationMode,
-    default_area: Option<&str>,
-    default_type: Option<&str>,
 ) -> Result<IssueMigrationOutcome, Exit> {
-    IssueMigrator::new(
-        gh_issues,
-        resolved.migrations.clone(),
-        default_area.map(str::to_owned),
-        default_type.map(str::to_owned),
-    )
-    .run(tree, mode)
-    .map_err(Exit::failed)
+    IssueMigrator::new(gh_issues, resolved.migrations.clone())
+        .run(tree, mode)
+        .map_err(Exit::failed)
 }
