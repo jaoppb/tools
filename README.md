@@ -213,9 +213,10 @@ Workspace recipes are managed with `just`:
 | Recipe | Description | Invocation |
 |--------|-------------|------------|
 | **Validation & Checks** | | |
-| `just check` | Runs formatting checks, workspace type-check, Clippy lints, and unit tests | `just check` |
+| `just check` | Runs formatting checks, workspace type-check, Clippy lints, unit tests, the feature builds, and `workflows-check` | `just check` |
 | `just fmt-check` | Checks Rust formatting; part of `just check` and the pre-commit hook | `just fmt-check` |
 | `just lint` | Runs Clippy on the workspace, denying warnings; part of `just check` and the pre-commit hook | `just lint` |
+| `just workflows-check` | Lints `.github/workflows` with `actionlint` and checks and tests `scripts/release-tag.sh`; part of `just check` | `just workflows-check` |
 | `just arch-check` | Validates architecture boundary rules via `arch-lint` | `just arch-check` |
 | `just check-features` | Builds each feature group (`issues`, `repo`, `project`) alone, and none, with Clippy; part of `just check` | `just check-features` |
 | `just issues-check` | Audits open GitHub issues against workflow rules in `tools.toml` | `just issues-check` |

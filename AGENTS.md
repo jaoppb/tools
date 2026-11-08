@@ -41,6 +41,7 @@ This repository is a monorepo for developer tools, repository management utiliti
 | Repository configuration (settings, labels, milestones) | `just repo-check` & PR review | Enforced |
 | Workspace compilation, lints, tests | `just check` (also via Lefthook `pre-push`) | Enforced |
 | Partial builds: each of the `issues`, `repo`, `project` features compiles alone and with none | `just check-features` (part of `just check` and CI) | Enforced |
+| Workflow lint (`actionlint`) and the release tagging script's tests | `just workflows-check` (part of `just check` and CI) | Enforced |
 | Pre-commit formatting & lint validation | Lefthook `pre-commit` (`just setup`) | Enforced |
 
 ## 2. Developer setup & Git hooks

@@ -20,6 +20,13 @@ check:
     just lint
     cargo test --workspace
     just check-features
+    just workflows-check
+
+# Lint the GitHub workflows and test the release tagging script
+workflows-check:
+    actionlint
+    shellcheck scripts/release-tag.sh scripts/tests/release-tag.test.sh
+    scripts/tests/release-tag.test.sh
 
 # Check Rust formatting
 fmt-check:
