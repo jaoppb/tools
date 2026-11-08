@@ -270,6 +270,7 @@ fn every_built_in_function_the_loader_allows_also_runs_in_the_interpreter() {
         "\"ab\".startsWith(\"a\") && \"ab\".endsWith(\"b\") && \"ab\".contains(\"a\")",
         "max(1, 2) == 2 && min(1, 2) == 1",
         "int(\"3\") == 3 && double(1) == 1.0 && string(1) == \"1\"",
+        "uint(1) == 1u",
     ] {
         let toml =
             format!("{BLANK}\n[[workflow.status]]\nid = \"r\"\nwhen = '{expr}'\nset = \"Done\"\n");

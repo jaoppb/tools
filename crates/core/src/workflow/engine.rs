@@ -5,7 +5,7 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use cel_interpreter::{Context, Value};
+use cel::{Context, Value};
 
 use crate::domain::{IssueNumber, Snapshot, StatusName};
 use crate::workflow::config::{Rule, RuleId, Set, Workflow};
@@ -226,7 +226,7 @@ struct Run<'a> {
     walked: HashSet<IssueNumber>,
     nodes: HashMap<IssueNumber, Rc<Node>>,
     /// The functions, registered once; each issue gets a child scope.
-    root: Context<'static>,
+    root: Context<'static, 'static>,
 }
 
 impl<'a> Run<'a> {
@@ -358,7 +358,10 @@ impl<'a> Run<'a> {
 
     /// Evaluates the derived facts in dependency order, adding each to
     /// `context`. Returns the facts done and the violation that stopped them.
-    fn eval_facts(&self, context: &mut Context<'_>) -> (Vec<(String, Value)>, Option<Violation>) {
+    fn eval_facts(
+        &self,
+        context: &mut Context<'_, '_>,
+    ) -> (Vec<(String, Value)>, Option<Violation>) {
         let mut facts: Vec<(String, Value)> = Vec::new();
         for (name, expr) in &self.workflow.facts {
             match expr.program().execute(context) {
@@ -382,7 +385,7 @@ impl<'a> Run<'a> {
     /// rule's trace and the rule that fired, if any.
     fn eval_rules(
         &self,
-        context: &Context<'_>,
+        context: &Context<'_, '_>,
     ) -> (Vec<RuleTrace>, Result<Option<&Rule>, Violation>) {
         let mut traces: Vec<RuleTrace> = self
             .workflow
@@ -520,9 +523,16 @@ fn field_value(value: &FieldValue) -> Value {
     }
 }
 
-fn root_context() -> Context<'static> {
+fn root_context() -> Context<'static, 'static> {
     let mut context = Context::default();
-    context.add_function("fold", fold);
+    // `add_function` refuses only a name the standard library declares. None
+    // of these is one, and a refusal would show as an undeclared function in
+    // the tests that run every allowed function and the presets (`fold`).
+    // `max` and `min` were built in up to cel-interpreter 0.10; `cel` 0.15
+    // makes them opt-in, so they are registered to keep the allow-list true.
+    context.add_function("max", cel::functions::max).ok();
+    context.add_function("min", cel::functions::min).ok();
+    context.add_function("fold", fold).ok();
     context
 }
 

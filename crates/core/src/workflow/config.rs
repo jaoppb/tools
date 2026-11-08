@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
 
-use cel_interpreter::Value;
+use cel::Value;
 use serde::Deserialize;
 use toml::Spanned;
 

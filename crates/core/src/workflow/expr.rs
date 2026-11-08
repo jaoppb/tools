@@ -2,9 +2,8 @@
 
 use std::collections::BTreeSet;
 
-use cel_interpreter::Program;
-use cel_parser::Parser;
-use cel_parser::ast::{EntryExpr, Expr as Node, IdedExpr};
+use cel::Program;
+use cel::common::ast::{EntryExpr, Expr as Node, IdedExpr};
 
 use crate::workflow::error::LoadError;
 use crate::workflow::schema::HELPERS;
@@ -30,14 +29,9 @@ impl Expr {
         source: &str,
         known: &BTreeSet<String>,
     ) -> Result<Self, LoadError> {
-        // `Program` keeps its AST private, so the source is parsed a second
-        // time here to walk it; expressions are short and this runs at load.
         let program = Program::compile(source).map_err(|errors| compile_error(origin, &errors))?;
-        let tree = Parser::default()
-            .parse(source)
-            .map_err(|errors| compile_error(origin, &errors))?;
         let mut walk = Walk::default();
-        walk.visit(&tree, &mut Vec::new());
+        walk.visit(program.expression(), &mut Vec::new());
         let Walk { reads, functions } = walk;
         if let Some(name) = reads.iter().find(|name| !known.contains(*name)) {
             return Err(unknown(origin, "identifier", name));
