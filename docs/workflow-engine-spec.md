@@ -103,14 +103,7 @@ message = 'exactly one "type:" label is required'
 
 ## Changelog: what moves under the strict `builtin:cosmo` gate (v0.3.0)
 
-For adopters of `project-sync` with the old default `[github.issues.rules]` (priority and effort off). Interim home until a CHANGELOG exists.
-
-- A card is **Ready only with Priority and Effort set** and Effort <= 8 (`params.effort_limit`); before, a card with type, area and milestone was Ready. Cards missing them stay in Backlog (no gap line is printed any more; `tools issues check` still reports them).
-- A task whose **story is outside the Project** now waits for that story (fetched on demand); before, it was never held.
-- A parent cycle, an unreadable parent or a parent in a repository the token cannot read **freezes** the card and exits 1 on `check`; before, a story cycle overflowed the stack.
-- **Board columns must equal `[workflow].statuses`**; `status_mapping` aliases and case-insensitive matching are gone. An unknown column is an error naming it.
-- Without a `[workflow]` block the command refuses to run.
-- Reason text is the firing rule id (`gate-holds`), not "gate holds".
+The release notes live in [CHANGELOG.md](../CHANGELOG.md) (`[Unreleased]`, then `v0.3.0`) and the adopter steps in [the v0.3.0 migration guide](migrations/v0.3.0.md#strict-builtincosmo-gate-57); this spec keeps the design, not the changes.
 
 - Increment 1 = spike doc + engine driving **project-sync only**. issues-check keeps the current rule code until increment 2.
 

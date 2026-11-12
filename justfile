@@ -22,11 +22,12 @@ check:
     just check-features
     just workflows-check
 
-# Lint the GitHub workflows and test the release tagging script
+# Lint the GitHub workflows and test the release scripts (tagging and CHANGELOG rotation)
 workflows-check:
     actionlint
-    shellcheck scripts/release-tag.sh scripts/tests/release-tag.test.sh
+    shellcheck scripts/release-tag.sh scripts/tests/release-tag.test.sh scripts/rotate-changelog.sh scripts/tests/rotate-changelog.test.sh scripts/bump-version.sh
     scripts/tests/release-tag.test.sh
+    scripts/tests/rotate-changelog.test.sh
 
 # Check Rust formatting
 fmt-check:
@@ -42,10 +43,15 @@ check-features:
     cargo clippy -p tools --no-default-features --features issues --all-targets -- -D warnings
     cargo clippy -p tools --no-default-features --features repo --all-targets -- -D warnings
     cargo clippy -p tools --no-default-features --features project --all-targets -- -D warnings
+    cargo clippy -p tools --no-default-features --features changelog --all-targets -- -D warnings
 
 # Run workspace architecture rules validation via arch-lint
 arch-check:
     cargo test -p tools-architecture-tests
+
+# Fail when the change since `base` touches crates/, action.yml, scripts/ or .github/workflows/ without CHANGELOG.md (waived by the skip-changelog label in `labels`, comma-separated)
+changelog-check $base $labels="":
+    cargo run -q -p tools -- changelog check --base "$base" --labels "$labels" --skip-label skip-changelog --changelog CHANGELOG.md --watch crates/ --watch action.yml --watch scripts/ --watch .github/workflows/
 
 # Audit open GitHub issues against repository workflow rules
 issues-check:

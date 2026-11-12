@@ -38,6 +38,7 @@ items = [
     { name = "area:issues-check", color = "5319e7", description = "crates/cli/src/issues: issue rules and integrity auditor" },
     { name = "area:tooling", color = "2ea44f", description = "Flake, Nix, Just, CI, Cargo workspace" },
     { name = "area:docs", color = "0075ca", description = "Documentation, workflow guides, rules" },
+    { name = "skip-changelog", color = "ededed", description = "Pull request that needs no CHANGELOG.md entry" },
 ]
 
 # Legacy label migrations used by `issues-check --migrate`

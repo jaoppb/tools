@@ -3,6 +3,9 @@
 #
 # Usage: bump-version.sh <major|minor|patch|X.Y.Z> --issue <n> [--dry-run]
 #
+# Also rotates the CHANGELOG "Unreleased" section into the new version (see
+# rotate-changelog.sh); the bump fails while it is empty.
+#
 # Never pushes to main and never tags: the merged bump is tagged and released by
 # .github/workflows/tag-release.yml.
 set -euo pipefail
@@ -17,6 +20,7 @@ die() {
     exit 1
 }
 
+ROTATE_CHANGELOG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/rotate-changelog.sh"
 TARGET=""
 ISSUE=""
 DRY_RUN=0
@@ -119,8 +123,17 @@ if git ls-remote --exit-code --heads origin "$BUMP_BRANCH" >/dev/null 2>&1; then
     die "Branch '$BUMP_BRANCH' already exists on origin."
 fi
 
+# The release notes come from CHANGELOG.md: rotate a copy now so an empty Unreleased section,
+# a leftover TODO(bump) marker or a missing link fails before anything changes.
+RELEASE_DATE="$(date -u +%F)"
+[ -f CHANGELOG.md ] || die "CHANGELOG.md not found."
+ROTATION_PREVIEW="$(mktemp)"
+trap 'rm -f "$ROTATION_PREVIEW"' EXIT
+cp CHANGELOG.md "$ROTATION_PREVIEW"
+"$ROTATE_CHANGELOG" "$NEW_VERSION" "$RELEASE_DATE" "$ROTATION_PREVIEW" || exit 1
+
 if [ "$DRY_RUN" = "1" ]; then
-    echo "Dry run: all preconditions pass (cargo check is not run) and nothing is changed."
+    echo "Dry run: all preconditions pass, including the CHANGELOG rotation (cargo check is not run), and nothing is changed."
     echo "Version: $CURRENT_VERSION -> $NEW_VERSION (tag $TAG is created after the PR merges)"
     echo "Branch:  $BUMP_BRANCH"
     echo "Commit:  $TITLE"
@@ -153,10 +166,10 @@ git diff --quiet Cargo.toml && die "Cargo.toml has no [workspace.package] versio
 
 cargo check --workspace
 
-# Release-file hook: steps that edit other tracked files for the release (for
-# example rotating the CHANGELOG "Unreleased" section) go here and add their
-# files to RELEASE_FILES.
-RELEASE_FILES=(Cargo.toml Cargo.lock)
+# Release-file hook: steps that edit other tracked files for the release go here and add
+# their files to RELEASE_FILES.
+"$ROTATE_CHANGELOG" "$NEW_VERSION" "$RELEASE_DATE"
+RELEASE_FILES=(Cargo.toml Cargo.lock CHANGELOG.md)
 
 git switch -c "$BUMP_BRANCH"
 git add "${RELEASE_FILES[@]}"

@@ -1,0 +1,122 @@
+//! `tools changelog check`: a change to the product or its release flow records itself in
+//! the changelog.
+//!
+//! Exits with 0 when the change touches none of the watched paths, touches `CHANGELOG.md`, or the
+//! pull request carries the skip label; with 1 when it touches a watched path without the
+//! changelog; and with 2 when the changed files cannot be read from git.
+
+pub mod cli;
+
+use std::process::Command;
+
+use crate::Exit;
+use cli::Arguments;
+
+/// Runs `tools changelog check`.
+///
+/// # Errors
+///
+/// Returns an [`Exit`] with code 2 when git cannot list the changed files.
+pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
+    let changed = changed_files(arguments.base())?;
+    Ok(verdict(&Policy::from(arguments), &changed))
+}
+
+/// What a repository demands of a change, and what waives it.
+#[derive(Debug, Clone, Copy)]
+pub struct Policy<'a> {
+    /// Paths whose change needs an entry: a directory ends in `/`, a file does not.
+    pub watch: &'a [String],
+    /// The changelog file a change must touch.
+    pub changelog: &'a str,
+    /// The labels on the pull request.
+    pub labels: &'a [String],
+    /// The label that waives the entry.
+    pub skip_label: &'a str,
+}
+
+impl<'a> From<&'a Arguments> for Policy<'a> {
+    fn from(arguments: &'a Arguments) -> Self {
+        Self {
+            watch: arguments.watch(),
+            changelog: arguments.changelog(),
+            labels: arguments.labels(),
+            skip_label: arguments.skip_label(),
+        }
+    }
+}
+
+/// The verdict for the files a change touches.
+#[must_use]
+pub fn verdict(policy: &Policy<'_>, changed: &[String]) -> Exit {
+    let Policy {
+        watch,
+        changelog,
+        labels,
+        skip_label,
+    } = *policy;
+    let watched: Vec<&str> = changed
+        .iter()
+        .map(String::as_str)
+        .filter(|path| is_watched(watch, path))
+        .collect();
+    if watched.is_empty() {
+        return Exit::new("no watched path changed: no changelog entry needed", 0);
+    }
+    if changed.iter().any(|path| path == changelog) {
+        return Exit::new(format!("{changelog} is part of the change"), 0);
+    }
+    if labels.iter().any(|label| label == skip_label) {
+        return Exit::new(
+            format!("changelog entry skipped by the `{skip_label}` label"),
+            0,
+        );
+    }
+    let files: Vec<String> = watched.iter().map(|path| format!("  {path}")).collect();
+    Exit::new(
+        format!(
+            "this change touches {} without touching {changelog}:\n{}\n\
+             add one bullet under `Unreleased` ending `(#issue, #PR)`, or label the pull request \
+             `{skip_label}` when nothing consumer-visible changed",
+            if watched.len() == 1 {
+                "a watched path"
+            } else {
+                "watched paths"
+            },
+            files.join("\n"),
+        ),
+        1,
+    )
+}
+
+fn is_watched(watch: &[String], path: &str) -> bool {
+    watch.iter().any(|watched| {
+        if watched.ends_with('/') {
+            path.starts_with(watched)
+        } else {
+            path == watched
+        }
+    })
+}
+
+fn changed_files(base: &str) -> Result<Vec<String>, Exit> {
+    if base.starts_with('-') {
+        return Err(Exit::failed(format!("`{base}` is not a git revision")));
+    }
+    let output = Command::new("git")
+        .args(["diff", "--name-only", "-z", &format!("{base}...HEAD")])
+        .output()
+        .map_err(|error| Exit::failed(format!("failed to run git: {error}")))?;
+    if !output.status.success() {
+        return Err(Exit::failed(format!(
+            "git diff {base}...HEAD failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    // NUL-separated, so git does not quote a path with non-ASCII characters.
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
