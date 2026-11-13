@@ -58,7 +58,7 @@ renames = { "v0" = "v0.1.0", "v1" = "v0.2.0" }
 items = [
     { title = "v0.1.0", description = "Bootstrap: issue workflow, repository setup, and tooling extraction", state = "closed" },
     { title = "v0.2.0", description = "Initial release: stable CLI distribution and packaging", state = "closed" },
-    { title = "v0.3.0", description = "Cleanup and refactoring of hardcoded logic", state = "open" },
+    { title = "v0.3.0", description = "Cleanup and refactoring of hardcoded logic", state = "closed" },
     { title = "v0.4.0", description = "Post-release iteration: audit rules on the workflow engine", state = "open" },
     { title = "v0.5.0", description = "Language-agnostic design token checking: template plus per-language checkers", state = "open" },
 ]
