@@ -12,7 +12,7 @@ Every pull request that changes config, the CLI, the action, the release flow or
 
 ### Fixed
 
-- `just bump-version` runs `just check` and `just issues-check` on the bump commit and then pushes with `--no-verify`, so a slow `pre-push` hook can no longer drop the SSH connection mid-push; a failed push and a failed PR creation are reported separately with the underlying `git` or `gh` error (#109, #TODO)
+- `just bump-version` runs `just check` and `just issues-check` on the bump commit and then pushes with `--no-verify`, so a slow `pre-push` hook can no longer drop the SSH connection mid-push; a failed push and a failed PR creation are reported separately with the underlying `git` or `gh` error (#109, #128)
 
 ## [0.3.0] - 2026-11-12
 
