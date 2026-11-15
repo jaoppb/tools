@@ -13,6 +13,7 @@ Every pull request that changes config, the CLI, the action, the release flow or
 ### Fixed
 
 - `just bump-version` runs `just check` and `just issues-check` on the bump commit and then pushes with `--no-verify`, so a slow `pre-push` hook can no longer drop the SSH connection mid-push; a failed push and a failed PR creation are reported separately with the underlying `git` or `gh` error (#109, #128)
+- `tools actions check` no longer stops with exit 2 when the versions of a repository cannot be read: each of its references gets a `[versions]` finding and the audit goes on, and a repository already forbidden by `allow` or `deny` is not looked up, so its finding is reported (#124, #PR)
 
 ## [0.3.0] - 2026-11-12
 

@@ -2,7 +2,8 @@
 //! `[actions]` in `tools.toml`.
 //!
 //! Exits with 0 when every enabled rule holds (or none is enabled), with 1 when a reference
-//! breaks one, and with 2 when the configuration, a workflow file or GitHub cannot be read.
+//! breaks one or the versions of its repository cannot be read, and with 2 when the
+//! configuration or a workflow file cannot be read.
 
 pub mod cli;
 
@@ -38,8 +39,7 @@ pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
             "rules are enabled but no workflow file was found; run from the repository or pass --workflows",
         ));
     }
-    let findings =
-        audit_actions(&GhActions::default(), &rules, &references).map_err(Exit::failed)?;
+    let findings = audit_actions(&GhActions::default(), &rules, &references);
     if findings.is_empty() {
         return Ok(Exit::new(
             format!(

@@ -47,6 +47,23 @@ impl Rules {
         self.ignore.iter().any(|pattern| repo.matches(pattern))
     }
 
+    /// Whether `allow` or `deny` forbids `repo`: such a reference must go, so its versions do
+    /// not matter.
+    #[must_use]
+    pub fn forbids(&self, repo: &super::reference::RepoId) -> bool {
+        !self.is_allowed(repo) || self.is_denied(repo)
+    }
+
+    fn is_allowed(&self, repo: &super::reference::RepoId) -> bool {
+        self.allow
+            .as_ref()
+            .is_none_or(|allow| allow.iter().any(|pattern| repo.matches(pattern)))
+    }
+
+    fn is_denied(&self, repo: &super::reference::RepoId) -> bool {
+        self.deny.iter().any(|pattern| repo.matches(pattern))
+    }
+
     /// Whether a rule needs to know the versions GitHub has for the repository.
     #[must_use]
     pub const fn needs_versions(&self) -> bool {
@@ -117,15 +134,13 @@ pub fn judge_static(rules: &Rules, reference: &Reference) -> Vec<Finding> {
         message,
     };
     let mut findings = Vec::new();
-    if let Some(allow) = &rules.allow
-        && !allow.iter().any(|pattern| repo.matches(pattern))
-    {
+    if !rules.is_allowed(repo) {
         findings.push(finding(
             "allow",
             format!("{repo} is not in the allowed list"),
         ));
     }
-    if rules.deny.iter().any(|pattern| repo.matches(pattern)) {
+    if rules.is_denied(repo) {
         findings.push(finding("deny", format!("{repo} is denied")));
     }
     if let Some(format) = rules.pin_format {
@@ -160,6 +175,17 @@ pub fn judge_versions(rules: &Rules, reference: &Reference, versions: &Versions)
         findings.extend(sha_matches_comment(reference, versions));
     }
     findings
+}
+
+/// The finding of a reference whose repository's versions could not be read, so neither
+/// `latest_major` nor `sha_matches_comment` can judge it. `reason` names the repository.
+#[must_use]
+pub fn unreadable_versions(reference: &Reference, reason: &str) -> Finding {
+    Finding {
+        location: reference.location(),
+        rule: "versions",
+        message: format!("{reason}; fix the reference or add it to `ignore`"),
+    }
 }
 
 fn latest_major(reference: &Reference, versions: &Versions) -> Option<Finding> {

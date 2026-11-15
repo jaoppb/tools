@@ -203,7 +203,7 @@ allow = ["actions/*", "pnpm/action-setup"]   # only these repositories (`owner/*
 deny = ["owner/repo"]                # never these
 ignore = ["owner/repo"]              # exempt from every rule
 ```
-`tools actions check` scans `.github/workflows` and `.github/actions` recursively (`--workflows <DIR>`, repeatable, replaces both). It reads the files line by line, so a `uses:` text inside a `run: |` block counts as a reference; a reference split across lines is not seen. A bare number such as `@2024` is a branch, not a version; versions need the `v`. `gh` 2.48 or newer is required (`--slurp`). When GitHub cannot be read for a repository (deleted or private action, no access), the run stops with exit 2 until that repository is listed under `ignore`. Symlinked directories are not followed. Unknown keys fail to load.
+`tools actions check` scans `.github/workflows` and `.github/actions` recursively (`--workflows <DIR>`, repeatable, replaces both). It reads the files line by line, so a `uses:` text inside a `run: |` block counts as a reference; a reference split across lines is not seen. A bare number such as `@2024` is a branch, not a version; versions need the `v`. `gh` 2.48 or newer is required (`--slurp`). When GitHub cannot be read for a repository (deleted or private action, no access, rate limit), each of its references gets a `[versions]` finding (exit 1) and the other repositories are still checked; list it under `ignore` to skip it. A repository that `allow` or `deny` already forbids is not looked up. Symlinked directories are not followed. Unknown keys fail to load.
 
 ---
 

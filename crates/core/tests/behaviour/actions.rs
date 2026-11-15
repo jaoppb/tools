@@ -1,9 +1,11 @@
 //! `tools actions check`: parsing workflow references, the rules, and the `[actions]` table.
 
+use std::cell::RefCell;
+
 use tools_core::adapters::memory::MemoryActions;
-use tools_core::application::audit_actions;
+use tools_core::application::{ActionsError, ActionsPort, audit_actions};
 use tools_core::config::load_from_str;
-use tools_core::domain::actions::{Major, PinFormat, Rules, Versions, scan};
+use tools_core::domain::actions::{Major, PinFormat, RepoId, Rules, Versions, scan};
 
 const SHA: &str = "3d3c42e5aac5ba805825da76410c181273ba90b1";
 const OTHER: &str = "949feb2413d6458794dcd2491c4babbbce0c15c1";
@@ -18,9 +20,8 @@ fn versions(latest: Option<&str>, tags: &[(&str, &str)]) -> Versions {
     }
 }
 
-fn findings(rules: &Rules, workflow: &str, port: &MemoryActions) -> Vec<String> {
+fn findings(rules: &Rules, workflow: &str, port: &impl ActionsPort) -> Vec<String> {
     audit_actions(port, rules, &scan("w.yml", workflow))
-        .expect("reads")
         .iter()
         .map(ToString::to_string)
         .collect()
@@ -111,14 +112,91 @@ fn latest_major_never_passes_a_ref_without_a_major() {
     );
 }
 
+/// A port that fails for every repository and records which ones it was asked about.
+#[derive(Default)]
+struct Unreadable {
+    asked: RefCell<Vec<String>>,
+}
+
+impl ActionsPort for Unreadable {
+    fn versions(&self, repo: &RepoId) -> Result<Versions, ActionsError> {
+        self.asked.borrow_mut().push(repo.to_string());
+        Err(ActionsError::Read {
+            repo: repo.to_string(),
+            reason: "HTTP 404".to_owned(),
+        })
+    }
+}
+
 #[test]
-fn a_github_failure_stops_the_audit() {
-    let result = audit_actions(
-        &MemoryActions::default(),
+fn an_unreadable_repository_is_a_finding_per_reference_and_the_audit_goes_on() {
+    let port = Unreadable::default();
+    let found = findings(
         &latest_only(),
-        &scan("w.yml", "uses: a/b@v1\n"),
+        "uses: gone/x@v1
+uses: gone/x@v2
+uses: also/gone@v1
+",
+        &port,
     );
-    assert!(result.is_err());
+    assert_eq!(found.len(), 3, "{found:?}");
+    assert!(
+        found[0].starts_with("w.yml:1: [versions] cannot read the versions of gone/x: HTTP 404"),
+        "{found:?}"
+    );
+    assert!(found[1].starts_with("w.yml:2: [versions]"), "{found:?}");
+    assert!(found[2].contains("also/gone"), "{found:?}");
+    assert_eq!(*port.asked.borrow(), ["gone/x", "also/gone"]);
+}
+
+#[test]
+fn a_denied_or_disallowed_repository_is_not_looked_up() {
+    let port = Unreadable::default();
+    let deny = Rules {
+        deny: vec!["evil/x".to_owned()],
+        ..latest_only()
+    };
+    let denied = findings(
+        &deny,
+        "uses: evil/x@v1
+",
+        &port,
+    );
+    assert_eq!(denied.len(), 1, "{denied:?}");
+    assert!(denied[0].contains("[deny]"), "{denied:?}");
+    let allow = Rules {
+        allow: Some(vec!["actions/*".to_owned()]),
+        sha_matches_comment: true,
+        ..Rules::default()
+    };
+    let disallowed = findings(
+        &allow,
+        &format!(
+            "uses: evil/x@{SHA} # v1
+"
+        ),
+        &port,
+    );
+    assert_eq!(disallowed.len(), 1, "{disallowed:?}");
+    assert!(disallowed[0].contains("[allow]"), "{disallowed:?}");
+    assert!(port.asked.borrow().is_empty());
+}
+
+#[test]
+fn a_pin_format_finding_still_looks_the_repository_up() {
+    let port = MemoryActions::default().with("a/b", versions(Some("v2"), &[]));
+    let rules = Rules {
+        pin_format: Some(PinFormat::ShaWithComment),
+        ..latest_only()
+    };
+    let found = findings(
+        &rules,
+        "uses: a/b@v1
+",
+        &port,
+    );
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(found[1].contains("[latest-major]"), "{found:?}");
 }
 
 #[test]
