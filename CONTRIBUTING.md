@@ -148,7 +148,16 @@ Releases never touch `main` directly:
 1. File a `type:chore` issue for the bump (template, area, milestone).
 2. From an up-to-date `main`, run `just bump-version <major|minor|patch|X.Y.Z> --issue <n>` (add `--dry-run` to preview the version, branch, and PR text without changing anything). It needs an authenticated `gh`, creates `chore/<n>`, commits `chore: bump version to X.Y.Z (#n)`, pushes the branch, and opens the PR.
    The script also rotates the `Unreleased` section of `CHANGELOG.md` into `## [X.Y.Z] - <date>` and stages it with the version files. It refuses an empty section and a leftover `TODO(bump)` line; resolve those on `main` first. The `Release` workflow publishes that section as the GitHub release notes.
+   Before pushing, it runs `just check` and `just issues-check` on the bump commit (a failure switches back to `main` and deletes the branch), then pushes with `--no-verify`, since the `pre-push` hook would only repeat those checks. A failed push and a failed PR creation are reported separately, each quoting the error from `git` or `gh` and the command to retry.
 3. Merge the PR with a merge commit. The `Tag Release` workflow then tags the merge commit `vX.Y.Z` and calls the `Release` workflow, which validates the tag against the `Cargo.toml` version and publishes the GitHub Release with binaries. Pushing a `vX.Y.Z` tag by hand still triggers `Release` directly.
+
+**Long `pre-push` hooks.** Git opens the connection to the remote before it runs the `pre-push` hook, and `just check` on a cold cache can take long enough (about 15 minutes) for an idle SSH connection to drop, so the push fails after the hook passes. For such a push, keep the connection alive:
+
+```bash
+GIT_SSH_COMMAND="ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=60" git push
+```
+
+or set `ServerAliveInterval 30` and `ServerAliveCountMax 60` for `github.com` in `~/.ssh/config`.
 
 `Tag Release` tags a push to `main` only when that push changed `[workspace.package].version`. A later `Cargo.toml` change that keeps the version never tags, even when the tag is missing: the run logs a notice naming the missing tag. A push it cannot compare (a new branch, or rewritten history) logs a warning and tags nothing.
 
