@@ -10,7 +10,8 @@
 # (images `![alt](path)` use raw/ instead of blob/). A leading `/` means the repository root and a
 # `?query` or `#fragment` suffix is kept. Fenced code blocks are left alone, and so are `code
 # spans`, which are found by pairing the backticks of each line. Footnotes `[^n]: text`,
-# `<bracketed targets>` and links split over lines are not rewritten.
+# `<bracketed targets>`, links split over lines and fences indented four spaces or more (in
+# nested list items) are not handled.
 #
 # Each rewritten path that does not exist under the current directory (the tagged checkout) gets
 # a `::warning::` on stderr; the output is still written and the exit status stays 0. The whole
@@ -32,7 +33,8 @@ paths="$(mktemp)"
 trap 'rm -f "$paths"' EXIT
 
 awk -v base="https://github.com/$REPO" -v tag="$TAG" -v paths="$paths" '
-    # A target to rewrite: not empty, no scheme (http:, mailto:, ...), not //host, not #anchor.
+    # A target to rewrite: not empty, no scheme (http:, mailto:, ...), not //host, not #anchor,
+    # not <bracketed>.
     function relative(t) {
         return t != "" && t !~ /^[A-Za-z][A-Za-z0-9+.-]*:/ && t !~ /^\/\// && t !~ /^#/ && t !~ /^</
     }
@@ -70,7 +72,8 @@ awk -v base="https://github.com/$REPO" -v tag="$TAG" -v paths="$paths" '
         print
         next
     }
-    match($0, /^ ? ? ?(```+|~~~+)/) {
+    # A fence opener; a backtick one has no backtick after it, or the line opens a code span.
+    match($0, /^ ? ? ?(```+|~~~+)/) && !(substr($0, RSTART + RLENGTH - 1, 1) == "`" && index(substr($0, RSTART + RLENGTH), "`")) {
         fence = substr($0, RSTART, RLENGTH)
         gsub(/ /, "", fence)
         print
