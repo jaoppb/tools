@@ -20,6 +20,7 @@ A monorepo for developer tools, declarative repository management utilities, and
   - [Labels Schema](#labels-schema)
   - [Milestones Definition](#milestones-definition)
   - [Workflow (`[workflow]`)](#workflow-workflow)
+  - [Actions (`[actions]`)](#actions-actions)
 - [Developer Quickstart & Tooling](#developer-quickstart--tooling)
   - [Prerequisites](#prerequisites)
   - [Local Environment Setup](#local-environment-setup)
@@ -114,7 +115,13 @@ tools project check --explain 57 # the facts and rules behind one issue (`57` or
 tools project sync               # write the moves
 ```
 
-Both need a `[workflow]` block in `tools.toml` (for example `extends = "builtin:cosmo"`); the board's Status columns must match its `statuses`. See [the workflow engine spec](docs/workflow-engine-spec.md).
+**`tools actions`**: audit of the `uses:` references in `.github/workflows/`.
+```bash
+tools actions check                       # exit 1 when a reference breaks an enabled rule
+tools actions check --workflows <DIR>     # another directory of workflow files
+```
+
+`tools project` needs a `[workflow]` block in `tools.toml` (for example `extends = "builtin:cosmo"`); the board's Status columns must match its `statuses`. See [the workflow engine spec](docs/workflow-engine-spec.md).
 
 During development use `cargo run -q -p tools -- <group> <verb>`, or the `just` recipes below.
 
@@ -184,6 +191,19 @@ area_prefix = ["area:", "domain:"]   # a list: any prefix counts, ignoring case 
 `[workflow.facts]` and `[[workflow.status]]` shadow a preset fact or rule by reusing its name or `id`. See [the workflow engine spec](docs/workflow-engine-spec.md) for the fact schema.
 
 `[github.project.status_mapping]` is removed (board columns must equal `[workflow].statuses`) and fails to load; `[github.issues.rules]` is deprecated, still read by `tools issues check` until the audit moves to the workflow, and loads with a warning. `tools config migrate` converts both.
+
+### Actions (`[actions]`)
+`tools actions check` understands `@vX` and `<sha> # vX` references and skips local (`./`) and `docker://` ones. Every rule is opt-in: without an `[actions]` table nothing is checked, and an enabled rule that fails exits 1. It reads releases and tags through `gh`, so it needs a login or `GH_TOKEN`.
+```toml
+[actions]
+latest_major = true                  # the major must equal the latest release's (falls back to the highest version tag; fails when neither has a major)
+pin_format = "sha-with-comment"      # or "tag": the ref style every reference must use; branch refs always fail
+sha_matches_comment = true           # a `<sha> # vX` SHA must be a tag of major X
+allow = ["actions/*", "pnpm/action-setup"]   # only these repositories (`owner/*` or `owner/repo`)
+deny = ["owner/repo"]                # never these
+ignore = ["owner/repo"]              # exempt from every rule
+```
+Unknown keys fail to load.
 
 ---
 
@@ -292,6 +312,7 @@ Alternatively, omit the `check-*` and `sync-project` inputs to install `tools` o
 | `check-issues` / `issues-args` | `false` / _(empty)_ | Run `tools issues check` and pass extra arguments. |
 | `check-repo` / `repo-args` | `false` / _(empty)_ | Run `tools repo check` and pass extra arguments. |
 | `check-project` / `project-args` | `false` / _(empty)_ | Run `tools project check` (read-only; fails when moves are pending) and pass extra arguments. |
+| `check-actions` / `actions-args` | `false` / _(empty)_ | Run `tools actions check` and pass extra arguments. |
 | `sync-project` | `false` | Run `tools project sync` (writes); `project-args` applies to it too. |
 | `github-token` | `${{ github.token }}` | Token for release downloads and the tools. |
 

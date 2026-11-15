@@ -109,3 +109,33 @@ fn unreadable(reason: &str) -> AuditError {
         reason: reason.to_owned(),
     }
 }
+
+/// Versions held in memory, for tests of the actions audit.
+#[derive(Debug, Clone, Default)]
+pub struct MemoryActions {
+    versions: std::collections::BTreeMap<String, crate::domain::actions::Versions>,
+}
+
+impl MemoryActions {
+    /// Adds the versions of `repo` (`owner/name`).
+    #[must_use]
+    pub fn with(mut self, repo: &str, versions: crate::domain::actions::Versions) -> Self {
+        self.versions.insert(repo.to_owned(), versions);
+        self
+    }
+}
+
+impl crate::application::ActionsPort for MemoryActions {
+    fn versions(
+        &self,
+        repo: &crate::domain::actions::RepoId,
+    ) -> Result<crate::domain::actions::Versions, crate::application::ActionsError> {
+        self.versions
+            .get(&repo.to_string())
+            .cloned()
+            .ok_or_else(|| crate::application::ActionsError::Read {
+                repo: repo.to_string(),
+                reason: "not in memory".to_owned(),
+            })
+    }
+}

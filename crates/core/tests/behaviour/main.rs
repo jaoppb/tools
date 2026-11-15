@@ -4,6 +4,7 @@
 
 pub mod support;
 
+mod actions;
 mod audit;
 mod audit_rules;
 mod facts;

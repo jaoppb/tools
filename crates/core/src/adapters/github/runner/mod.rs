@@ -54,6 +54,18 @@ impl GhRunner {
         run(&mut command)
     }
 
+    /// Runs a paginated REST API GET request and returns every page as one JSON array of pages.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GhError::Missing`] when the program is not installed, and
+    /// [`GhError::Failed`] when it fails or exits with an error.
+    pub fn rest_get_pages(&self, endpoint: &str) -> Result<String, GhError> {
+        let mut command = Command::new(&self.program);
+        command.args(["api", "--paginate", "--slurp", endpoint]);
+        run(&mut command)
+    }
+
     /// Runs a REST API PATCH request against GitHub with a JSON payload provided on standard input.
     ///
     /// # Errors

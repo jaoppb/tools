@@ -5,10 +5,12 @@
 //! TOML; each DTO here maps into its domain counterpart through one `From` impl, and
 //! `Config::spec_for` is the only caller.
 
+mod actions;
 mod labels;
 mod milestones;
 mod settings;
 
+pub use actions::ActionsConfig;
 pub use labels::{LabelsConfig, LabelsOverlayConfig};
 pub use milestones::{MilestonesConfig, MilestonesOverlayConfig};
 pub use settings::RepositorySettingsConfig;

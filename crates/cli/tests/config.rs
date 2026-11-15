@@ -19,7 +19,8 @@ fn parse(words: &[&str]) -> Result<Arguments, UsageError> {
             feature = "issues",
             feature = "repo",
             feature = "project",
-            feature = "changelog"
+            feature = "changelog",
+            feature = "actions"
         ))]
         _ => unreachable!("a config command line parses to the config group"),
     }

@@ -50,6 +50,14 @@ inputs:
     description: 'Run "tools project sync" after installation, which applies the Status moves. Writing Projects v2 needs a PAT or app token in github-token; the default github.token cannot.'
     required: false
     default: 'false'
+  check-actions:
+    description: 'Run "tools actions check" immediately after installation'
+    required: false
+    default: 'false'
+  actions-args:
+    description: 'Additional CLI arguments passed to "tools actions check"'
+    required: false
+    default: ''
   issues-args:
     description: 'Additional CLI arguments passed to "tools issues check"'
     required: false
@@ -161,3 +169,14 @@ runs:
         CONFIG_PATH: ${{ inputs.config-path }}
       run: |
         tools project sync ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS
+
+    - name: Run tools actions check
+      if: inputs.check-actions == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        EXTRA_ARGS: ${{ inputs.actions-args }}
+        CONFIG_PATH: ${{ inputs.config-path }}
+      run: |
+        tools actions check ${CONFIG_PATH:+--config "$CONFIG_PATH"} $EXTRA_ARGS

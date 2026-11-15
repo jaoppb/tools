@@ -2,10 +2,12 @@
 
 use std::fmt;
 
+pub mod actions;
 pub mod audit;
 pub mod migration;
 pub mod repo;
 
+pub use crate::application::actions::{ActionsError, ActionsPort, audit as audit_actions};
 pub use crate::application::audit::{Audit, AuditError, Report, RepositoryIssues};
 pub use crate::application::migration::{
     IssueMigrationMode, IssueMigrationOutcome, IssueMigrationPort, IssueMigrator, MigrationError,

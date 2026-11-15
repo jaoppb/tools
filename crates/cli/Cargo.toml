@@ -14,11 +14,12 @@ name = "tools"
 path = "src/main.rs"
 
 [features]
-default = ["issues", "repo", "project", "changelog"]
+default = ["issues", "repo", "project", "changelog", "actions"]
 issues = []
 repo = []
 project = []
 changelog = []
+actions = []
 
 [dependencies]
 clap.workspace = true

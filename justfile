@@ -44,6 +44,7 @@ check-features:
     cargo clippy -p tools --no-default-features --features repo --all-targets -- -D warnings
     cargo clippy -p tools --no-default-features --features project --all-targets -- -D warnings
     cargo clippy -p tools --no-default-features --features changelog --all-targets -- -D warnings
+    cargo clippy -p tools --no-default-features --features actions --all-targets -- -D warnings
 
 # Run workspace architecture rules validation via arch-lint
 arch-check:
