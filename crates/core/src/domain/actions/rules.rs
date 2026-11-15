@@ -41,6 +41,12 @@ impl Rules {
             || !self.deny.is_empty()
     }
 
+    /// Whether `repo` is exempt from every rule.
+    #[must_use]
+    pub fn is_ignored(&self, repo: &super::reference::RepoId) -> bool {
+        self.ignore.iter().any(|pattern| repo.matches(pattern))
+    }
+
     /// Whether a rule needs to know the versions GitHub has for the repository.
     #[must_use]
     pub const fn needs_versions(&self) -> bool {
@@ -106,7 +112,7 @@ impl fmt::Display for Finding {
 #[must_use]
 pub fn judge(rules: &Rules, reference: &Reference, versions: Option<&Versions>) -> Vec<Finding> {
     let repo = &reference.repo;
-    if rules.ignore.iter().any(|pattern| repo.matches(pattern)) {
+    if rules.is_ignored(repo) {
         return Vec::new();
     }
     let finding = |rule, message: String| Finding {
@@ -144,6 +150,14 @@ pub fn judge(rules: &Rules, reference: &Reference, versions: Option<&Versions>) 
         }
     }
     let Some(versions) = versions else {
+        if rules.needs_versions() {
+            findings.push(finding(
+                "versions",
+                format!(
+                    "the versions of {repo} were not read, so its version rules were not checked"
+                ),
+            ));
+        }
         return findings;
     };
     if rules.latest_major {

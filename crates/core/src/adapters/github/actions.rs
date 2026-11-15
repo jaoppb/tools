@@ -31,7 +31,7 @@ impl GhActions {
                 .and_then(Value::as_str)
                 .map(str::to_owned)),
             // A repository that publishes only tags has no latest release.
-            Err(GhError::Failed { reason }) if reason.contains("404") => Ok(None),
+            Err(GhError::Failed { reason }) if reason.contains("HTTP 404") => Ok(None),
             Err(error) => Err(error),
         }
     }

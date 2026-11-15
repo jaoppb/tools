@@ -12,14 +12,12 @@ fn invocation(words: &[&str]) -> Invocation {
 }
 
 #[test]
-fn check_scans_the_workflows_directory_by_default() {
+fn check_scans_workflows_and_composite_actions_by_default() {
     let Invocation::Actions(arguments) = invocation(&["check"]) else {
         unreachable!("an actions command line parses to the actions group");
     };
-    assert_eq!(
-        arguments.workflows(),
-        std::path::Path::new(".github/workflows")
-    );
+    assert_eq!(arguments.directories().len(), 2);
+    assert!(!arguments.explicit());
     assert!(arguments.config().is_none());
 }
 
@@ -30,7 +28,8 @@ fn check_takes_a_directory_and_the_global_config() {
     else {
         unreachable!("an actions command line parses to the actions group");
     };
-    assert_eq!(arguments.workflows(), std::path::Path::new("w"));
+    assert_eq!(arguments.directories(), [std::path::PathBuf::from("w")]);
+    assert!(arguments.explicit());
     assert_eq!(arguments.config(), Some(std::path::Path::new("t.toml")));
 }
 

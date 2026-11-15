@@ -118,7 +118,7 @@ tools project sync               # write the moves
 **`tools actions`**: audit of the `uses:` references in `.github/workflows/`.
 ```bash
 tools actions check                       # exit 1 when a reference breaks an enabled rule
-tools actions check --workflows <DIR>     # another directory of workflow files
+tools actions check --workflows <DIR>     # other directories than .github/workflows and .github/actions
 ```
 
 `tools project` needs a `[workflow]` block in `tools.toml` (for example `extends = "builtin:cosmo"`); the board's Status columns must match its `statuses`. See [the workflow engine spec](docs/workflow-engine-spec.md).
@@ -203,7 +203,7 @@ allow = ["actions/*", "pnpm/action-setup"]   # only these repositories (`owner/*
 deny = ["owner/repo"]                # never these
 ignore = ["owner/repo"]              # exempt from every rule
 ```
-Unknown keys fail to load.
+`tools actions check` scans `.github/workflows` and `.github/actions` recursively (`--workflows <DIR>`, repeatable, replaces both). It reads the files line by line, so a `uses:` text inside a `run: |` block counts as a reference; a reference split across lines is not seen. A bare number such as `@2024` is a branch, not a version; versions need the `v`. `gh` 2.48 or newer is required (`--slurp`). Unknown keys fail to load.
 
 ---
 

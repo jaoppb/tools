@@ -8,13 +8,14 @@ use crate::cli::CONFIG;
 /// The verb that audits the workflow references and writes nothing.
 pub const CHECK: &str = "check";
 const WORKFLOWS: &str = "workflows";
-const DEFAULT_WORKFLOWS: &str = ".github/workflows";
+const DEFAULT_DIRECTORIES: [&str; 2] = [".github/workflows", ".github/actions"];
 
 /// The parsed arguments of `tools actions check`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
     config: Option<PathBuf>,
-    workflows: PathBuf,
+    directories: Vec<PathBuf>,
+    explicit: bool,
 }
 
 impl Arguments {
@@ -23,9 +24,11 @@ impl Arguments {
     pub fn from_matches(_verb: &str, matches: &ArgMatches) -> Self {
         Self {
             config: matches.get_one::<String>(CONFIG).map(PathBuf::from),
-            workflows: matches
-                .get_one::<String>(WORKFLOWS)
-                .map_or_else(|| PathBuf::from(DEFAULT_WORKFLOWS), PathBuf::from),
+            directories: matches.get_many::<String>(WORKFLOWS).map_or_else(
+                || DEFAULT_DIRECTORIES.iter().map(PathBuf::from).collect(),
+                |values| values.map(PathBuf::from).collect(),
+            ),
+            explicit: matches.contains_id(WORKFLOWS),
         }
     }
 
@@ -35,10 +38,17 @@ impl Arguments {
         self.config.as_deref()
     }
 
-    /// The directory of workflow files to scan.
+    /// The directories scanned recursively for `.yml` and `.yaml` files.
     #[must_use]
-    pub fn workflows(&self) -> &std::path::Path {
-        &self.workflows
+    pub fn directories(&self) -> &[PathBuf] {
+        &self.directories
+    }
+
+    /// Whether the directories were named with `--workflows`: a missing one is then an error,
+    /// while a missing default is skipped.
+    #[must_use]
+    pub const fn explicit(&self) -> bool {
+        self.explicit
     }
 }
 
@@ -55,7 +65,10 @@ pub fn command() -> Command {
                     Arg::new(WORKFLOWS)
                         .long(WORKFLOWS)
                         .value_name("DIR")
-                        .help("Directory of workflow files (default: .github/workflows)"),
+                        .action(clap::ArgAction::Append)
+                        .help(
+                            "Directory scanned recursively for workflow and composite action files, repeatable (default: .github/workflows and .github/actions)",
+                        ),
                 ),
         )
 }

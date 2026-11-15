@@ -6,7 +6,7 @@
 
 pub mod cli;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tools_core::adapters::github::GhActions;
 use tools_core::application::audit_actions;
@@ -32,7 +32,7 @@ pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
             0,
         ));
     };
-    let references = read_references(arguments.workflows())?;
+    let references = read_references(arguments)?;
     let findings =
         audit_actions(&GhActions::default(), &rules, &references).map_err(Exit::failed)?;
     if findings.is_empty() {
@@ -48,26 +48,39 @@ pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
     Err(Exit::new(lines.join("\n"), 1))
 }
 
-fn read_references(directory: &Path) -> Result<Vec<Reference>, Exit> {
-    let unreadable = |path: &Path, error: std::io::Error| {
-        Exit::failed(format!("cannot read {}: {error}", path.display()))
-    };
-    let mut files: Vec<_> = std::fs::read_dir(directory)
-        .map_err(|error| unreadable(directory, error))?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            matches!(
-                path.extension().and_then(|e| e.to_str()),
-                Some("yml" | "yaml")
-            )
-        })
-        .collect();
+fn read_references(arguments: &Arguments) -> Result<Vec<Reference>, Exit> {
+    let mut files = Vec::new();
+    for directory in arguments.directories() {
+        if !arguments.explicit() && !directory.is_dir() {
+            continue;
+        }
+        collect_files(directory, &mut files)?;
+    }
     files.sort();
     let mut references = Vec::new();
     for path in files {
-        let text = std::fs::read_to_string(&path).map_err(|error| unreadable(&path, error))?;
+        let text = std::fs::read_to_string(&path).map_err(|error| unreadable(&path, &error))?;
         references.extend(scan(&path.to_string_lossy(), &text));
     }
     Ok(references)
+}
+
+fn collect_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), Exit> {
+    let entries = std::fs::read_dir(directory).map_err(|error| unreadable(directory, &error))?;
+    for entry in entries {
+        let path = entry.map_err(|error| unreadable(directory, &error))?.path();
+        if path.is_dir() {
+            collect_files(&path, files)?;
+        } else if matches!(
+            path.extension().and_then(|extension| extension.to_str()),
+            Some("yml" | "yaml")
+        ) {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn unreadable(path: &Path, error: &std::io::Error) -> Exit {
+    Exit::failed(format!("cannot read {}: {error}", path.display()))
 }

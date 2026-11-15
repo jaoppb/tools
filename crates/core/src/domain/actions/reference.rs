@@ -143,5 +143,10 @@ fn classify(pinned: &str, comment: Option<Major>) -> Pin {
             comment,
         };
     }
-    Major::parse(pinned).map_or_else(|| Pin::Mutable(pinned.to_owned()), Pin::Version)
+    // A bare number (`2024`, a short SHA) is more likely a branch than a version.
+    let version = pinned
+        .starts_with('v')
+        .then(|| Major::parse(pinned))
+        .flatten();
+    version.map_or_else(|| Pin::Mutable(pinned.to_owned()), Pin::Version)
 }

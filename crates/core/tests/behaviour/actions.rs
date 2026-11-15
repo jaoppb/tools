@@ -231,3 +231,25 @@ fn the_actions_table_loads_strictly_and_defaults_to_off() {
             .any()
     );
 }
+
+#[test]
+fn a_bare_number_ref_is_a_branch_and_a_version_needs_the_v() {
+    let references = scan("w.yml", "uses: a/b@2024\nuses: a/b@v2024\n");
+    assert_eq!(references[0].claimed(), None);
+    assert_eq!(references[1].claimed(), Some(Major(2024)));
+}
+
+#[test]
+fn a_version_rule_without_versions_reports_instead_of_passing() {
+    use tools_core::domain::actions::judge;
+    let reference = &scan("w.yml", "uses: a/b@v1\n")[0];
+    let found = judge(&latest_only(), reference, None);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].message.contains("were not read"), "{found:?}");
+}
+
+#[test]
+fn a_release_that_is_not_a_version_falls_back_to_the_highest_tag() {
+    let port = MemoryActions::default().with("a/b", versions(Some("nightly"), &[("v4", SHA)]));
+    assert!(findings(&latest_only(), "uses: a/b@v4\n", &port).is_empty());
+}
