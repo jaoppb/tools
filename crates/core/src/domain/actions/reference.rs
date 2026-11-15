@@ -10,7 +10,17 @@ impl Major {
     /// The major of `v7`, `7`, `v7.1` or `v7.1.2`; `None` for anything else (`main`, `v7-rc1`).
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
-        let digits = text.strip_prefix('v').unwrap_or(text);
+        Self::parse_digits(text.strip_prefix('v').unwrap_or(text))
+    }
+
+    /// The major of a version tag: `v7`, `v7.1` or `v7.1.2`. Without the `v`, a number
+    /// (`7`, `2024.05`) is as likely a date or a branch as a version, so it is `None`.
+    #[must_use]
+    pub fn parse_tag(text: &str) -> Option<Self> {
+        text.strip_prefix('v').and_then(Self::parse_digits)
+    }
+
+    fn parse_digits(digits: &str) -> Option<Self> {
         let mut parts = digits.split('.');
         let major = parts.next()?;
         let rest: Vec<&str> = parts.collect();
@@ -144,9 +154,5 @@ fn classify(pinned: &str, comment: Option<Major>) -> Pin {
         };
     }
     // A bare number (`2024`, a short SHA) is more likely a branch than a version.
-    let version = pinned
-        .starts_with('v')
-        .then(|| Major::parse(pinned))
-        .flatten();
-    version.map_or_else(|| Pin::Mutable(pinned.to_owned()), Pin::Version)
+    Major::parse_tag(pinned).map_or_else(|| Pin::Mutable(pinned.to_owned()), Pin::Version)
 }

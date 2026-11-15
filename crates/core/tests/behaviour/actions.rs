@@ -312,3 +312,59 @@ fn a_backport_marked_latest_does_not_lower_the_latest_major() {
     assert!(findings(&latest_only(), "uses: a/b@v4\n", &port).is_empty());
     assert_eq!(findings(&latest_only(), "uses: a/b@v3\n", &port).len(), 1);
 }
+
+#[test]
+fn a_tag_names_a_major_only_with_the_v() {
+    assert_eq!(Major::parse_tag("v7"), Some(Major(7)));
+    assert_eq!(Major::parse_tag("v7.1.2"), Some(Major(7)));
+    for text in [
+        "7", "7.1", "2024.05", "20240101", "vv7", "v", "main", "v7-rc1",
+    ] {
+        assert_eq!(Major::parse_tag(text), None, "{text}");
+    }
+}
+
+#[test]
+fn bare_calver_tags_and_release_do_not_outrank_the_v_tags() {
+    let port = MemoryActions::default()
+        .with(
+            "a/tags",
+            versions(
+                None,
+                &[("v4", SHA), ("2024.05", OTHER), ("20240101", OTHER)],
+            ),
+        )
+        .with("a/release", versions(Some("2024.05"), &[("v4", SHA)]));
+    let rules = latest_only();
+    assert!(findings(&rules, "uses: a/tags@v4\n", &port).is_empty());
+    assert!(findings(&rules, "uses: a/release@v4\n", &port).is_empty());
+}
+
+#[test]
+fn bare_tags_count_only_when_the_repository_has_no_v_version() {
+    let port = MemoryActions::default().with(
+        "a/b",
+        versions(Some("1.2.3"), &[("1.2.3", SHA), ("0.9.0", OTHER)]),
+    );
+    let rules = Rules {
+        latest_major: true,
+        sha_matches_comment: true,
+        ..Rules::default()
+    };
+    assert!(findings(&rules, &format!("uses: a/b@{SHA} # 1\n"), &port).is_empty());
+    let stale = findings(&rules, &format!("uses: a/b@{OTHER} # v0\n"), &port);
+    assert_eq!(stale.len(), 1, "{stale:?}");
+    assert!(stale[0].contains("latest major is v1"), "{stale:?}");
+}
+
+#[test]
+fn sha_matches_comment_ignores_bare_tags_in_a_v_tagged_repository() {
+    let port =
+        MemoryActions::default().with("a/b", versions(None, &[("v4", SHA), ("2024.05", OTHER)]));
+    let rules = Rules {
+        sha_matches_comment: true,
+        ..Rules::default()
+    };
+    let calver = findings(&rules, &format!("uses: a/b@{OTHER} # v2024\n"), &port);
+    assert!(calver[0].contains("not the commit"), "{calver:?}");
+}
