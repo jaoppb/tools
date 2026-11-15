@@ -3,6 +3,7 @@
 //! `gh` is the transport so the tool never reads, stores or prints a token: it
 //! uses the login the owner already has.
 
+pub mod actions;
 pub mod error;
 pub mod issues;
 pub mod parse;
@@ -13,6 +14,7 @@ pub mod runner;
 pub mod target;
 pub mod texts;
 
+pub use crate::adapters::github::actions::GhActions;
 pub use crate::adapters::github::error::GhError;
 pub use crate::adapters::github::issues::{Gathered, GhIssues};
 pub use crate::adapters::github::project::GhProject;

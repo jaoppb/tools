@@ -1,10 +1,12 @@
 //! The `tools` command line: `tools <noun> <verb>` over the issue, repository and project
 //! workflows.
 //!
-//! Each noun is a cargo feature (`issues`, `repo`, `project`, `changelog`, all on by default), so a
+//! Each noun is a cargo feature (`issues`, `repo`, `project`, `changelog`, `actions`, all on by default), so a
 //! build can carry only the groups it needs; `config`, which only rewrites `tools.toml`, is always
 //! built. Read-only verbs are always `check`; verbs that write are `sync` and `migrate`.
 
+#[cfg(feature = "actions")]
+pub mod actions;
 #[cfg(feature = "changelog")]
 pub mod changelog;
 pub mod cli;
@@ -30,6 +32,8 @@ use cli::Invocation;
 pub fn run(invocation: Invocation) -> Result<Exit, Exit> {
     match invocation {
         Invocation::Config(arguments) => config::run(&arguments),
+        #[cfg(feature = "actions")]
+        Invocation::Actions(arguments) => actions::run(&arguments),
         #[cfg(feature = "changelog")]
         Invocation::Changelog(arguments) => changelog::run(&arguments),
         #[cfg(feature = "issues")]

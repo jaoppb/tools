@@ -2,6 +2,7 @@
 //!
 //! This layer imports only `std`: it never sees `gh`, JSON, TOML or the network.
 
+pub mod actions;
 pub mod audit;
 pub mod card;
 pub mod facts;

@@ -6,6 +6,10 @@ Every pull request that changes config, the CLI, the action, the release flow or
 
 ## [Unreleased]
 
+### Added
+
+- `tools actions check` audits the `uses:` references of `.github/workflows/` against the opt-in rules of a new `[actions]` table in `tools.toml` (`latest_major`, `pin_format`, `sha_matches_comment`, `allow`/`deny`/`ignore`), understanding `@vX` and `<sha> # vX`. It is a new `actions` cargo feature (default on) and the composite action gets `check-actions` and `actions-args` (#120, #121)
+
 ## [0.3.0] - 2026-11-12
 
 > **Release-day break.** `jaoppb/tools@v0.2.0` defaults to `version: latest`. Once v0.3.0 is published it resolves to a release that has no `issues-check`, `repo-sync` or `project-sync` assets, and the install step fails. Pin `version: v0.2.0` to stay on v0.2.0, or move to `jaoppb/tools@v0.3.0` with `version: v0.3.0`. There are no compatibility shims.

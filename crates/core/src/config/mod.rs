@@ -13,7 +13,7 @@ mod milestone_format;
 mod schema;
 pub use milestone_format::{MilestoneFormat, TitlePattern};
 use schema::{
-    LabelsConfig, LabelsOverlayConfig, MilestonesConfig, MilestonesOverlayConfig,
+    ActionsConfig, LabelsConfig, LabelsOverlayConfig, MilestonesConfig, MilestonesOverlayConfig,
     RepositorySettingsConfig,
 };
 
@@ -28,6 +28,9 @@ pub struct Config {
     /// The `[workflow]` block, when the file has one.
     #[serde(default)]
     workflow: Option<WorkflowConfig>,
+    /// The `[actions]` block, when the file has one.
+    #[serde(default)]
+    actions: Option<ActionsConfig>,
     /// Deprecations of the loaded file, for the commands that read the deprecated keys to print.
     #[serde(skip)]
     warnings: Vec<String>,
@@ -66,6 +69,12 @@ impl Config {
             .as_ref()
             .map(|block| block.compile(None))
             .transpose()
+    }
+
+    /// The `[actions]` rules, `None` when the file has no such block.
+    #[must_use]
+    pub fn actions(&self) -> Option<crate::domain::actions::Rules> {
+        self.actions.clone().map(Into::into)
     }
 
     /// The issues-check rules configuration.
