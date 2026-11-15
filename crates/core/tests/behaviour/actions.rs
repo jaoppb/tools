@@ -240,16 +240,17 @@ fn a_bare_number_ref_is_a_branch_and_a_version_needs_the_v() {
 }
 
 #[test]
-fn a_version_rule_without_versions_reports_instead_of_passing() {
-    use tools_core::domain::actions::judge;
-    let reference = &scan("w.yml", "uses: a/b@v1\n")[0];
-    let found = judge(&latest_only(), reference, None);
-    assert_eq!(found.len(), 1);
-    assert!(found[0].message.contains("were not read"), "{found:?}");
-}
-
-#[test]
 fn a_release_that_is_not_a_version_falls_back_to_the_highest_tag() {
     let port = MemoryActions::default().with("a/b", versions(Some("nightly"), &[("v4", SHA)]));
     assert!(findings(&latest_only(), "uses: a/b@v4\n", &port).is_empty());
+}
+
+#[test]
+fn a_backport_marked_latest_does_not_lower_the_latest_major() {
+    let port = MemoryActions::default().with(
+        "a/b",
+        versions(Some("v3.6.1"), &[("v4", SHA), ("v3", OTHER)]),
+    );
+    assert!(findings(&latest_only(), "uses: a/b@v4\n", &port).is_empty());
+    assert_eq!(findings(&latest_only(), "uses: a/b@v3\n", &port).len(), 1);
 }

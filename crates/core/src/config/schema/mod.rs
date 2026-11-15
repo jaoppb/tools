@@ -3,7 +3,7 @@
 //! These types own every serde attribute of that part of the file (strict tables, defaults,
 //! aliases, spelling of the enums). The domain types in [`crate::domain::repo`] know nothing about
 //! TOML; each DTO here maps into its domain counterpart through one `From` impl, and
-//! `Config::spec_for` is the only caller.
+//! `Config::spec_for` and `Config::actions` are the only callers.
 
 mod actions;
 mod labels;

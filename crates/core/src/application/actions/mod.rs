@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use crate::domain::actions::{Finding, Reference, RepoId, Rules, Versions, judge};
+use crate::domain::actions::{
+    Finding, Reference, RepoId, Rules, Versions, judge_static, judge_versions,
+};
 
 /// Port for reading what GitHub knows about the versions of an action's repository.
 pub trait ActionsPort {
@@ -39,14 +41,19 @@ pub fn audit(
 ) -> Result<Vec<Finding>, ActionsError> {
     let mut known: BTreeMap<RepoId, Versions> = BTreeMap::new();
     let mut findings = Vec::new();
-    for reference in references {
-        if rules.needs_versions()
-            && !rules.is_ignored(&reference.repo)
-            && !known.contains_key(&reference.repo)
-        {
-            known.insert(reference.repo.clone(), port.versions(&reference.repo)?);
+    for reference in references
+        .iter()
+        .filter(|reference| !rules.is_ignored(&reference.repo))
+    {
+        findings.extend(judge_static(rules, reference));
+        if rules.needs_versions() {
+            if !known.contains_key(&reference.repo) {
+                known.insert(reference.repo.clone(), port.versions(&reference.repo)?);
+            }
+            if let Some(versions) = known.get(&reference.repo) {
+                findings.extend(judge_versions(rules, reference, versions));
+            }
         }
-        findings.extend(judge(rules, reference, known.get(&reference.repo)));
     }
     Ok(findings)
 }

@@ -64,18 +64,17 @@ pub struct Versions {
 }
 
 impl Versions {
-    /// The latest major: the latest release, else the highest version tag.
+    /// The latest major: the highest of the latest release and every version tag. A backport
+    /// published after a newer major can be marked "latest", so the release alone can name an
+    /// older major.
     #[must_use]
     pub fn latest_major(&self) -> Option<Major> {
         self.latest_release
             .as_deref()
             .and_then(Major::parse)
-            .or_else(|| {
-                self.tags
-                    .iter()
-                    .filter_map(|(tag, _)| Major::parse(tag))
-                    .max()
-            })
+            .into_iter()
+            .chain(self.tags.iter().filter_map(|(tag, _)| Major::parse(tag)))
+            .max()
     }
 
     fn majors_of(&self, sha: &str) -> Vec<Major> {
@@ -108,13 +107,10 @@ impl fmt::Display for Finding {
     }
 }
 
-/// The findings of one reference. `versions` is `None` when no rule needed it.
+/// The findings of the rules that need nothing from GitHub: `allow`, `deny` and `pin_format`.
 #[must_use]
-pub fn judge(rules: &Rules, reference: &Reference, versions: Option<&Versions>) -> Vec<Finding> {
+pub fn judge_static(rules: &Rules, reference: &Reference) -> Vec<Finding> {
     let repo = &reference.repo;
-    if rules.is_ignored(repo) {
-        return Vec::new();
-    }
     let finding = |rule, message: String| Finding {
         location: reference.location(),
         rule,
@@ -149,17 +145,14 @@ pub fn judge(rules: &Rules, reference: &Reference, versions: Option<&Versions>) 
             ));
         }
     }
-    let Some(versions) = versions else {
-        if rules.needs_versions() {
-            findings.push(finding(
-                "versions",
-                format!(
-                    "the versions of {repo} were not read, so its version rules were not checked"
-                ),
-            ));
-        }
-        return findings;
-    };
+    findings
+}
+
+/// The findings of the rules that compare the reference with the versions of its repository:
+/// `latest_major` and `sha_matches_comment`.
+#[must_use]
+pub fn judge_versions(rules: &Rules, reference: &Reference, versions: &Versions) -> Vec<Finding> {
+    let mut findings = Vec::new();
     if rules.latest_major {
         findings.extend(latest_major(reference, versions));
     }

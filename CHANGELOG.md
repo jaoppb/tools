@@ -8,7 +8,7 @@ Every pull request that changes config, the CLI, the action, the release flow or
 
 ### Added
 
-- `tools actions check` audits the `uses:` references of `.github/workflows/` against the opt-in rules of a new `[actions]` table in `tools.toml` (`latest_major`, `pin_format`, `sha_matches_comment`, `allow`/`deny`/`ignore`), understanding `@vX` and `<sha> # vX`. It is a new `actions` cargo feature (default on) and the composite action gets `check-actions` and `actions-args` (#120)
+- `tools actions check` audits the `uses:` references of `.github/workflows/` against the opt-in rules of a new `[actions]` table in `tools.toml` (`latest_major`, `pin_format`, `sha_matches_comment`, `allow`/`deny`/`ignore`), understanding `@vX` and `<sha> # vX`. It is a new `actions` cargo feature (default on) and the composite action gets `check-actions` and `actions-args` (#120, #121)
 
 ## [0.3.0] - 2026-11-12
 
