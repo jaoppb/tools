@@ -6,6 +6,10 @@
 # Also rotates the CHANGELOG "Unreleased" section into the new version (see
 # rotate-changelog.sh); the bump fails while it is empty.
 #
+# Runs `just check` and `just issues-check` on the bump commit, then pushes with
+# --no-verify: the pre-push hook would repeat those checks while git holds the remote
+# connection open, and a slow (cold cache) hook lets an idle SSH connection drop.
+#
 # Never pushes to main and never tags: the merged bump is tagged and released by
 # .github/workflows/tag-release.yml.
 set -euo pipefail
@@ -133,7 +137,7 @@ cp CHANGELOG.md "$ROTATION_PREVIEW"
 "$ROTATE_CHANGELOG" "$NEW_VERSION" "$RELEASE_DATE" "$ROTATION_PREVIEW" || exit 1
 
 if [ "$DRY_RUN" = "1" ]; then
-    echo "Dry run: all preconditions pass, including the CHANGELOG rotation (cargo check is not run), and nothing is changed."
+    echo "Dry run: all preconditions pass, including the CHANGELOG rotation (cargo check, just check and just issues-check are not run), and nothing is changed."
     echo "Version: $CURRENT_VERSION -> $NEW_VERSION (tag $TAG is created after the PR merges)"
     echo "Branch:  $BUMP_BRANCH"
     echo "Commit:  $TITLE"
@@ -175,10 +179,46 @@ git switch -c "$BUMP_BRANCH"
 git add "${RELEASE_FILES[@]}"
 git commit -m "$TITLE" -m "Closes #$ISSUE"
 
+# The pre-push hook's checks, run here on the commit being pushed so the push can skip
+# the hook (a failure rolls back through the ERR trap).
+echo "Running the pre-push checks on the bump commit: just check, just issues-check"
+just check
+just issues-check
+
 trap - ERR
 
-if ! git push -u origin "$BUMP_BRANCH" || ! gh pr create --base main --head "$BUMP_BRANCH" --title "$TITLE" --body "$BODY"; then
-    echo "Error: push or PR creation failed. Fix the cause, then either retry 'git push -u origin $BUMP_BRANCH' and 'gh pr create', or discard with: git switch $BRANCH && git branch -D $BUMP_BRANCH && git push origin --delete $BUMP_BRANCH" >&2
+# Runs "$@" with its stdout untouched and its stderr shown live through tee, keeping a copy
+# of the stderr in STEP_STDERR; returns the command's status. Call it only as an `if`
+# condition, where errexit is off and a failing pipeline does not exit the script.
+STEP_STDERR=""
+run_capturing_stderr() {
+    local log status
+    log="$(mktemp)"
+    { "$@" 2>&1 1>&3 3>&- | tee "$log" >&2 3>&-; status="${PIPESTATUS[0]}"; } 3>&1
+    STEP_STDERR="$(cat "$log")"
+    rm -f "$log"
+    return "$status"
+}
+
+PR_CREATE_HINT="$(printf 'gh pr create --base main --head %q --title %q --body %q' "$BUMP_BRANCH" "$TITLE" "$BODY")"
+
+if ! run_capturing_stderr git push --no-verify -u origin "$BUMP_BRANCH"; then
+    {
+        echo "Error: git push of $BUMP_BRANCH failed; no pull request was opened. git said:"
+        printf '%s\n' "${STEP_STDERR:-(no output)}"
+        echo "Fix the cause and retry with: git push --no-verify -u origin $BUMP_BRANCH && $PR_CREATE_HINT"
+        echo "or discard the bump with: git switch $BRANCH && git branch -D $BUMP_BRANCH (and git push origin --delete $BUMP_BRANCH if it reached origin)"
+    } >&2
+    exit 1
+fi
+
+if ! run_capturing_stderr gh pr create --base main --head "$BUMP_BRANCH" --title "$TITLE" --body "$BODY"; then
+    {
+        echo "Error: $BUMP_BRANCH was pushed, but opening the pull request failed. gh said:"
+        printf '%s\n' "${STEP_STDERR:-(no output)}"
+        echo "Fix the cause and open it with: $PR_CREATE_HINT"
+        echo "or discard the bump with: git switch $BRANCH && git branch -D $BUMP_BRANCH && git push origin --delete $BUMP_BRANCH"
+    } >&2
     exit 1
 fi
 
