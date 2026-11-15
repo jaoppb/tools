@@ -16,6 +16,7 @@ Every pull request that changes config, the CLI, the action, the release flow or
 - `tools actions check` no longer stops with exit 2 when the versions of a repository cannot be read: each of its references gets a `[versions]` finding and the audit goes on, and a repository already forbidden by `allow` or `deny` is not looked up, so only its `allow`/`deny` finding is reported (#124, #133)
 - The Nix package builds in the sandbox: `git` is declared as a check input, so consumers can drop their `nativeCheckInputs` workaround, and `nix flake check` now builds and tests the package (#117, #127)
 - `tools actions check --config <repo>/tools.toml` scans the default `.github/workflows` and `.github/actions` next to that file, not those of the working directory's checkout; `tools repo check` and `tools actions check` now share one rule for the repository root (#122, #134)
+- `tools actions check` no longer takes a bare-number tag or release such as `2024.05` or `20240101` for a major next to `v`-prefixed versions, so `latest_major` stops reporting "latest is v2024" against `@v4`, and `sha_matches_comment` ignores such tags too. A bare number (`1.2.3`) still counts in a repository with no `v`-prefixed version at all (#123, #135)
 
 ## [0.3.0] - 2026-11-12
 
