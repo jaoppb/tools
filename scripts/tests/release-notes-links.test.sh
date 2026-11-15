@@ -71,6 +71,15 @@ expect "leaves code spans alone" \
 expect "leaves fenced code alone" \
   $'```md\n[x](y.md)\n```\n[a](README.md)' \
   $'```md\n[x](y.md)\n```\n'"[a](${BLOB}/README.md)"
+expect "closes a fence only on its own marker" \
+  $'~~~\n```\n[x](y.md)\n~~~\n[a](README.md)' \
+  $'~~~\n```\n[x](y.md)\n~~~\n'"[a](${BLOB}/README.md)"
+expect "closes a fence only on a run as long as the opener" \
+  $'````\n```\n[x](y.md)\n````\n[a](README.md)' \
+  $'````\n```\n[x](y.md)\n````\n'"[a](${BLOB}/README.md)"
+expect "leaves footnotes alone" "[^1]: See the guide." "[^1]: See the guide."
+expect "rewrites a reference definition without a space" \
+  "[guide]:README.md" "[guide]:${BLOB}/README.md"
 expect "leaves plain text alone" \
   "- \`tools repo check\` fails on drift (#1, #2)" "- \`tools repo check\` fails on drift (#1, #2)"
 

@@ -8,10 +8,13 @@
 # Inline links `[text](path)` and reference definitions `[id]: path` whose target has no URL
 # scheme and is not a bare `#anchor` become https://github.com/<owner>/<repo>/blob/<tag>/<path>
 # (images `![alt](path)` use raw/ instead of blob/). A leading `/` means the repository root and a
-# `?query` or `#fragment` suffix is kept. Fenced code blocks and `code spans` are left alone.
+# `?query` or `#fragment` suffix is kept. Fenced code blocks are left alone, and so are `code
+# spans`, which are found by pairing the backticks of each line. Footnotes `[^n]: text`,
+# `<bracketed targets>` and links split over lines are not rewritten.
 #
 # Each rewritten path that does not exist under the current directory (the tagged checkout) gets
-# a `::warning::` on stderr; the output is still written and the exit status stays 0.
+# a `::warning::` on stderr; the output is still written and the exit status stays 0. The whole
+# input is rewritten and checked, older version sections included, not only the published one.
 set -euo pipefail
 
 die() {
@@ -57,10 +60,24 @@ awk -v base="https://github.com/$REPO" -v tag="$TAG" -v paths="$paths" '
         }
         return out s
     }
-    /^[[:space:]]*(```|~~~)/ { fenced = !fenced; print; next }
-    fenced { print; next }
-    # Reference definition: up to three spaces, [id]:, whitespace, target.
-    match($0, /^ ? ? ?\[[^]]+\]:[ \t]+/) {
+    # A fence closes only on a run of its own character at least as long as the opener.
+    fence != "" {
+        if (match($0, /^ ? ? ?(`+|~+)[ \t]*$/)) {
+            run = $0
+            gsub(/[ \t]/, "", run)
+            if (substr(run, 1, 1) == substr(fence, 1, 1) && length(run) >= length(fence)) fence = ""
+        }
+        print
+        next
+    }
+    match($0, /^ ? ? ?(```+|~~~+)/) {
+        fence = substr($0, RSTART, RLENGTH)
+        gsub(/ /, "", fence)
+        print
+        next
+    }
+    # Reference definition: up to three spaces, [id]: (not a [^footnote]:), target.
+    match($0, /^ ? ? ?\[[^]^][^]]*\]:[ \t]*/) {
         head = substr($0, 1, RLENGTH)
         rest = substr($0, RLENGTH + 1)
         t = rest
