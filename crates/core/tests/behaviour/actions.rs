@@ -133,10 +133,7 @@ fn an_unreadable_repository_is_a_finding_per_reference_and_the_audit_goes_on() {
     let port = Unreadable::default();
     let found = findings(
         &latest_only(),
-        "uses: gone/x@v1
-uses: gone/x@v2
-uses: also/gone@v1
-",
+        "uses: gone/x@v1\nuses: gone/x@v2\nuses: also/gone@v1\n",
         &port,
     );
     assert_eq!(found.len(), 3, "{found:?}");
@@ -156,12 +153,7 @@ fn a_denied_or_disallowed_repository_is_not_looked_up() {
         deny: vec!["evil/x".to_owned()],
         ..latest_only()
     };
-    let denied = findings(
-        &deny,
-        "uses: evil/x@v1
-",
-        &port,
-    );
+    let denied = findings(&deny, "uses: evil/x@v1\n", &port);
     assert_eq!(denied.len(), 1, "{denied:?}");
     assert!(denied[0].contains("[deny]"), "{denied:?}");
     let allow = Rules {
@@ -169,14 +161,7 @@ fn a_denied_or_disallowed_repository_is_not_looked_up() {
         sha_matches_comment: true,
         ..Rules::default()
     };
-    let disallowed = findings(
-        &allow,
-        &format!(
-            "uses: evil/x@{SHA} # v1
-"
-        ),
-        &port,
-    );
+    let disallowed = findings(&allow, &format!("uses: evil/x@{SHA} # v1\n"), &port);
     assert_eq!(disallowed.len(), 1, "{disallowed:?}");
     assert!(disallowed[0].contains("[allow]"), "{disallowed:?}");
     assert!(port.asked.borrow().is_empty());
@@ -189,12 +174,7 @@ fn a_pin_format_finding_still_looks_the_repository_up() {
         pin_format: Some(PinFormat::ShaWithComment),
         ..latest_only()
     };
-    let found = findings(
-        &rules,
-        "uses: a/b@v1
-",
-        &port,
-    );
+    let found = findings(&rules, "uses: a/b@v1\n", &port);
     assert_eq!(found.len(), 2, "{found:?}");
     assert!(found[1].contains("[latest-major]"), "{found:?}");
 }

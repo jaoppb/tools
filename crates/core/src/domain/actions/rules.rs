@@ -178,7 +178,8 @@ pub fn judge_versions(rules: &Rules, reference: &Reference, versions: &Versions)
 }
 
 /// The finding of a reference whose repository's versions could not be read, so neither
-/// `latest_major` nor `sha_matches_comment` can judge it. `reason` is the read error, which names the repository.
+/// `latest_major` nor `sha_matches_comment` can judge it. `reason` is the read error, which
+/// names the repository.
 #[must_use]
 pub fn unreadable_versions(reference: &Reference, reason: &str) -> Finding {
     Finding {
