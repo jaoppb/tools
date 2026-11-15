@@ -40,11 +40,10 @@ pub fn audit(
     let mut known: BTreeMap<RepoId, Versions> = BTreeMap::new();
     let mut findings = Vec::new();
     for reference in references {
-        let ignored = rules
-            .ignore
-            .iter()
-            .any(|pattern| reference.repo.matches(pattern));
-        if rules.needs_versions() && !ignored && !known.contains_key(&reference.repo) {
+        if rules.needs_versions()
+            && !rules.is_ignored(&reference.repo)
+            && !known.contains_key(&reference.repo)
+        {
             known.insert(reference.repo.clone(), port.versions(&reference.repo)?);
         }
         findings.extend(judge(rules, reference, known.get(&reference.repo)));

@@ -68,8 +68,17 @@ fn read_references(arguments: &Arguments) -> Result<Vec<Reference>, Exit> {
 fn collect_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), Exit> {
     let entries = std::fs::read_dir(directory).map_err(|error| unreadable(directory, &error))?;
     for entry in entries {
-        let path = entry.map_err(|error| unreadable(directory, &error))?.path();
-        if path.is_dir() {
+        let entry = entry.map_err(|error| unreadable(directory, &error))?;
+        let path = entry.path();
+        // `file_type` does not follow symlinks, so a link cycle cannot recurse forever; a
+        // symlinked directory is skipped and a symlinked file is read.
+        let kind = entry
+            .file_type()
+            .map_err(|error| unreadable(&path, &error))?;
+        if kind.is_symlink() && path.is_dir() {
+            continue;
+        }
+        if kind.is_dir() {
             collect_files(&path, files)?;
         } else if matches!(
             path.extension().and_then(|extension| extension.to_str()),
