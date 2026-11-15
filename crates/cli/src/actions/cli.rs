@@ -59,7 +59,7 @@ pub fn command() -> Command {
                         .value_name("DIR")
                         .action(clap::ArgAction::Append)
                         .help(
-                            "Directory scanned recursively for workflow and composite action files, repeatable (default: .github/workflows and .github/actions)",
+                            "Directory scanned recursively for workflow and composite action files, repeatable (default: .github/workflows and .github/actions next to tools.toml)",
                         ),
                 ),
         )

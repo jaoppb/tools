@@ -15,6 +15,7 @@ Every pull request that changes config, the CLI, the action, the release flow or
 - `just bump-version` runs `just check` and `just issues-check` on the bump commit and then pushes with `--no-verify`, so a slow `pre-push` hook can no longer drop the SSH connection mid-push; a failed push and a failed PR creation are reported separately with the underlying `git` or `gh` error (#109, #128)
 - `tools actions check` no longer stops with exit 2 when the versions of a repository cannot be read: each of its references gets a `[versions]` finding and the audit goes on, and a repository already forbidden by `allow` or `deny` is not looked up, so only its `allow`/`deny` finding is reported (#124, #133)
 - The Nix package builds in the sandbox: `git` is declared as a check input, so consumers can drop their `nativeCheckInputs` workaround, and `nix flake check` now builds and tests the package (#117, #127)
+- `tools actions check --config <repo>/tools.toml` scans the default `.github/workflows` and `.github/actions` next to that file, not those of the working directory's checkout; `tools repo check` and `tools actions check` now share one rule for the repository root (#122, #134)
 
 ## [0.3.0] - 2026-11-12
 

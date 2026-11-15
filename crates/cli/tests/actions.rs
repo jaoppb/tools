@@ -82,3 +82,37 @@ fn rules_without_any_workflow_file_fail_instead_of_passing() {
     assert!(exit.text.contains("no workflow file"), "{}", exit.text);
     std::fs::remove_dir_all(&directory).expect("cleanup");
 }
+
+#[test]
+fn the_default_directories_sit_next_to_the_given_config_not_the_working_directory() {
+    // `cargo test` runs from `crates/cli`, inside this repository's own checkout, so a scan
+    // rooted at the working directory would read this repository's `.github` instead.
+    let directory = std::env::temp_dir().join(format!("tools-actions-root-{}", std::process::id()));
+    let workflows = directory.join(".github").join("workflows");
+    std::fs::create_dir_all(&workflows).expect("dir");
+    let config = directory.join("tools.toml");
+    std::fs::write(
+        &config,
+        "[github.repository]\nowner = \"o\"\nname = \"n\"\n[actions]\ndeny = [\"actions/*\"]\n",
+    )
+    .expect("write");
+    let workflow = workflows.join("ci.yml");
+    std::fs::write(
+        &workflow,
+        "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v4\n",
+    )
+    .expect("write");
+    let exit = tools::run(invocation(&[
+        "check",
+        "--config",
+        config.to_str().expect("utf8"),
+    ]))
+    .expect_err("the denied reference is found");
+    std::fs::remove_dir_all(&directory).expect("cleanup");
+    assert_eq!(exit.code, 1, "{}", exit.text);
+    assert!(
+        exit.text.contains(&*workflow.to_string_lossy()),
+        "{}",
+        exit.text
+    );
+}

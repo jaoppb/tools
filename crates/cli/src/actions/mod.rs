@@ -11,10 +11,11 @@ use std::path::{Path, PathBuf};
 
 use tools_core::adapters::github::GhActions;
 use tools_core::application::audit_actions;
-use tools_core::config::{find_config, load_or_find};
+use tools_core::config::load_or_find;
 use tools_core::domain::actions::{Reference, scan};
 
 use crate::Exit;
+use crate::cli::config_root;
 use cli::Arguments;
 
 /// Runs `tools actions check`.
@@ -36,7 +37,7 @@ pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
     let references = read_references(arguments)?;
     if references.is_empty() {
         return Err(Exit::failed(
-            "rules are enabled but no workflow file was found; run from the repository or pass --workflows",
+            "rules are enabled but no workflow file was found; run from the repository, pass --config <repo>/tools.toml, or pass --workflows",
         ));
     }
     let findings = audit_actions(&GhActions::default(), &rules, &references);
@@ -54,9 +55,10 @@ pub fn run(arguments: &Arguments) -> Result<Exit, Exit> {
 }
 
 fn read_references(arguments: &Arguments) -> Result<Vec<Reference>, Exit> {
-    let directories = arguments
-        .directories()
-        .map_or_else(default_directories, <[PathBuf]>::to_vec);
+    let directories = arguments.directories().map_or_else(
+        || default_directories(arguments.config()),
+        <[PathBuf]>::to_vec,
+    );
     let mut files = Vec::new();
     for directory in &directories {
         collect_files(directory, &mut files)?;
@@ -99,14 +101,11 @@ fn unreadable(path: &Path, error: &std::io::Error) -> Exit {
     Exit::failed(format!("cannot read {}: {error}", path.display()))
 }
 
-/// The default directories under the repository root, which is where `tools.toml` lives: the
-/// working directory may be a subdirectory. Only the ones that exist are scanned.
-fn default_directories() -> Vec<PathBuf> {
-    let root = std::env::current_dir()
-        .ok()
-        .and_then(|directory| find_config(&directory))
-        .and_then(|config| config.parent().map(Path::to_path_buf))
-        .unwrap_or_default();
+/// The default directories under the repository root, which is where `tools.toml` lives (see
+/// [`config_root`]): the working directory may be a subdirectory, or another checkout when
+/// `--config` names the file. Only the ones that exist are scanned.
+fn default_directories(config: Option<&Path>) -> Vec<PathBuf> {
+    let root = config_root(config);
     cli::DEFAULT_DIRECTORIES
         .iter()
         .map(|directory| root.join(directory))

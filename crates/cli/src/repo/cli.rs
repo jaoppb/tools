@@ -5,11 +5,11 @@ use std::path::PathBuf;
 
 use tools_core::adapters::github::Target;
 use tools_core::application::RepoSyncMode;
-use tools_core::config::{Config, ConfigError, find_config, load_or_find};
+use tools_core::config::{Config, ConfigError, load_or_find};
 use tools_core::domain::repo::{Repo, RepoPlanError, RepoSpec};
 
 use super::consistency::LocalFiles;
-use crate::cli::{CONFIG, OWNER, repos_of};
+use crate::cli::{CONFIG, OWNER, config_root, repos_of};
 
 /// The verb that audits drift without writing.
 pub const CHECK: &str = "check";
@@ -164,19 +164,10 @@ impl Arguments {
             && self.explicit_entities.is_none_or(|filter| filter.labels)
     }
 
-    /// The directory holding `tools.toml` (found the way [`load_or_find`] finds it), where the templates and docs live.
+    /// The directory holding `tools.toml` (see [`config_root`]), where the templates and docs live.
     #[must_use]
     pub fn root(&self) -> PathBuf {
-        let cwd = || PathBuf::from(".");
-        let found = self.config_path.clone().or_else(|| {
-            std::env::current_dir()
-                .ok()
-                .and_then(|dir| find_config(&dir))
-        });
-        found
-            .and_then(|path| path.parent().map(PathBuf::from))
-            .filter(|dir| !dir.as_os_str().is_empty())
-            .unwrap_or_else(cwd)
+        config_root(self.config_path.as_deref())
     }
 
     /// Repositories specified on the command line.

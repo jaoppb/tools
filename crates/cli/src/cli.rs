@@ -1,6 +1,9 @@
 //! The root command line: the flags every verb shares and the dispatch to the enabled groups.
 
 use clap::{Arg, ArgAction, Command};
+use std::path::{Path, PathBuf};
+
+use tools_core::config::find_config;
 
 /// `--config`: the path to `tools.toml`.
 pub const CONFIG: &str = "config";
@@ -19,6 +22,23 @@ pub fn project_flag() -> Arg {
         .long(PROJECT)
         .value_name("NUMBER")
         .help("GitHub Project number override")
+}
+
+/// The repository root: the directory holding `tools.toml`, found the way
+/// [`tools_core::config::load_or_find`] finds it. That is the parent of `config` (the `--config`
+/// path) when given, else of the `tools.toml` found walking up from the working directory, else
+/// `.` (also for a bare `--config tools.toml`, whose parent is empty).
+#[must_use]
+pub fn config_root(config: Option<&Path>) -> PathBuf {
+    let found = config.map(Path::to_path_buf).or_else(|| {
+        std::env::current_dir()
+            .ok()
+            .and_then(|directory| find_config(&directory))
+    });
+    found
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .filter(|directory| !directory.as_os_str().is_empty())
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 /// The repositories named by the global `--repo` flag.
@@ -181,4 +201,27 @@ fn missing_verb() -> UsageError {
         clap::error::ErrorKind::MissingSubcommand,
         "a group and a verb are required",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::config_root;
+
+    #[test]
+    fn the_root_is_the_directory_of_the_given_config() {
+        assert_eq!(
+            config_root(Some(Path::new("/x/tools.toml"))),
+            PathBuf::from("/x")
+        );
+    }
+
+    #[test]
+    fn a_bare_config_file_name_roots_at_the_working_directory() {
+        assert_eq!(
+            config_root(Some(Path::new("tools.toml"))),
+            PathBuf::from(".")
+        );
+    }
 }
