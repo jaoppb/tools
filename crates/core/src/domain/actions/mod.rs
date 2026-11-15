@@ -5,4 +5,6 @@ mod reference;
 mod rules;
 
 pub use reference::{Major, Pin, Reference, RepoId, scan};
-pub use rules::{Finding, PinFormat, Rules, Versions, judge_static, judge_versions};
+pub use rules::{
+    Finding, PinFormat, Rules, Versions, judge_static, judge_versions, unreadable_versions,
+};
