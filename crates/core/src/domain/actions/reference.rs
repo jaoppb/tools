@@ -8,6 +8,8 @@ pub struct Major(pub u64);
 
 impl Major {
     /// The major of `v7`, `7`, `v7.1` or `v7.1.2`; `None` for anything else (`main`, `v7-rc1`).
+    /// Use it for the `# 7` comment of a SHA; a ref or a repository tag goes through
+    /// [`Self::parse_tag`].
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         Self::parse_digits(text.strip_prefix('v').unwrap_or(text))

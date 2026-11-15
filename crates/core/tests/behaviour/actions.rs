@@ -366,5 +366,6 @@ fn sha_matches_comment_ignores_bare_tags_in_a_v_tagged_repository() {
         ..Rules::default()
     };
     let calver = findings(&rules, &format!("uses: a/b@{OTHER} # v2024\n"), &port);
+    assert_eq!(calver.len(), 1, "{calver:?}");
     assert!(calver[0].contains("not the commit"), "{calver:?}");
 }

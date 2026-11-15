@@ -86,13 +86,7 @@ impl Versions {
     /// older major.
     #[must_use]
     pub fn latest_major(&self) -> Option<Major> {
-        let major = self.major_parser();
-        self.latest_release
-            .as_deref()
-            .and_then(major)
-            .into_iter()
-            .chain(self.tags.iter().filter_map(|(tag, _)| major(tag)))
-            .max()
+        self.names().filter_map(self.major_parser()).max()
     }
 
     fn majors_of(&self, sha: &str) -> Vec<Major> {
@@ -108,15 +102,19 @@ impl Versions {
     /// next to `v4`, a bare `2024.05` is a date, not major 2024. A bare number (`1.2.3`) counts
     /// only in a repository with no `v`-prefixed version at all.
     fn major_parser(&self) -> fn(&str) -> Option<Major> {
-        let mut names = self
-            .latest_release
-            .iter()
-            .chain(self.tags.iter().map(|(tag, _)| tag));
-        if names.any(|name| Major::parse_tag(name).is_some()) {
+        if self.names().any(|name| Major::parse_tag(name).is_some()) {
             Major::parse_tag
         } else {
             Major::parse
         }
+    }
+
+    /// The latest release, then every tag.
+    fn names(&self) -> impl Iterator<Item = &str> {
+        self.latest_release
+            .as_deref()
+            .into_iter()
+            .chain(self.tags.iter().map(|(tag, _)| tag.as_str()))
     }
 }
 
