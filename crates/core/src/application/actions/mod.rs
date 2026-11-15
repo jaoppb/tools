@@ -35,7 +35,7 @@ pub enum ActionsError {
 /// cannot be read (deleted, private, or GitHub unreachable) yields a `versions` finding for
 /// each of its references, and the audit goes on with the others.
 pub fn audit(port: &impl ActionsPort, rules: &Rules, references: &[Reference]) -> Vec<Finding> {
-    let mut known: BTreeMap<RepoId, Result<Versions, String>> = BTreeMap::new();
+    let mut known: BTreeMap<RepoId, Result<Versions, ActionsError>> = BTreeMap::new();
     let mut findings = Vec::new();
     for reference in references
         .iter()
@@ -45,13 +45,12 @@ pub fn audit(port: &impl ActionsPort, rules: &Rules, references: &[Reference]) -
         if !rules.needs_versions() || rules.forbids(&reference.repo) {
             continue;
         }
-        let versions = known.entry(reference.repo.clone()).or_insert_with(|| {
-            port.versions(&reference.repo)
-                .map_err(|error| error.to_string())
-        });
+        let versions = known
+            .entry(reference.repo.clone())
+            .or_insert_with(|| port.versions(&reference.repo));
         match versions {
             Ok(versions) => findings.extend(judge_versions(rules, reference, versions)),
-            Err(reason) => findings.push(unreadable_versions(reference, reason)),
+            Err(error) => findings.push(unreadable_versions(reference, &error.to_string())),
         }
     }
     findings

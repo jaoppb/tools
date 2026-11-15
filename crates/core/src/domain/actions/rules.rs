@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use super::reference::{Major, Pin, Reference};
+use super::reference::{Major, Pin, Reference, RepoId};
 
 /// The ref style `pin_format` demands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,24 +43,24 @@ impl Rules {
 
     /// Whether `repo` is exempt from every rule.
     #[must_use]
-    pub fn is_ignored(&self, repo: &super::reference::RepoId) -> bool {
+    pub fn is_ignored(&self, repo: &RepoId) -> bool {
         self.ignore.iter().any(|pattern| repo.matches(pattern))
     }
 
     /// Whether `allow` or `deny` forbids `repo`: such a reference must go, so its versions do
     /// not matter.
     #[must_use]
-    pub fn forbids(&self, repo: &super::reference::RepoId) -> bool {
+    pub fn forbids(&self, repo: &RepoId) -> bool {
         !self.is_allowed(repo) || self.is_denied(repo)
     }
 
-    fn is_allowed(&self, repo: &super::reference::RepoId) -> bool {
+    fn is_allowed(&self, repo: &RepoId) -> bool {
         self.allow
             .as_ref()
             .is_none_or(|allow| allow.iter().any(|pattern| repo.matches(pattern)))
     }
 
-    fn is_denied(&self, repo: &super::reference::RepoId) -> bool {
+    fn is_denied(&self, repo: &RepoId) -> bool {
         self.deny.iter().any(|pattern| repo.matches(pattern))
     }
 
@@ -178,7 +178,7 @@ pub fn judge_versions(rules: &Rules, reference: &Reference, versions: &Versions)
 }
 
 /// The finding of a reference whose repository's versions could not be read, so neither
-/// `latest_major` nor `sha_matches_comment` can judge it. `reason` names the repository.
+/// `latest_major` nor `sha_matches_comment` can judge it. `reason` is the read error, which names the repository.
 #[must_use]
 pub fn unreadable_versions(reference: &Reference, reason: &str) -> Finding {
     Finding {
