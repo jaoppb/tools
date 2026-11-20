@@ -22,12 +22,14 @@ check:
     just check-features
     just workflows-check
 
-# Lint the GitHub workflows and test the release scripts (tagging and CHANGELOG rotation)
+# Lint the GitHub workflows and test the release scripts (tagging, CHANGELOG rotation, release-note links)
 workflows-check:
     actionlint
     shellcheck scripts/release-tag.sh scripts/tests/release-tag.test.sh scripts/rotate-changelog.sh scripts/tests/rotate-changelog.test.sh scripts/bump-version.sh
     scripts/tests/release-tag.test.sh
     scripts/tests/rotate-changelog.test.sh
+    shellcheck scripts/release-notes-links.sh scripts/tests/release-notes-links.test.sh
+    scripts/tests/release-notes-links.test.sh
 
 # Check Rust formatting
 fmt-check:

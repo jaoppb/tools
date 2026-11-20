@@ -54,6 +54,15 @@ jobs:
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
 
+      # A release page resolves relative links against /releases/tag/, so point them at the tag.
+      - name: Make CHANGELOG links absolute for the release notes
+        env:
+          TAG: ${{ env.RELEASE_TAG }}
+          REPO: ${{ github.repository }}
+        run: |
+          scripts/release-notes-links.sh "${TAG}" "${REPO}" <CHANGELOG.md >"${RUNNER_TEMP}/CHANGELOG.md"
+          mv "${RUNNER_TEMP}/CHANGELOG.md" CHANGELOG.md
+
       - name: Create GitHub Release
         uses: taiki-e/create-gh-release-action@v1
         with:

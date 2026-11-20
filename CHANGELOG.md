@@ -9,6 +9,7 @@ Every pull request that changes config, the CLI, the action, the release flow or
 ### Fixed
 
 - The Nix package builds in the sandbox: `git` is declared as a check input, so consumers can drop their `nativeCheckInputs` workaround, and `nix flake check` now builds and tests the package (#117, #127)
+- Release notes link the migration guide and other repository files at the tag (`https://github.com/<owner>/<repo>/blob/<tag>/<path>`) instead of a relative path that a release page resolves under `/releases/tag/` (#107, #129)
 
 ## [0.3.0] - 2026-11-12
 
