@@ -63,6 +63,7 @@ This repository is a monorepo for developer tools, repository management utiliti
 - **Recipes:**
   - `just repo-bootstrap` / `just org-sync [org=...]`: Reconciles repository merge settings, labels, and milestones.
   - `just issues-migrate`: Rewrites legacy issue labels in bulk (writes; `just issues-check` previews the pending migrations).
+- **Sync only from `main`.** Live GitHub configuration (settings, labels, milestones) is reconciled only from an up-to-date `main` checkout: never run `just repo-bootstrap`, `just org-sync`, `just milestones-sync` or another sync recipe from a maintenance branch such as `release/v0.3`, whose `tools.toml` is a copy that can lag behind.
 
 ## 4. Repository memory & continuity
 
