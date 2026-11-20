@@ -6,6 +6,10 @@ Every pull request that changes config, the CLI, the action, the release flow or
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-20
+
+> **Migration guide:** [v0.3.0 → v0.3.1](docs/migrations/v0.3.1.md).
+
 ### Fixed
 
 - The Nix package builds in the sandbox: `git` is declared as a check input, so consumers can drop their `nativeCheckInputs` workaround, and `nix flake check` now builds and tests the package (#117, #127)
@@ -93,7 +97,8 @@ Migration guide: none, this is the first release.
 - Issue templates, the PR template, merge-commit settings, Lefthook hooks, CI and the release workflow (#1, #3, #6, #7, #19)
 - Workspace architecture rules with arch-lint (#5)
 
-[Unreleased]: https://github.com/jaoppb/tools/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jaoppb/tools/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/jaoppb/tools/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jaoppb/tools/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jaoppb/tools/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jaoppb/tools/releases/tag/v0.1.0
