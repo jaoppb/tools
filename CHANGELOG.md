@@ -6,6 +6,10 @@ Every pull request that changes config, the CLI, the action, the release flow or
 
 ## [Unreleased]
 
+### Fixed
+
+- The Nix package builds in the sandbox: `git` is declared as a check input, so consumers can drop their `nativeCheckInputs` workaround, and `nix flake check` now builds and tests the package (#117, #127)
+
 ## [0.3.0] - 2026-11-12
 
 > **Release-day break.** `jaoppb/tools@v0.2.0` defaults to `version: latest`. Once v0.3.0 is published it resolves to a release that has no `issues-check`, `repo-sync` or `project-sync` assets, and the install step fails. Pin `version: v0.2.0` to stay on v0.2.0, or move to `jaoppb/tools@v0.3.0` with `version: v0.3.0`. There are no compatibility shims.

@@ -19,10 +19,14 @@
             lockFile = ./Cargo.lock;
           };
           buildAndTestSubdir = "crates/cli";
+          # The changelog test builds a repository with git, and the binary it runs calls git diff.
+          nativeCheckInputs = [ pkgs.git ];
         };
       in rec {
         packages.tools = tools;
         packages.default = tools;
+        # `nix flake check` only evaluates packages; as a check it builds and tests in the sandbox.
+        checks.tools = tools;
 
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
